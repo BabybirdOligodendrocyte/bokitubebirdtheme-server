@@ -283,12 +283,112 @@ $("#emotelistbtn").remove();
 $("#newpollbtn").html(`<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="#FFFFFF" height="800px" width="800px" version="1.1" id="Capa_1" viewBox="0 0 490.4 490.4" xml:space="preserve"><path d="M17.2,251.55c-9.5,0-17.2,7.7-17.2,17.1v179.7c0,9.5,7.7,17.2,17.2,17.2h113c9.5,0,17.1-7.7,17.1-17.2v-179.7 c0-9.5-7.7-17.1-17.1-17.1L17.2,251.55L17.2,251.55z M113,431.25H34.3v-145.4H113V431.25z"/><path d="M490.4,448.45v-283.7c0-9.5-7.7-17.2-17.2-17.2h-113c-9.5,0-17.2,7.7-17.2,17.2v283.6c0,9.5,7.7,17.2,17.2,17.2h113 C482.7,465.55,490.4,457.85,490.4,448.45z M456.1,431.25h-78.7v-249.3h78.7L456.1,431.25L456.1,431.25z"/> <path d="M301.7,465.55c9.5,0,17.1-7.7,17.1-17.2V42.05c0-9.5-7.7-17.2-17.1-17.2h-113c-9.5,0-17.2,7.7-17.2,17.2v406.3 c0,9.5,7.7,17.2,17.2,17.2H301.7z M205.9,59.25h78.7v372h-78.7L205.9,59.25L205.9,59.25z"/></svg>`)
 $('#newpollbtn').attr("title", "Create new poll")
 
-/* Add custom emotes panel button */
+/* Add custom emotes panel button and favorites system */
+// Initialize favorites from localStorage
+var emoteFavorites = JSON.parse(localStorage.getItem('emoteFavorites')) || [];
+
+// Create modal overlay for emotes
+function createEmoteModal() {
+        const modal = document.createElement('div');
+        modal.id = 'emote-modal';
+        modal.className = 'emote-modal';
+        modal.innerHTML = `
+                <div class="emote-modal-content">
+                            <div class="emote-modal-header">
+                                            <h2>Emotes</h2>
+                                                            <button class="emote-modal-close" onclick="closeEmoteModal()">&times;</button>
+                                                                        </div>
+                                                                                    <div class="emote-modal-body" id="emote-modal-body">
+                                                                                                    <!-- Emotes will be populated here -->
+                                                                                                                </div>
+                                                                                                                        </div>
+                                                                                                                            `;
+        document.body.appendChild(modal);
+}
+
+function openEmoteModal() {
+        let modal = document.getElementById('emote-modal');
+        if (!modal) {
+                    createEmoteModal();
+                    modal = document.getElementById('emote-modal');
+        }
+
+        const modalBody = document.getElementById('emote-modal-body');
+        modalBody.innerHTML = '';
+
+        CHANNEL.emotes.forEach(emote => {
+                    const emoteCard = document.createElement('div');
+                    emoteCard.className = 'emote-card';
+                    const isFavorite = emoteFavorites.includes(emote.name);
+                    emoteCard.innerHTML = `
+                                <div class="emote-card-content">
+                                                <img src="${emote.image}" alt="${emote.name}" class="emote-card-image" onclick="insertText('${emote.name} ')">
+                                                                <button class="emote-favorite-btn ${isFavorite ? 'favorited' : ''}" onclick="toggleEmoteFavorite('${emote.name}', event)" title="Add to favorites">★</button>
+                                                                            </div>
+                                                                                        <p class="emote-card-name">${emote.name}</p>
+                                                                                                `;
+                    modalBody.appendChild(emoteCard);
+        });
+
+        modal.style.display = 'flex';
+}
+
+function closeEmoteModal() {
+        const modal = document.getElementById('emote-modal');
+        if (modal) {
+                    modal.style.display = 'none';
+        }
+}
+
+function toggleEmoteFavorite(emoteName, event) {
+        event.stopPropagation();
+        const index = emoteFavorites.indexOf(emoteName);
+        if (index > -1) {
+                    emoteFavorites.splice(index, 1);
+        } else {
+                    emoteFavorites.unshift(emoteName);
+        }
+        localStorage.setItem('emoteFavorites', JSON.stringify(emoteFavorites));
+
+        // Update star button
+        const btn = event.target;
+        btn.classList.toggle('favorited');
+
+        // Refresh modal if open
+        if (document.getElementById('emote-modal')?.style.display === 'flex') {
+                    openEmoteModal();
+        }
+}
+
 emotesbtn = $('<button id="emotes-btn" class="btn btn-sm btn-default" title="Display emotes panel"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="#FFFFFF" viewBox="0 0 24 24"><path d="M12 2c5.514 0 10 4.486 10 10s-4.486 10-10 10-10-4.486-10-10 4.486-10 10-10zm0-2c-6.627 0-12 5.373-12 12s5.373 12 12 12 12-5.373 12-12-5.373-12-12-12zm5.507 13.941c-1.512 1.195-3.174 1.931-5.506 1.931-2.334 0-3.996-.736-5.508-1.931l-.493.493c1.127 1.72 3.2 3.566 6.001 3.566 2.8 0 4.872-1.846 5.999-3.566l-.493-.493zm-9.007-5.941c-.828 0-1.5.671-1.5 1.5s.672 1.5 1.5 1.5 1.5-.671 1.5-1.5-.672-1.5-1.5-1.5zm7 0c-.828 0-1.5.671-1.5 1.5s.672 1.5 1.5 1.5 1.5-.671 1.5-1.5-.672-1.5-1.5-1.5z"/></svg></button>')
     .prependTo("#leftcontrols")
+    .on("click", function() { 
+                openEmoteModal(); 
+    });
+
+// Add favorites button with star icon
+const favoritesbtn = $('<button id="favorites-btn" class="btn btn-sm btn-default" title="Show favorite emotes"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="#FFD700" viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg></button>')
+    .insertAfter("#emotes-btn")
     .on("click", function() {
-        toggleDiv(emotespanel);
-        localStorage.epIsOpen == 0 ? localStorage.epIsOpen = 1 : localStorage.epIsOpen = 0;
+                emotespanel.removeClass('row');
+                document.querySelector('#emotespanel').replaceChildren();
+
+                if (emoteFavorites.length === 0) {
+                                emotespanel.addClass('row');
+                                makeAlert("No favorite emotes", "Click the star icon in the emote panel to add favorites.").appendTo(emotespanel);
+                } else {
+                                emoteFavorites.forEach(emoteName => {
+                                                    const emote = CHANNEL.emotes.find(e => e.name === emoteName);
+                                                    if (emote) {
+                                                                            $('<img onclick="insertText(\'' + emote.name + ' \')" />')
+                                                                                .attr({ 'src': emote.image, 'title': emote.name })
+                                                                                .appendTo(emotespanel);
+                                                    }
+                                });
+                }
+
+                toggleDiv(emotespanel);
+                localStorage.epIsOpen == 0 ? localStorage.epIsOpen = 1 : localStorage.epIsOpen = 0;
     });
 
 $("#emotes-btn").after($("#voteskip"))
