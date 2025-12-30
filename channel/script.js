@@ -988,12 +988,7 @@ function buildStyleTags(msg) {
     if (textStyleSettings.underline) { open += '[u]'; close = '[/]' + close; }
     if (textStyleSettings.strikethrough) { open += '[s]'; close = '[/]' + close; }
     
-    return open ? open + msg + close : msg;
-}
-
-function wrapTextWithStyle(text) {
-    if (!text.trim()) return text;
-    return buildStyleTags(text);
+    return { open: open, close: close, full: open ? open + msg + close : msg };
 }
 
 function applyStyleToMessage() {
@@ -1019,9 +1014,9 @@ function applyStyleToMessage() {
         emoteNames = CHANNEL.emotes.map(function(e) { return e.name; });
     }
     
-    // If no emotes defined or none in message, just wrap the whole thing
+    // If no emotes defined, just wrap the whole thing
     if (emoteNames.length === 0) {
-        c.value = buildStyleTags(msg);
+        c.value = buildStyleTags(msg).full;
         return;
     }
     
@@ -1036,7 +1031,7 @@ function applyStyleToMessage() {
     
     if (!containsEmote) {
         // No emotes, wrap entire message
-        c.value = buildStyleTags(msg);
+        c.value = buildStyleTags(msg).full;
         return;
     }
     
@@ -1045,22 +1040,28 @@ function applyStyleToMessage() {
     var escapedEmotes = emoteNames.map(function(name) {
         return name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     });
+    // Sort by length descending to match longer emotes first
+    escapedEmotes.sort(function(a, b) { return b.length - a.length; });
     var emoteRegex = new RegExp('(' + escapedEmotes.join('|') + ')', 'g');
     
     // Split message by emotes, keeping the emotes in the result
     var parts = msg.split(emoteRegex);
+    var tags = buildStyleTags('');
     
     // Process each part: wrap non-emote text with style, leave emotes alone
     var result = parts.map(function(part) {
         if (!part) return '';
         // Check if this part is an emote
         if (emoteNames.indexOf(part) !== -1) {
-            return part; // Leave emote unwrapped
+            return ' ' + part + ' '; // Add spaces around emote to ensure it's recognized
         } else if (part.trim()) {
-            return buildStyleTags(part); // Wrap text with style
+            return tags.open + part + tags.close; // Wrap text with style
         }
         return part; // Return whitespace as-is
     }).join('');
+    
+    // Clean up any double spaces
+    result = result.replace(/  +/g, ' ').trim();
     
     c.value = result;
 }
