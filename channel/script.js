@@ -517,58 +517,271 @@ const fontTagsBtn = $('<button id="font-tags-btn" class="btn btn-sm btn-default"
 $("#favorites-btn").after($("#voteskip"));
 $('#newpollbtn').prependTo($("#leftcontrols"));
 
-/* ========== FONT TAGS PANEL (Server-Side Compatible) ========== */
+/* ========== TEXT STYLING SYSTEM (Server-Side Compatible with Auto-Apply) ========== */
 
+// Initialize persistent text style from localStorage
+var textStyleSettings = JSON.parse(localStorage.getItem('textStyleSettings')) || {
+    color: null,
+    bold: false,
+    italic: false,
+    underline: false,
+    strikethrough: false
+};
+
+// Save settings to localStorage
+function saveTextStyleSettings() {
+    localStorage.setItem('textStyleSettings', JSON.stringify(textStyleSettings));
+    updateStylePreview();
+    updateFontTagsButtonIndicator();
+}
+
+// Update the T button to show if styles are active
+function updateFontTagsButtonIndicator() {
+    const btn = document.getElementById('font-tags-btn');
+    if (!btn) return;
+    
+    const hasActiveStyle = textStyleSettings.color || textStyleSettings.bold || 
+                          textStyleSettings.italic || textStyleSettings.underline || 
+                          textStyleSettings.strikethrough;
+    
+    if (hasActiveStyle) {
+        btn.style.borderColor = '#FFD700';
+        btn.style.boxShadow = '0 0 8px rgba(255, 215, 0, 0.5)';
+    } else {
+        btn.style.borderColor = '';
+        btn.style.boxShadow = '';
+    }
+}
+
+// Build the tag wrapper based on current settings
+function buildStyleTags(message) {
+    if (!message.trim()) return message;
+    
+    let openTags = '';
+    let closeTags = '';
+    
+    // Add color tag
+    if (textStyleSettings.color) {
+        openTags += `[${textStyleSettings.color}]`;
+        closeTags = '[/]' + closeTags;
+    }
+    
+    // Add style tags
+    if (textStyleSettings.bold) {
+        openTags += '[b]';
+        closeTags = '[/]' + closeTags;
+    }
+    if (textStyleSettings.italic) {
+        openTags += '[i]';
+        closeTags = '[/]' + closeTags;
+    }
+    if (textStyleSettings.underline) {
+        openTags += '[u]';
+        closeTags = '[/]' + closeTags;
+    }
+    if (textStyleSettings.strikethrough) {
+        openTags += '[s]';
+        closeTags = '[/]' + closeTags;
+    }
+    
+    if (openTags) {
+        return openTags + message + closeTags;
+    }
+    return message;
+}
+
+// Intercept chat form submission to apply styles
+function initTextStyleInterceptor() {
+    const chatForm = document.getElementById('formline');
+    if (!chatForm) return;
+    
+    chatForm.addEventListener('submit', function(e) {
+        const chatline = document.getElementById('chatline');
+        const message = chatline.value;
+        
+        // Don't apply styles to commands (starting with /)
+        if (message.startsWith('/')) return;
+        
+        // Don't apply if message already has style tags
+        if (message.match(/^\[(?:red|blue|green|yellow|orange|pink|lime|aqua|violet|white|silver|brown|b|i|u|s)\]/)) return;
+        
+        // Apply style tags
+        const styledMessage = buildStyleTags(message);
+        if (styledMessage !== message) {
+            chatline.value = styledMessage;
+        }
+    }, true); // Use capture phase to run before CyTube's handler
+}
+
+// Create the text styling panel
 function createFontTagsPanel() {
     const panel = document.createElement('div');
     panel.id = 'font-tags-panel';
     panel.className = 'font-tags-panel';
     panel.style.display = 'none';
     
+    const colors = [
+        { name: 'white', css: 'color: white; background: #333;' },
+        { name: 'yellow', css: 'color: yellow;' },
+        { name: 'orange', css: 'color: orange;' },
+        { name: 'pink', css: 'color: pink;' },
+        { name: 'red', css: 'color: red;' },
+        { name: 'lime', css: 'color: lime;' },
+        { name: 'green', css: 'color: green;' },
+        { name: 'aqua', css: 'color: aqua;' },
+        { name: 'blue', css: 'color: #5555ff;' },
+        { name: 'violet', css: 'color: violet;' },
+        { name: 'brown', css: 'color: brown;' },
+        { name: 'silver', css: 'color: silver;' }
+    ];
+    
+    let colorButtons = colors.map(c => 
+        `<button class="font-tag-btn color-select-btn ${textStyleSettings.color === c.name ? 'active' : ''}" 
+                style="${c.css}" 
+                data-color="${c.name}" 
+                onclick="selectTextColor('${c.name}')">${c.name}</button>`
+    ).join('');
+    
     panel.innerHTML = `
         <div class="font-tags-header">
-            <span>Text Formatting Tags</span>
+            <span>Text Style Settings</span>
             <button class="font-tags-close" onclick="closeFontTagsPanel()">&times;</button>
         </div>
         <div class="font-tags-info">
-            <p>Click a tag to insert it. Use <code>[tag]text[/]</code> format.</p>
-            <p class="font-tags-note">⚠️ <strong>Admin Setup Required:</strong> These tags only work if Chat Filters are configured. <a href="#" onclick="showFilterInstructions(); return false;">View setup instructions</a></p>
+            <p>Select your text style below. It will <strong>auto-apply</strong> to all your messages.</p>
+            <p class="font-tags-note">⚠️ <strong>Admin Setup Required:</strong> Styles only work if Chat Filters are configured. <a href="#" onclick="showFilterInstructions(); return false;">View setup instructions</a></p>
         </div>
         <div class="font-tags-section">
-            <h4>Colors</h4>
-            <div class="font-tags-grid">
-                <button class="font-tag-btn" style="color: white; background: #333;" onclick="insertFontTag('[white]')">[white]</button>
-                <button class="font-tag-btn" style="color: yellow;" onclick="insertFontTag('[yellow]')">[yellow]</button>
-                <button class="font-tag-btn" style="color: orange;" onclick="insertFontTag('[orange]')">[orange]</button>
-                <button class="font-tag-btn" style="color: pink;" onclick="insertFontTag('[pink]')">[pink]</button>
-                <button class="font-tag-btn" style="color: red;" onclick="insertFontTag('[red]')">[red]</button>
-                <button class="font-tag-btn" style="color: lime;" onclick="insertFontTag('[lime]')">[lime]</button>
-                <button class="font-tag-btn" style="color: green;" onclick="insertFontTag('[green]')">[green]</button>
-                <button class="font-tag-btn" style="color: aqua;" onclick="insertFontTag('[aqua]')">[aqua]</button>
-                <button class="font-tag-btn" style="color: #5555ff;" onclick="insertFontTag('[blue]')">[blue]</button>
-                <button class="font-tag-btn" style="color: violet;" onclick="insertFontTag('[violet]')">[violet]</button>
-                <button class="font-tag-btn" style="color: brown;" onclick="insertFontTag('[brown]')">[brown]</button>
-                <button class="font-tag-btn" style="color: silver;" onclick="insertFontTag('[silver]')">[silver]</button>
+            <h4>Text Color</h4>
+            <div class="font-tags-grid" id="color-buttons">
+                ${colorButtons}
             </div>
         </div>
         <div class="font-tags-section">
-            <h4>Styles</h4>
+            <h4>Text Effects</h4>
             <div class="font-tags-grid">
-                <button class="font-tag-btn" style="font-weight: bold;" onclick="insertFontTag('[b]')">[b] Bold</button>
-                <button class="font-tag-btn" style="font-style: italic;" onclick="insertFontTag('[i]')">[i] Italic</button>
-                <button class="font-tag-btn" style="text-decoration: underline;" onclick="insertFontTag('[u]')">[u] Underline</button>
-                <button class="font-tag-btn" style="text-decoration: line-through;" onclick="insertFontTag('[s]')">[s] Strike</button>
-                <button class="font-tag-btn" onclick="insertFontTag('[sp]')">[sp] Spoiler</button>
-                <button class="font-tag-btn" onclick="insertFontTag('[/]')">[/] Close Tag</button>
+                <button class="font-tag-btn effect-toggle-btn ${textStyleSettings.bold ? 'active' : ''}" 
+                        style="font-weight: bold;" 
+                        data-effect="bold" 
+                        onclick="toggleTextEffect('bold')">Bold</button>
+                <button class="font-tag-btn effect-toggle-btn ${textStyleSettings.italic ? 'active' : ''}" 
+                        style="font-style: italic;" 
+                        data-effect="italic" 
+                        onclick="toggleTextEffect('italic')">Italic</button>
+                <button class="font-tag-btn effect-toggle-btn ${textStyleSettings.underline ? 'active' : ''}" 
+                        style="text-decoration: underline;" 
+                        data-effect="underline" 
+                        onclick="toggleTextEffect('underline')">Underline</button>
+                <button class="font-tag-btn effect-toggle-btn ${textStyleSettings.strikethrough ? 'active' : ''}" 
+                        style="text-decoration: line-through;" 
+                        data-effect="strikethrough" 
+                        onclick="toggleTextEffect('strikethrough')">Strike</button>
             </div>
         </div>
         <div class="font-tags-section">
-            <h4>Example</h4>
-            <code class="font-tags-example">[red]Hello [b]World[/][/]</code>
+            <h4>Preview</h4>
+            <div class="style-preview-box" id="style-preview">Your message will look like this</div>
+        </div>
+        <div class="font-tags-section" style="border-bottom: none;">
+            <button class="reset-style-btn" onclick="resetTextStyle()">↺ Reset to Default (No Styling)</button>
         </div>
     `;
     
     document.body.appendChild(panel);
+    updateStylePreview();
+}
+
+// Select a text color
+function selectTextColor(color) {
+    // If clicking the same color, deselect it
+    if (textStyleSettings.color === color) {
+        textStyleSettings.color = null;
+    } else {
+        textStyleSettings.color = color;
+    }
+    
+    // Update button states
+    document.querySelectorAll('.color-select-btn').forEach(btn => {
+        btn.classList.remove('active');
+        if (btn.dataset.color === textStyleSettings.color) {
+            btn.classList.add('active');
+        }
+    });
+    
+    saveTextStyleSettings();
+}
+
+// Toggle a text effect
+function toggleTextEffect(effect) {
+    textStyleSettings[effect] = !textStyleSettings[effect];
+    
+    // Update button state
+    const btn = document.querySelector(`.effect-toggle-btn[data-effect="${effect}"]`);
+    if (btn) {
+        btn.classList.toggle('active', textStyleSettings[effect]);
+    }
+    
+    saveTextStyleSettings();
+}
+
+// Reset all text styling to default
+function resetTextStyle() {
+    textStyleSettings = {
+        color: null,
+        bold: false,
+        italic: false,
+        underline: false,
+        strikethrough: false
+    };
+    
+    // Update all button states
+    document.querySelectorAll('.color-select-btn').forEach(btn => btn.classList.remove('active'));
+    document.querySelectorAll('.effect-toggle-btn').forEach(btn => btn.classList.remove('active'));
+    
+    saveTextStyleSettings();
+}
+
+// Update the preview box
+function updateStylePreview() {
+    const preview = document.getElementById('style-preview');
+    if (!preview) return;
+    
+    let styles = [];
+    
+    if (textStyleSettings.color) {
+        const colorMap = {
+            'white': 'white', 'yellow': 'yellow', 'orange': 'orange', 'pink': 'pink',
+            'red': 'red', 'lime': 'lime', 'green': 'green', 'aqua': 'aqua',
+            'blue': '#5555ff', 'violet': 'violet', 'brown': 'brown', 'silver': 'silver'
+        };
+        styles.push(`color: ${colorMap[textStyleSettings.color] || 'inherit'}`);
+    }
+    
+    if (textStyleSettings.bold) styles.push('font-weight: bold');
+    if (textStyleSettings.italic) styles.push('font-style: italic');
+    if (textStyleSettings.underline) styles.push('text-decoration: underline');
+    if (textStyleSettings.strikethrough) {
+        if (textStyleSettings.underline) {
+            styles.pop(); // Remove underline
+            styles.push('text-decoration: underline line-through');
+        } else {
+            styles.push('text-decoration: line-through');
+        }
+    }
+    
+    preview.style.cssText = styles.join('; ');
+    
+    // Show what tags will be applied
+    const hasStyle = textStyleSettings.color || textStyleSettings.bold || 
+                    textStyleSettings.italic || textStyleSettings.underline || 
+                    textStyleSettings.strikethrough;
+    
+    if (hasStyle) {
+        preview.textContent = 'Your message will look like this';
+    } else {
+        preview.textContent = 'No styling applied (default)';
+        preview.style.cssText = 'color: #888; font-style: italic;';
+    }
 }
 
 function openFontTagsPanel() {
@@ -576,6 +789,15 @@ function openFontTagsPanel() {
     if (!panel) {
         createFontTagsPanel();
         panel = document.getElementById('font-tags-panel');
+    } else {
+        // Refresh button states when reopening
+        document.querySelectorAll('.color-select-btn').forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.color === textStyleSettings.color);
+        });
+        document.querySelectorAll('.effect-toggle-btn').forEach(btn => {
+            btn.classList.toggle('active', textStyleSettings[btn.dataset.effect]);
+        });
+        updateStylePreview();
     }
     panel.style.display = 'flex';
 }
@@ -587,25 +809,6 @@ function closeFontTagsPanel() {
     }
 }
 
-function insertFontTag(tag) {
-    const chatline = document.getElementById('chatline');
-    const start = chatline.selectionStart;
-    const end = chatline.selectionEnd;
-    const text = chatline.value;
-    
-    if (start !== end) {
-        // Text is selected - wrap it with tags
-        const selectedText = text.substring(start, end);
-        const closeTag = '[/]';
-        chatline.value = text.substring(0, start) + tag + selectedText + closeTag + text.substring(end);
-    } else {
-        // No selection - just insert the tag
-        chatline.value = text.substring(0, start) + tag + text.substring(end);
-    }
-    
-    chatline.focus();
-}
-
 function showFilterInstructions() {
     closeFontTagsPanel();
     
@@ -615,7 +818,7 @@ function showFilterInstructions() {
     modal.innerHTML = `
         <div class="filter-instructions-content">
             <div class="filter-instructions-header">
-                <h2>Chat Filters Setup</h2>
+                <h2>Chat Filters Setup (Admin Only)</h2>
                 <button onclick="closeFilterInstructions()">&times;</button>
             </div>
             <div class="filter-instructions-body">
@@ -646,7 +849,7 @@ function showFilterInstructions() {
                         <tr><td>spoiler</td><td>\\[sp\\]([^\\[]+)\\[/\\]</td><td>g</td><td>&lt;span class="spoiler"&gt;$1&lt;/span&gt;</td></tr>
                     </table>
                 </div>
-                <p class="filter-note">After adding these filters, users can type <code>[red]Hello[/]</code> to display red text visible to everyone!</p>
+                <p class="filter-note">After adding these filters, the text styling panel will work for all users!</p>
             </div>
         </div>
     `;
@@ -661,6 +864,12 @@ function closeFilterInstructions() {
         modal.remove();
     }
 }
+
+// Initialize the text style interceptor when document is ready
+$(document).ready(function() {
+    initTextStyleInterceptor();
+    updateFontTagsButtonIndicator();
+});
 
 /* ========== AUTOCOMPLETE FOR EMOTES ========== */
 
