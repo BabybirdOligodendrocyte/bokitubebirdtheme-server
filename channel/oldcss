@@ -1,0 +1,1280 @@
+/* Global scrollbar styling */
+::-webkit-scrollbar {
+    width: 8px;
+    height: 3px;
+    border: 0px solid hsl(0,0%,27%);
+    border-top: 0;
+    border-bottom: 0;
+    display: none;
+}
+
+::-webkit-scrollbar-corner {
+    background-color: rgba(26,26,26,1);
+}
+
+/* Track */
+::-webkit-scrollbar-track {
+    border-radius: 4px;
+    background: var(--primarycolor);
+}
+
+/* Handle */
+::-webkit-scrollbar-thumb {
+    border-radius: 10px;
+    background: #686868;
+}
+
+/* Handle on hover */
+::-webkit-scrollbar-thumb:hover {
+    background: #555; 
+}
+
+/* Font Settings for all text */
+* {
+    font-size: 102%;
+    font-family: "Quicksand", "Ubuntu", Verdana, Tahoma, sans-serif;
+}
+
+#wrap {
+    padding: 0;
+}
+
+#drinkbarwrap, #resizewrap {
+    display: none;
+}
+
+#chatwrap > .profile-box {
+    height: 100vh !important;
+    width: 100vw !important;
+    z-index: 1039 !important;
+    max-height: unset;
+    max-width: unset;
+    position: fixed !important;
+    top: 0px !important;
+    left: 0px !important;
+    padding: unset !important;
+    overflow: visible;
+    border: none;
+}
+
+.fluid > .profile-box {
+    position: absolute !important;
+    top: 50% !important;
+    left: 50% !important;
+    transform: translate(-50%,-50%) !important;
+    z-index: 1020;
+}
+
+div#chanjs-allow-prompt {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%,-50%);
+}
+
+#chanjs-allow-prompt > button.close {
+    display: none;
+}
+
+#mainpage {
+    padding-top: 50px;
+}
+
+/* Top navbar styling */
+.navbar {
+    border: none;
+}
+
+.navbar-inverse .navbar-collapse, .navbar-inverse .navbar-form, .navbar-header {
+    background: var(--primarycolor);
+}
+
+.navbar-inverse .navbar-brand {
+    letter-spacing: 4px;
+}
+
+.navbar-inverse .navbar-brand:focus, .navbar-inverse .navbar-brand:hover, .navbar-inverse .navbar-brand{
+    color: #cee8ff;
+}
+
+.navbar-brand {
+    float: left;
+    padding: 15px;
+    font-size: 18px;
+    line-height: 20px;
+    height: 50px;
+}
+
+.nav .open > a, .nav .open > a:focus, .nav .open > a:hover {
+    background-color: var(--tertiarycolor) !important;
+}
+
+.navbar-nav>li:hover {
+    background-image: var(--tertiarycolor) !important;
+}
+
+.nav > li > a:focus, .nav > li > a:hover {
+    background-color: var(--tertiarycolor) !important;
+}
+
+#content-wrap {
+    display: grid;
+}
+
+/* Note: I think the scrollbar is included in viewport width setting, so the left content overflows if scrollbar styling is enabled */
+#leftcontent {
+    width: var(--leftcontentvw);
+    background-image: var(--bgimageurl);
+    background-repeat: no-repeat;
+    background-attachment: fixed;
+}
+
+/* Shows poll modal on top of video */
+#pollwrap {
+    position: absolute;
+}
+
+.poll-menu {
+    position: absolute;
+    z-index: 1020;
+    max-width: 30%;
+    background: rgba(0, 0, 0, 0.6);
+    border: #bbbbbb;
+    border-style: solid;
+    border-width: thin;
+    border-radius: 16px;
+    box-shadow: 0 4px 30px rgba(0, 0, 0, 0.1);
+    backdrop-filter: blur(3.8px);
+    -webkit-backdrop-filter: blur(3.8px);
+}
+
+.well.active {
+    position: absolute;
+    z-index: 1020;
+}
+
+#video-container {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-content: center;
+    height: calc(100vh - 50px);
+    background-color: black;
+}
+
+#videowrap {
+    width: 100%;
+    padding: 0;
+}
+
+div.embed-responsive * {
+    max-height: calc(100vh - 50px);
+}
+
+/* MOTD glass styling */
+#motdwrap {
+    /* From https://css.glass */
+    background: rgba(28, 30, 34, 0.75);
+    border-radius: 16px;
+    box-shadow: 0 4px 30px rgba(0, 0, 0, 0.1);
+    backdrop-filter: blur(4.8px);
+    -webkit-backdrop-filter: blur(4.8px);
+    border: 1px solid rgba(28, 30, 34, 0.34);
+}
+
+#motdrow {
+    padding-top: 15px;
+}
+
+.row {
+    margin-left: 60px;
+    margin-right: 50px;
+}
+
+#announcements {
+    height: 0;
+    margin-top: 15px;
+}
+
+/* PLaylist and controls positioning */
+#controlsrow {
+    margin-left: 75px;
+}
+
+#rightcontrols {
+    display: flex;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    width: 99% !important;
+}
+
+#playlistrow {
+    margin-left: initial;
+}
+
+#playlistrow ::before {
+    display: initial;
+}
+
+#rightpane {
+    width: var(--leftcontentvw);
+}
+
+#rightcontent {
+    display: flex;
+    flex-direction: column;
+    height: calc(100vh - 50px);
+    width: calc(100vw - var(--leftcontentvw));
+    min-width: 273px;
+    position: fixed;
+    right: 0;
+}
+
+#chatheader {
+    background-color: var(--primarycolor);
+    border-radius: unset;
+}
+
+#chatheader .label {
+    height: unset;
+}
+
+/* Video title styling */
+.currenttitlewrap {
+    overflow: hidden;
+}
+
+#videowrap-header {
+    display: flex;
+    overflow-wrap: break-word;
+    overflow-y: auto;
+    background-color: var(--secondarycolor);
+    padding: 9px 15px 15px 15px;
+    border-radius: 0;
+}
+
+#currenttitle {
+    overflow-x: hidden;
+    overflow-y: scroll;
+    max-height: 40px;
+}
+
+#usercount {
+    padding-left: 20px;
+    pointer-events: none;
+}
+
+/* Show users horizontally and show scrollbar only for this element if overflowing */
+#userlist {
+    height: 30px !important;
+    min-height: 30px;
+    width: inherit;
+    min-width: inherit;
+    float: unset;
+    display: flex;
+    overflow-x: scroll;
+    overflow-y: hidden;
+    background-color: var(--primarycolor);
+}
+
+#userlist::-webkit-scrollbar {
+    display: block;
+}
+
+#userlist, #messagebuffer, #chatheader, #videowrap-header{
+    border: initial;
+}
+
+.userlist_item {
+    display: flex;
+    padding-left: 15px;
+    padding-top: 3px;
+}
+
+.userlist_owner {
+    font-size: small;
+}
+
+/* Chat display size and styling */
+#messagebuffer {
+    height: unset !important;
+    flex-grow: 1;
+    padding-left: 10px;
+    padding-right: 10px;
+    background-color: var(--secondarycolor);
+}
+
+#messagebuffer > div {
+    position: relative;
+    border-radius: 0.5rem;
+    padding: 0.2rem;
+    padding-right: 5rem;
+    margin-bottom: 10px;
+}
+
+#messagebuffer > div:last-child {
+    padding-bottom: 0;
+    margin-bottom: 1.25rem;
+}
+
+/* Chat messages styling */
+.server-whisper {
+    padding-left: 100px;
+    padding-bottom: 0px;
+}
+
+.server-msg-disconnect, .server-msg-reconnect{
+    padding-bottom: 0px !important;
+    border-radius: 6px;
+}
+
+.label {
+    display: flex;
+}
+
+.username {
+    display: flex;
+}
+
+.timestamp {
+    position: absolute;
+    top: 0.6rem;
+    right: 0;
+    color: rgb(143, 143, 143);
+    visibility: visible;
+}
+
+.channel-emote {
+    max-width: 80px;
+    max-height: 80px;
+}
+
+.emote-big {
+    max-width: 120px;
+    max-height: 120px;
+}
+
+.emote-big > img {
+    max-width: -webkit-fill-available;
+    max-height: -webkit-fill-available;
+}
+
+.nick-highlight {
+    border-radius: 8px;
+}
+
+/* Chat enter message box styling */
+#rightcontent > form {
+    background-color: var(--primarycolor);
+}
+
+#chatline {
+    height: 3.6rem;
+    max-height: 10rem;
+    margin: 10px 0;
+    border-radius: 10px;
+    resize: none;
+}
+
+#chatline::placeholder {
+    font-style: italic;
+    opacity: .5;
+    color: grey;
+}
+
+.form-control {
+    border: initial;
+    border-radius: 8px;
+}
+
+/* Buttons styling */
+#leftcontrols {
+    background-color: var(--primarycolor);
+    display: flex;
+    padding: 6px;
+    min-height: 42px;
+    width: inherit;
+    min-width: inherit;
+}
+
+.btn {
+    background-image: none;
+    background-color: var(--tertiarycolor);
+}
+
+.btn:hover {
+    filter: brightness(0.5);
+    /* Theres a better way to apply the opacity filter with this, but it cant work for now
+    -webkit-backdrop-filter: opacity(0.5);
+    backdrop-filter: opacity(0.5);
+    */
+}
+
+.btn-danger {
+    color: #fff;
+    background-color: #ee5f5b;
+}
+
+.btn-danger:hover {
+    filter: brightness(0.5);
+}
+
+#jump-btn {
+    color: white;
+}
+
+#newpollbtn {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+#emotes-btn {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+#afk-btn {
+    margin-left: auto;
+}
+
+/* Channel password */
+#needpw {
+    top: 50% !important;
+    left: 50% !important;
+    transform: translate(-50%, -50%);
+}
+
+#needpw input {
+    background-color: var(--secondarycolor) !important;
+}
+
+/* Footer  styling */
+.container .credit {
+    margin: 10px 0;
+    text-align: center;
+}
+
+.text-muted {
+    color: #7a8288;
+}
+
+#footer {
+    font-size: 11px;
+}
+
+/* Fix video clipping on rightcontent min-width */
+@media only screen and (max-width: 1264px) {
+    #leftcontent{
+        width: calc(100vw - 273px);
+    }
+}
+
+/* Add media query for smaller screens */
+@media only screen and (max-width: 768px) {
+    /* Disappear unnecessary chat elements when screen gets too short */
+    @media only screen and (max-height: 560px) {
+        #userlist, #chatheader {
+            display: none;
+        }
+    }
+
+    @media only screen and (max-height: 900px) {
+        #currenttitlewrap {
+            display: none;
+        }
+    }
+
+    #leftcontent {
+        width: 100vw;
+    }
+
+    #videowrap {
+        padding-top: 0px;
+        padding-bottom: 0px;
+        margin-bottom: 0px;
+    }
+    
+    /* Not sure if theres a better way of calculating screen size to give to video and chat, but this works */
+    #video-container {
+        position: fixed;
+        height: calc(100vw / 16 * 9);
+        width: 100vw;
+        z-index: 1000;
+    }
+
+    #emotewrap {
+        position: fixed;
+        top: calc(139vw / 16 * 9) !important;
+        left: -4vw !important;
+    }
+
+    #emotespanel {
+        display: flex;
+        flex-wrap: wrap;
+        flex-direction: column;
+        z-index: 999;
+    }
+
+    #chatwrap {
+        height: 485px !important;
+        width: 100%;
+    }
+
+    #messagebuffer {
+        height: 336px !important;
+    }
+
+    
+
+    #rightcontent {
+        position: initial;
+        margin-top: calc(100vw / 16 * 9);
+        height: calc((var(--vh, 1vh) * 100 - 100vw / 16 * 9) - 10px);
+        width: 100%;
+    }
+
+    #announcements {
+        display: contents;
+    }
+
+    .row {
+        margin-left: 0px;
+        margin-right: 0px;
+    }
+
+    #controlsrow {
+        margin-left: 15px;
+        margin-right: 15px;
+    }
+
+    #playlistrow {
+        margin-right: 50px;
+    }
+
+    #rightpane {
+        width: 108%;
+    }
+}
+
+/* The following is imported from older code with minor changes */
+
+/* Modal styling */
+.modal-body::before {
+    content: "";
+    background-image: var(--dialogbgimageurl);
+    background-size: contain;
+    background-repeat: no-repeat;
+    background-position-y: bottom;
+    position: absolute;
+    top: 0px;
+    right: 0px;
+    bottom: 0px;
+    left: 0px;
+    opacity: 0.5;
+}
+	
+.modal-backdrop.in {
+    opacity: .3
+}
+
+.tab-content > .tab-pane,
+.form-group,
+.pm-history-content {
+    position: relative;
+}
+
+textarea.form-control {
+    height: 500px;
+}
+
+/* Queue decoration */
+/* .queue_active {
+    background-image: linear-gradient(#eba48cab, #c67148a8, #683424ad);
+    background-repeat: no-repeat
+}
+.queue_entry {
+    border-color: #053851b0;
+    background-color: #6b313d8a;
+    font-size: 75%;
+}
+.videolist {
+    background-image: url();
+    background-size: contain;
+    background-repeat: no-repeat;
+    background-position: center bottom;
+} */
+
+.nick-hover {
+    background-color: rgba(0, 0, 0, 0)
+}
+
+/* Styling for custom emotes panel */
+
+.emotewrap {
+    position: absolute;
+    cursor: move;
+    top: 17%;
+    left: -4%;
+}
+
+/* FIXME: Make the floating emote panel look better on mobile. */
+.ep__floating {
+    position: fixed;
+    z-index: 1020;
+    height: 28% !important;
+    overflow: scroll;
+    text-align: center;
+    width: 380px;
+    margin: 10px 20px 0 30px;
+    opacity: 1;
+    /* From https://css.glass */
+    background: rgba(0, 0, 0, 0.27);
+    border-radius: 16px;
+    border: #bbbbbb;
+    border-style: solid;
+    border-width: thin;
+    box-shadow: 0 4px 30px rgba(0, 0, 0, 0.1);
+    backdrop-filter: blur(3.8px);
+    -webkit-backdrop-filter: blur(3.8px);
+}
+
+.ep__fixed {
+    z-index: 1020;
+    min-height: 23% !important;
+    height: 23% !important;
+    width: 100%;
+    margin: 0;
+    overflow: scroll;
+    text-align: center;
+    border: var(--primarycolor);
+    border-style: none none solid none;
+    border-width: thick;
+    background-color: var(--secondarycolor);
+}
+
+#emotespanel img {
+    margin: 5px;
+    max-height: 50px;
+    cursor: pointer
+}
+
+#emotesbtnwrap {
+    text-align: center;
+    margin: 5px
+}
+
+#emotespanel .alert {
+    text-align: left;
+    margin: 5px -10px
+}
+
+#cs-csspreview {
+    position: absolute;
+    margin-left: 10px;
+    margin-top: 10px
+}
+
+/* Custom scrolling banner */
+.banner-slideshow {
+    height: 215px;
+    max-width: 100%;
+    margin: 0 auto;
+    border-style: solid;
+    position: relative;
+    overflow: hidden;
+    transform: translate3d(0, 0, 0);
+    border-color: #916907
+}
+
+.banner-slideshow > div {
+    height: 400px;
+    width: 5066px;
+    background: var(--bannerimg);
+    background-size: 50%;
+    background-position: center;
+    position: absolute;
+    top: 0;
+    left: 0;
+    height: 100%;
+    transform: translate3d(0, 0, 0)
+}
+
+.banner-slideshow .mover-1 {
+    animation: moveSlideshow 20s linear infinite
+}
+
+@keyframes moveSlideshow {
+    100% {
+        transform: translateX(-50%)
+    }
+}
+
+.autocomplete-items {
+    position: absolute;
+    max-height: 150px;
+    overflow: scroll;
+    border: 1px solid #d4d4d4;
+    border-left: none;
+    border-right: none;
+    border-bottom: none;
+    z-index: 99;
+    /*position the autocomplete items to be the same width as the container:*/
+    bottom: 100px;
+    left: 0;
+    right: 0;
+    /* From https://css.glass */
+    background: rgba(0, 0, 0, 0.67);
+    border-style: none;
+    box-shadow: 0 4px 30px rgba(0, 0, 0, 0.1);
+    backdrop-filter: blur(7.8px);
+    -webkit-backdrop-filter: blur(7.8px);
+}
+  
+.autocomplete-items div {
+    display: flex;
+    align-items: center;
+    padding: 0 10px;
+    cursor: pointer;
+    background: transparent; 
+    border: none;
+}
+
+/*when hovering an item:*/
+.autocomplete-items div:hover {
+    background-color: #4a4a4a; 
+}
+
+#autocomplete-image {
+    margin-left: auto;
+    display: block;
+    height: 42px;
+}
+
+/*when navigating through the items using the arrow keys:*/
+.autocomplete-active {
+    background-color: var(--tertiarycolor) !important; 
+    color: #ffffff; 
+}
+
+/* Reply styling */
+.reply {
+    position: relative;
+    background-color: var(--tertiarycolor);
+    padding: 0.5rem;
+    padding-top: 0;
+    margin-bottom: 0.4rem;
+    border: gray 1px solid;
+    border-radius: 1rem 1rem 1rem 0;
+    overflow: hidden;
+    max-height: 10rem;
+    width: 98%;
+    transition-property: background-color;
+    transition-timing-function: cubic-bezier(.4,0,.2,1);
+    transition-duration: 75ms;
+    cursor: pointer;
+}
+
+.reply:hover {
+    background-color: var(--secondarycolor);
+}
+
+.reply:hover::after {
+    background-image: unset;
+}
+
+.reply::after {
+    content: "";
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 1rem;
+    background-image: linear-gradient(to bottom, transparent, var(--tertiarycolor));
+}
+
+.reply-header {
+    font-size: small;
+}
+
+.reply-msg {
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 3;
+    -webkit-user-select: none;
+    -ms-user-select: none;
+    user-select: none;
+    font-size: small;
+    color: white;
+}
+
+.reply-button {
+    visibility: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: absolute;
+    top: 0;
+    right: 0;
+    height: 2.5rem;
+    width: 2.5rem;
+    background: transparent;
+    padding: 0;
+    border: none;
+    border-radius: 10000px;
+    transition-property: background-color;
+    transition-timing-function: cubic-bezier(.4,0,.2,1);
+    transition-duration: 75ms;
+}
+
+.reply-button:hover {
+    background-color: var(--tertiarycolor);
+}
+
+#messagebuffer > div:hover .reply-button {
+    visibility: visible;
+}
+
+#messagebuffer > div:not(:has(> .server-whisper)):hover .timestamp {
+    visibility: hidden;
+}
+ 
+.reply-icon {
+    display: block;
+    height: 2.5rem;
+    width: 2.5rem;
+    background-image: url(data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0OCIgaGVpZ2h0PSI0OCI+PHBhdGggZD0iTTIwIDE4di04TDYgMjRsMTQgMTR2LTguMmMxMCAwIDE3IDMuMiAyMiAxMC4yLTItMTAtOC0yMC0yMi0yMnoiIGZpbGw9IiNjMmMyYzIiLz48cGF0aCBmaWxsPSJub25lIiBkPSJNMCAwaDQ4djQ4SDB6Ii8+PC9zdmc+);
+    background-size: 2.5rem 2.5rem;
+    pointer-events: none;
+
+	/* Emote Modal Overlay */
+	.emote-modal {
+		    display: none;
+		    position: fixed;
+		    z-index: 2000;
+		    left: 0;
+		    top: 0;
+		    width: 100%;
+		    height: 100%;
+		    background-color: rgba(0, 0, 0, 0.8);
+		    justify-content: center;
+		    align-items: center;
+		    flex-wrap: wrap;
+		    overflow-y: auto;
+	}
+
+	.emote-modal-content {
+		    background-color: var(--secondarycolor);
+		    padding: 20px;
+		    border-radius: 10px;
+		    max-width: 90%;
+		    max-height: 90vh;
+		    width: 100%;
+		    display: flex;
+		    flex-direction: column;
+		    box-shadow: 0 4px 30px rgba(0, 0, 0, 0.3);
+	}
+
+	.emote-modal-header {
+		    display: flex;
+		    justify-content: space-between;
+		    align-items: center;
+		    margin-bottom: 20px;
+		    border-bottom: 2px solid var(--tertiarycolor);
+		    padding-bottom: 10px;
+	}
+
+	.emote-modal-header h2 {
+		    margin: 0;
+		    color: white;
+	}
+
+	.emote-modal-close {
+		    background: none;
+		    border: none;
+		    font-size: 32px;
+		    color: white;
+		    cursor: pointer;
+		    padding: 0;
+		    width: 40px;
+		    height: 40px;
+		    display: flex;
+		    align-items: center;
+		    justify-content: center;
+	}
+
+	.emote-modal-close:hover {
+		    color: var(--tertiarycolor);
+	}
+
+	.emote-modal-body {
+		    display: grid;
+		    grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+		    gap: 15px;
+		    overflow-y: auto;
+		    max-height: 70vh;
+	}
+
+	.emote-card {
+		    display: flex;
+		    flex-direction: column;
+		    align-items: center;
+		    padding: 10px;
+		    background-color: var(--primarycolor);
+		    border-radius: 8px;
+		    transition: all 0.3s ease;
+		    cursor: pointer;
+	}
+
+	.emote-card:hover {
+		    background-color: var(--tertiarycolor);
+		    transform: scale(1.05);
+	}
+
+	.emote-card-content {
+		    position: relative;
+		    width: 100%;
+		    display: flex;
+		    justify-content: center;
+		    align-items: center;
+		    margin-bottom: 8px;
+	}
+
+	.emote-card-image {
+		    max-width: 80px;
+		    max-height: 80px;
+		    cursor: pointer;
+	}
+
+	.emote-favorite-btn {
+		    position: absolute;
+		    top: -8px;
+		    right: -8px;
+		    background-color: var(--primarycolor);
+		    border: 2px solid var(--tertiarycolor);
+		    color: #FFD700;
+		    border-radius: 50%;
+		    width: 28px;
+		    height: 28px;
+		    padding: 0;
+		    cursor: pointer;
+		    font-size: 16px;
+		    display: flex;
+		    align-items: center;
+		    justify-content: center;
+		    transition: all 0.2s ease;
+	}
+
+	.emote-favorite-btn:hover {
+		    background-color: var(--tertiarycolor);
+		    transform: scale(1.1);
+	}
+
+	.emote-favorite-btn.favorited {
+		    background-color: #FFD700;
+		    color: var(--primarycolor);
+	}
+
+	.emote-card-name {
+		    margin: 0;
+		    font-size: 12px;
+		    color: white;
+		    text-align: center;
+		    word-break: break-word;
+		    width: 100%;
+	}
+
+	/* Responsive design for smaller screens */
+	@media only screen and (max-width: 768px) {
+	    .emote-modal-content {
+			        max-width: 95%;
+			        max-height: 95vh;
+		}
+
+	    .emote-modal-body {
+			        grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+			        gap: 10px;
+			        max-height: 80vh;
+		}
+
+	    .emote-card-image {
+			        max-width: 60px;
+			        max-height: 60px;
+		}
+}
+}Page_Down
+
+
+/* ========== TEXT STYLES MANAGER ========== */
+
+#text-styles-btn {
+	    color: #FFD700;
+	    border: 1px solid #FFD700;
+	    transition: all 0.3s ease;
+}
+
+#text-styles-btn:hover {
+	    background-color: #FFD700;
+	    color: #000;
+}
+
+.text-styles-modal {
+	    display: none;
+	    position: fixed;
+	    z-index: 9999;
+	    left: 0;
+	    top: 0;
+	    width: 100%;
+	    height: 100%;
+	    background-color: rgba(0, 0, 0, 0.8);
+	    justify-content: center;
+	    align-items: center;
+	    flex-wrap: wrap;
+	    padding: 20px;
+}
+
+.text-styles-modal-content {
+	    background-color: var(--secondarycolor, #2e2e2e);
+	    border: 2px solid var(--primarycolor, #000);
+	    border-radius: 8px;
+	    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+	    max-width: 500px;
+	    width: 100%;
+	    max-height: 90vh;
+	    overflow-y: auto;
+	    color: #fff;
+}
+
+.text-styles-modal-header {
+	    display: flex;
+	    justify-content: space-between;
+	    align-items: center;
+	    padding: 20px;
+	    border-bottom: 1px solid var(--tertiarycolor, #627b83);
+}
+
+.text-styles-modal-header h2 {
+	    margin: 0;
+	    font-size: 1.5em;
+	    color: #FFD700;
+}
+
+.text-styles-modal-close {
+	    background: none;
+	    border: none;
+	    color: #fff;
+	    font-size: 1.5em;
+	    cursor: pointer;
+	    padding: 0;
+	    width: 30px;
+	    height: 30px;
+	    display: flex;
+	    align-items: center;
+	    justify-content: center;
+	    border-radius: 50%;
+	    transition: background-color 0.3s;
+}
+
+.text-styles-modal-close:hover {
+	    background-color: rgba(255, 255, 255, 0.1);
+}
+
+.text-styles-modal-body {
+	    padding: 20px;
+}
+
+.style-control-group {
+	    margin-bottom: 20px;
+	    display: flex;
+	    flex-direction: column;
+}
+
+.style-control-group label {
+	    margin-bottom: 8px;
+	    font-weight: bold;
+	    color: #FFD700;
+	    font-size: 0.95em;
+}
+
+.style-input {
+	    padding: 8px;
+	    background-color: var(--primarycolor, #000);
+	    color: #fff;
+	    border: 1px solid var(--tertiarycolor, #627b83);
+	    border-radius: 4px;
+	    font-size: 0.95em;
+	    font-family: inherit;
+}
+
+.style-input:focus {
+	    outline: none;
+	    border-color: #FFD700;
+	    box-shadow: 0 0 5px rgba(255, 215, 0, 0.3);
+}
+
+.style-input select {
+	    cursor: pointer;
+}
+
+.style-input option {
+	    background-color: var(--primarycolor, #000);
+	    color: #fff;
+}
+
+.color-picker-group {
+	    display: flex;
+	    gap: 10px;
+	    align-items: center;
+}
+
+.color-input {
+	    width: 60px;
+	    height: 40px;
+	    cursor: pointer;
+	    border: 1px solid var(--tertiarycolor, #627b83) !important;
+	    padding: 2px !important;
+}
+
+.color-preview {
+	    width: 40px;
+	    height: 40px;
+	    border-radius: 4px;
+	    border: 1px solid var(--tertiarycolor, #627b83);
+	    display: inline-block;
+}
+
+.effects-grid {
+	    display: grid;
+	    grid-template-columns: 1fr 1fr;
+	    gap: 10px;
+}
+
+.effect-checkbox {
+	    display: flex;
+	    align-items: center;
+	    cursor: pointer;
+	    padding: 8px;
+	    background-color: rgba(255, 255, 255, 0.05);
+	    border: 1px solid var(--tertiarycolor, #627b83);
+	    border-radius: 4px;
+	    transition: background-color 0.3s;
+}
+
+.effect-checkbox:hover {
+	    background-color: rgba(255, 215, 0, 0.1);
+}
+
+.effect-checkbox input[type="checkbox"] {
+	    margin-right: 8px;
+	    cursor: pointer;
+	    accent-color: #FFD700;
+}
+
+.effect-checkbox span {
+	    font-size: 0.9em;
+	    color: #fff;
+}
+
+.style-preview-group {
+	    margin-top: 20px;
+	    padding-top: 20px;
+	    border-top: 1px solid var(--tertiarycolor, #627b83);
+}
+
+.style-preview-group label {
+	    display: block;
+	    margin-bottom: 10px;
+}
+
+.text-style-preview {
+	    padding: 15px;
+	    background-color: rgba(0, 0, 0, 0.3);
+	    border: 1px solid var(--tertiarycolor, #627b83);
+	    border-radius: 4px;
+	    min-height: 50px;
+	    word-wrap: break-word;
+	    white-space: normal;
+	    animation: preview-glow 2s ease-in-out infinite alternate;
+}
+
+@keyframes preview-glow {
+	    from { opacity: 0.9; }
+	    to { opacity: 1; }
+}
+
+.style-modal-buttons {
+	    display: flex;
+	    gap: 10px;
+	    margin-top: 20px;
+	    justify-content: flex-end;
+}
+
+.style-modal-buttons button {
+	    padding: 8px 16px;
+	    font-size: 0.9em;
+	    border-radius: 4px;
+	    border: 1px solid var(--tertiarycolor, #627b83);
+	    cursor: pointer;
+	    transition: all 0.3s;
+}
+
+.style-modal-buttons .btn-primary {
+	    background-color: #FFD700;
+	    color: #000;
+	    font-weight: bold;
+}
+
+.style-modal-buttons .btn-primary:hover {
+	    background-color: #FFC700;
+}
+
+.style-modal-buttons .btn-default {
+	    background-color: var(--primarycolor, #000);
+	    color: #fff;
+}
+
+.style-modal-buttons .btn-default:hover {
+	    background-color: var(--tertiarycolor, #627b83);
+}
+
+@media (max-width: 480px) {
+	    .text-styles-modal {
+			        padding: 10px;
+		}
+
+    .text-styles-modal-content {
+		        max-width: 100%;
+		        max-height: 80vh;
+	}
+
+    .effects-grid {
+		        grid-template-columns: 1fr;
+	}
+
+    .style-modal-buttons {
+		        flex-direction: column;
+	}
+
+    .style-modal-buttons button {
+		        width: 100%;
+	}
+}
+
+.text-styles-modal-content::-webkit-scrollbar {
+	    width: 8px;
+}
+
+.text-styles-modal-content::-webkit-scrollbar-track {
+	    background: var(--primarycolor, #000);
+}
+
+.text-styles-modal-content::-webkit-scrollbar-thumb {
+	    background: var(--tertiarycolor, #627b83);
+	    border-radius: 4px;
+}
+
+.text-styles-modal-content::-webkit-scrollbar-thumb:hover {
+	    background: #FFD700;
+}
