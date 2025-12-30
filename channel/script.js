@@ -991,6 +991,11 @@ function buildStyleTags(msg) {
     return open ? open + msg + close : msg;
 }
 
+function wrapTextWithStyle(text) {
+    if (!text.trim()) return text;
+    return buildStyleTags(text);
+}
+
 function applyStyleToMessage() {
     var c = document.getElementById('chatline');
     if (!c) return;
@@ -1001,13 +1006,63 @@ function applyStyleToMessage() {
     if (!msg.trim()) return;
     // Skip if already has tags (including new ones)
     if (msg.match(/^\[(?:red|blue|green|yellow|orange|pink|lime|aqua|violet|white|silver|brown|b|i|u|s|rainbow|fire|ocean|sunset|neon|forest|gold|ice|glow-\w+|shake|pulse|bounce|wave|flicker|spin)\]/)) return;
+    
     // Check if any style is active
     var hasStyle = textStyleSettings.color || textStyleSettings.gradient || textStyleSettings.bold || 
                    textStyleSettings.italic || textStyleSettings.underline || textStyleSettings.strikethrough ||
                    textStyleSettings.glow || textStyleSettings.animation;
     if (!hasStyle) return;
-    // Apply tags
-    c.value = buildStyleTags(msg);
+    
+    // Get list of emote names from channel
+    var emoteNames = [];
+    if (typeof CHANNEL !== 'undefined' && CHANNEL.emotes && CHANNEL.emotes.length > 0) {
+        emoteNames = CHANNEL.emotes.map(function(e) { return e.name; });
+    }
+    
+    // If no emotes defined or none in message, just wrap the whole thing
+    if (emoteNames.length === 0) {
+        c.value = buildStyleTags(msg);
+        return;
+    }
+    
+    // Check if message contains any emotes
+    var containsEmote = false;
+    for (var i = 0; i < emoteNames.length; i++) {
+        if (msg.indexOf(emoteNames[i]) !== -1) {
+            containsEmote = true;
+            break;
+        }
+    }
+    
+    if (!containsEmote) {
+        // No emotes, wrap entire message
+        c.value = buildStyleTags(msg);
+        return;
+    }
+    
+    // Build a regex to find all emotes in the message
+    // Escape special regex characters in emote names
+    var escapedEmotes = emoteNames.map(function(name) {
+        return name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    });
+    var emoteRegex = new RegExp('(' + escapedEmotes.join('|') + ')', 'g');
+    
+    // Split message by emotes, keeping the emotes in the result
+    var parts = msg.split(emoteRegex);
+    
+    // Process each part: wrap non-emote text with style, leave emotes alone
+    var result = parts.map(function(part) {
+        if (!part) return '';
+        // Check if this part is an emote
+        if (emoteNames.indexOf(part) !== -1) {
+            return part; // Leave emote unwrapped
+        } else if (part.trim()) {
+            return buildStyleTags(part); // Wrap text with style
+        }
+        return part; // Return whitespace as-is
+    }).join('');
+    
+    c.value = result;
 }
 
 function initStyleInterceptor() {
