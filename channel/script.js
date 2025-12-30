@@ -1049,19 +1049,25 @@ function applyStyleToMessage() {
     var tags = buildStyleTags('');
     
     // Process each part: wrap non-emote text with style, leave emotes alone
-    var result = parts.map(function(part) {
-        if (!part) return '';
+    var resultParts = [];
+    for (var i = 0; i < parts.length; i++) {
+        var part = parts[i];
+        if (!part) continue;
+        
         // Check if this part is an emote
         if (emoteNames.indexOf(part) !== -1) {
-            return ' ' + part + ' '; // Add spaces around emote to ensure it's recognized
+            resultParts.push('  ' + part + '  '); // Double spaces around emote for word boundaries
         } else if (part.trim()) {
-            return tags.open + part + tags.close; // Wrap text with style
+            // Wrap text with style, but trim it first
+            resultParts.push(tags.open + part.trim() + tags.close);
         }
-        return part; // Return whitespace as-is
-    }).join('');
+    }
     
-    // Clean up any double spaces
-    result = result.replace(/  +/g, ' ').trim();
+    // Join parts (no additional space since emotes already have spacing)
+    var result = resultParts.join('');
+    
+    // Clean up excessive spaces but keep at least one around emotes
+    result = result.replace(/ {3,}/g, '  ').trim();
     
     c.value = result;
 }
