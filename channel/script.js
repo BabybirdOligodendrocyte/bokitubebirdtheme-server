@@ -163,7 +163,14 @@ var emoteFavorites = JSON.parse(localStorage.getItem('emoteFavorites')) || [];
 var currentEmotePage = 0;
 var emotesPerPage = 50;
 var textStyleSettings = JSON.parse(localStorage.getItem('textStyleSettings')) || {
-    color: null, bold: false, italic: false, underline: false, strikethrough: false
+    color: null,
+    gradient: null,
+    bold: false,
+    italic: false,
+    underline: false,
+    strikethrough: false,
+    glow: null,
+    animation: null
 };
 
 // Inject popup CSS with !important to override any conflicts
@@ -221,8 +228,62 @@ var textStyleSettings = JSON.parse(localStorage.getItem('textStyleSettings')) ||
             flex-direction: column !important;
         }
         #textstyle-popup {
-            width: 420px !important;
+            width: 450px !important;
             max-width: 95vw !important;
+            max-height: 85vh !important;
+            display: flex !important;
+            flex-direction: column !important;
+        }
+        .textstyle-popup-scroll {
+            flex: 1 !important;
+            overflow-y: auto !important;
+            max-height: 60vh !important;
+        }
+        /* Animation preview classes */
+        .text-shake {
+            animation: shake 0.5s ease-in-out infinite !important;
+        }
+        .text-pulse {
+            animation: pulse 1s ease-in-out infinite !important;
+        }
+        .text-bounce {
+            animation: bounce 0.6s ease infinite !important;
+        }
+        .text-wave {
+            animation: wave 2s ease-in-out infinite !important;
+        }
+        .text-flicker {
+            animation: flicker 0.3s ease-in-out infinite !important;
+        }
+        .text-spin {
+            animation: spin 2s linear infinite !important;
+            display: inline-block !important;
+        }
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            25% { transform: translateX(-3px); }
+            75% { transform: translateX(3px); }
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.7; transform: scale(1.05); }
+        }
+        @keyframes bounce {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-5px); }
+        }
+        @keyframes wave {
+            0%, 100% { transform: translateY(0) rotate(0deg); }
+            25% { transform: translateY(-3px) rotate(-2deg); }
+            75% { transform: translateY(3px) rotate(2deg); }
+        }
+        @keyframes flicker {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
         }
         #filter-popup {
             width: 700px !important;
@@ -642,24 +703,78 @@ function createTextStylePopup() {
     var o = document.createElement('div');
     o.id = 'textstyle-popup-overlay';
     o.onclick = function(e) { if (e.target === o) closeTextStylePopup(); };
+    
+    // Basic colors
     var colors = ['white','yellow','orange','pink','red','lime','green','aqua','blue','violet','brown','silver'];
     var cbtns = colors.map(function(c) {
         var act = textStyleSettings.color === c ? ' active' : '';
         var st = 'color:' + (c === 'blue' ? '#55f' : c) + ';' + (c === 'white' ? 'background:#333;' : '');
         return '<button class="textstyle-btn color-btn' + act + '" data-color="' + c + '" style="' + st + '" onclick="selectStyleColor(\'' + c + '\')">' + c + '</button>';
     }).join('');
+    
+    // Gradients
+    var gradients = [
+        {name: 'rainbow', label: 'Rainbow', style: 'background:linear-gradient(90deg,#ff0000,#ff7700,#ffff00,#00ff00,#0077ff,#8b00ff);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;'},
+        {name: 'fire', label: 'Fire', style: 'background:linear-gradient(90deg,#ff0000,#ff5500,#ffaa00,#ffcc00);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;'},
+        {name: 'ocean', label: 'Ocean', style: 'background:linear-gradient(90deg,#00ffff,#0088ff,#0044aa,#002255);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;'},
+        {name: 'sunset', label: 'Sunset', style: 'background:linear-gradient(90deg,#ff6b6b,#ffa500,#ffdb58,#ff6b9d);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;'},
+        {name: 'neon', label: 'Neon', style: 'background:linear-gradient(90deg,#ff00ff,#00ffff,#ff00ff);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;'},
+        {name: 'forest', label: 'Forest', style: 'background:linear-gradient(90deg,#228b22,#32cd32,#90ee90,#006400);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;'},
+        {name: 'gold', label: 'Gold', style: 'background:linear-gradient(90deg,#ffd700,#ffec8b,#daa520,#b8860b);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;'},
+        {name: 'ice', label: 'Ice', style: 'background:linear-gradient(90deg,#e0ffff,#87ceeb,#add8e6,#b0e0e6);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;'}
+    ];
+    var gbtns = gradients.map(function(g) {
+        var act = textStyleSettings.gradient === g.name ? ' active' : '';
+        return '<button class="textstyle-btn gradient-btn' + act + '" data-gradient="' + g.name + '" style="' + g.style + 'font-weight:bold;" onclick="selectStyleGradient(\'' + g.name + '\')">' + g.label + '</button>';
+    }).join('');
+    
+    // Glow effects
+    var glows = [
+        {name: 'glow-white', label: '✦ White', style: 'text-shadow:0 0 10px #fff,0 0 20px #fff,0 0 30px #fff;color:#fff;'},
+        {name: 'glow-red', label: '✦ Red', style: 'text-shadow:0 0 10px #f00,0 0 20px #f00,0 0 30px #f00;color:#ff6666;'},
+        {name: 'glow-blue', label: '✦ Blue', style: 'text-shadow:0 0 10px #00f,0 0 20px #00f,0 0 30px #0ff;color:#66f;'},
+        {name: 'glow-green', label: '✦ Green', style: 'text-shadow:0 0 10px #0f0,0 0 20px #0f0,0 0 30px #0f0;color:#6f6;'},
+        {name: 'glow-gold', label: '✦ Gold', style: 'text-shadow:0 0 10px #ffd700,0 0 20px #ffa500,0 0 30px #ff8c00;color:#ffd700;'},
+        {name: 'glow-pink', label: '✦ Pink', style: 'text-shadow:0 0 10px #ff69b4,0 0 20px #ff1493,0 0 30px #ff69b4;color:#ff69b4;'},
+        {name: 'glow-rainbow', label: '✦ Rainbow', style: 'text-shadow:0 0 5px #f00,0 0 10px #ff0,0 0 15px #0f0,0 0 20px #0ff,0 0 25px #00f,0 0 30px #f0f;color:#fff;'}
+    ];
+    var glowbtns = glows.map(function(g) {
+        var act = textStyleSettings.glow === g.name ? ' active' : '';
+        return '<button class="textstyle-btn glow-btn' + act + '" data-glow="' + g.name + '" style="' + g.style + '" onclick="selectStyleGlow(\'' + g.name + '\')">' + g.label + '</button>';
+    }).join('');
+    
+    // Animations
+    var animations = [
+        {name: 'shake', label: '〰️ Shake'},
+        {name: 'pulse', label: '💗 Pulse'},
+        {name: 'bounce', label: '⬆️ Bounce'},
+        {name: 'wave', label: '🌊 Wave'},
+        {name: 'flicker', label: '⚡ Flicker'},
+        {name: 'spin', label: '🔄 Spin'}
+    ];
+    var animbtns = animations.map(function(a) {
+        var act = textStyleSettings.animation === a.name ? ' active' : '';
+        return '<button class="textstyle-btn anim-btn' + act + '" data-anim="' + a.name + '" onclick="selectStyleAnimation(\'' + a.name + '\')">' + a.label + '</button>';
+    }).join('');
+    
     var p = document.createElement('div');
     p.id = 'textstyle-popup';
-    p.innerHTML = '<div class="popup-header"><span>Text Style Settings</span><button class="popup-close" onclick="closeTextStylePopup()">×</button></div>' +
-        '<div class="textstyle-info"><p style="margin:0 0 8px">Select style below. It <strong>auto-applies</strong> to all messages.</p><p style="margin:0;color:#fc0">⚠️ Admin must set up <a href="#" onclick="showFilterPopup();return false;">Chat Filters</a> first.</p></div>' +
-        '<div class="textstyle-section"><h4>Color</h4><div class="textstyle-grid">' + cbtns + '</div></div>' +
-        '<div class="textstyle-section"><h4>Effects</h4><div class="textstyle-grid">' +
+    p.innerHTML = '<div class="popup-header"><span>✨ Text Style Settings</span><button class="popup-close" onclick="closeTextStylePopup()">×</button></div>' +
+        '<div class="textstyle-info"><p style="margin:0 0 8px">Select styles below. They <strong>auto-apply</strong> to all messages.</p><p style="margin:0;color:#fc0">⚠️ Admin must set up <a href="#" onclick="showFilterPopup();return false;">Chat Filters</a> first.</p></div>' +
+        '<div class="textstyle-popup-scroll">' +
+        '<div class="textstyle-section"><h4>Solid Colors</h4><div class="textstyle-grid">' + cbtns + '</div></div>' +
+        '<div class="textstyle-section"><h4>🌈 Gradients</h4><div class="textstyle-grid">' + gbtns + '</div></div>' +
+        '<div class="textstyle-section"><h4>✨ Glow Effects</h4><div class="textstyle-grid">' + glowbtns + '</div></div>' +
+        '<div class="textstyle-section"><h4>🎬 Animations</h4><div class="textstyle-grid">' + animbtns + '</div></div>' +
+        '<div class="textstyle-section"><h4>Text Effects</h4><div class="textstyle-grid">' +
         '<button class="textstyle-btn effect-btn' + (textStyleSettings.bold ? ' active' : '') + '" data-effect="bold" style="font-weight:bold" onclick="toggleStyleEffect(\'bold\')">Bold</button>' +
         '<button class="textstyle-btn effect-btn' + (textStyleSettings.italic ? ' active' : '') + '" data-effect="italic" style="font-style:italic" onclick="toggleStyleEffect(\'italic\')">Italic</button>' +
         '<button class="textstyle-btn effect-btn' + (textStyleSettings.underline ? ' active' : '') + '" data-effect="underline" style="text-decoration:underline" onclick="toggleStyleEffect(\'underline\')">Underline</button>' +
         '<button class="textstyle-btn effect-btn' + (textStyleSettings.strikethrough ? ' active' : '') + '" data-effect="strikethrough" style="text-decoration:line-through" onclick="toggleStyleEffect(\'strikethrough\')">Strike</button>' +
-        '</div></div><div class="textstyle-section"><h4>Preview</h4><div id="textstyle-preview">Your message</div></div>' +
-        '<div class="textstyle-section"><button id="textstyle-reset" onclick="resetTextStyle()">↺ Reset to Default</button></div>';
+        '</div></div>' +
+        '<div class="textstyle-section"><h4>Preview</h4><div id="textstyle-preview">Your message will look like this</div></div>' +
+        '</div>' +
+        '<div class="textstyle-section" style="border-top:1px solid #333;"><button id="textstyle-reset" onclick="resetTextStyle()">↺ Reset to Default</button></div>';
     o.appendChild(p);
     document.body.appendChild(o);
     updateStylePreview();
@@ -684,7 +799,39 @@ function toggleTextStylePopup() {
 }
 
 function selectStyleColor(c) {
-    textStyleSettings.color = (textStyleSettings.color === c) ? null : c;
+    // Clear gradient if selecting solid color
+    if (textStyleSettings.color === c) {
+        textStyleSettings.color = null;
+    } else {
+        textStyleSettings.color = c;
+        textStyleSettings.gradient = null; // Can't have both
+    }
+    saveStyleSettings();
+    refreshStyleBtns();
+    updateStylePreview();
+}
+
+function selectStyleGradient(g) {
+    if (textStyleSettings.gradient === g) {
+        textStyleSettings.gradient = null;
+    } else {
+        textStyleSettings.gradient = g;
+        textStyleSettings.color = null; // Can't have both
+    }
+    saveStyleSettings();
+    refreshStyleBtns();
+    updateStylePreview();
+}
+
+function selectStyleGlow(g) {
+    textStyleSettings.glow = (textStyleSettings.glow === g) ? null : g;
+    saveStyleSettings();
+    refreshStyleBtns();
+    updateStylePreview();
+}
+
+function selectStyleAnimation(a) {
+    textStyleSettings.animation = (textStyleSettings.animation === a) ? null : a;
     saveStyleSettings();
     refreshStyleBtns();
     updateStylePreview();
@@ -698,32 +845,98 @@ function toggleStyleEffect(eff) {
 }
 
 function resetTextStyle() {
-    textStyleSettings = { color: null, bold: false, italic: false, underline: false, strikethrough: false };
+    textStyleSettings = {
+        color: null,
+        gradient: null,
+        bold: false,
+        italic: false,
+        underline: false,
+        strikethrough: false,
+        glow: null,
+        animation: null
+    };
     saveStyleSettings();
     refreshStyleBtns();
     updateStylePreview();
 }
 
 function refreshStyleBtns() {
-    document.querySelectorAll('.color-btn').forEach(function(b) { b.classList.toggle('active', textStyleSettings.color === b.dataset.color); });
-    document.querySelectorAll('.effect-btn').forEach(function(b) { b.classList.toggle('active', textStyleSettings[b.dataset.effect]); });
+    document.querySelectorAll('.color-btn').forEach(function(b) { 
+        b.classList.toggle('active', textStyleSettings.color === b.dataset.color); 
+    });
+    document.querySelectorAll('.gradient-btn').forEach(function(b) { 
+        b.classList.toggle('active', textStyleSettings.gradient === b.dataset.gradient); 
+    });
+    document.querySelectorAll('.glow-btn').forEach(function(b) { 
+        b.classList.toggle('active', textStyleSettings.glow === b.dataset.glow); 
+    });
+    document.querySelectorAll('.anim-btn').forEach(function(b) { 
+        b.classList.toggle('active', textStyleSettings.animation === b.dataset.anim); 
+    });
+    document.querySelectorAll('.effect-btn').forEach(function(b) { 
+        b.classList.toggle('active', textStyleSettings[b.dataset.effect]); 
+    });
     updateFontBtnIndicator();
 }
 
 function updateStylePreview() {
     var p = document.getElementById('textstyle-preview');
     if (!p) return;
+    
     var s = [];
-    if (textStyleSettings.color) s.push('color:' + (textStyleSettings.color === 'blue' ? '#55f' : textStyleSettings.color));
+    var classes = [];
+    
+    // Color or gradient
+    if (textStyleSettings.gradient) {
+        var gradientStyles = {
+            'rainbow': 'background:linear-gradient(90deg,#ff0000,#ff7700,#ffff00,#00ff00,#0077ff,#8b00ff);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text',
+            'fire': 'background:linear-gradient(90deg,#ff0000,#ff5500,#ffaa00,#ffcc00);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text',
+            'ocean': 'background:linear-gradient(90deg,#00ffff,#0088ff,#0044aa,#002255);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text',
+            'sunset': 'background:linear-gradient(90deg,#ff6b6b,#ffa500,#ffdb58,#ff6b9d);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text',
+            'neon': 'background:linear-gradient(90deg,#ff00ff,#00ffff,#ff00ff);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text',
+            'forest': 'background:linear-gradient(90deg,#228b22,#32cd32,#90ee90,#006400);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text',
+            'gold': 'background:linear-gradient(90deg,#ffd700,#ffec8b,#daa520,#b8860b);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text',
+            'ice': 'background:linear-gradient(90deg,#e0ffff,#87ceeb,#add8e6,#b0e0e6);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text'
+        };
+        if (gradientStyles[textStyleSettings.gradient]) s.push(gradientStyles[textStyleSettings.gradient]);
+    } else if (textStyleSettings.color) {
+        s.push('color:' + (textStyleSettings.color === 'blue' ? '#55f' : textStyleSettings.color));
+    }
+    
+    // Glow
+    if (textStyleSettings.glow) {
+        var glowStyles = {
+            'glow-white': 'text-shadow:0 0 10px #fff,0 0 20px #fff,0 0 30px #fff',
+            'glow-red': 'text-shadow:0 0 10px #f00,0 0 20px #f00,0 0 30px #f00',
+            'glow-blue': 'text-shadow:0 0 10px #00f,0 0 20px #00f,0 0 30px #0ff',
+            'glow-green': 'text-shadow:0 0 10px #0f0,0 0 20px #0f0,0 0 30px #0f0',
+            'glow-gold': 'text-shadow:0 0 10px #ffd700,0 0 20px #ffa500,0 0 30px #ff8c00',
+            'glow-pink': 'text-shadow:0 0 10px #ff69b4,0 0 20px #ff1493,0 0 30px #ff69b4',
+            'glow-rainbow': 'text-shadow:0 0 5px #f00,0 0 10px #ff0,0 0 15px #0f0,0 0 20px #0ff,0 0 25px #00f,0 0 30px #f0f'
+        };
+        if (glowStyles[textStyleSettings.glow]) s.push(glowStyles[textStyleSettings.glow]);
+    }
+    
+    // Text effects
     if (textStyleSettings.bold) s.push('font-weight:bold');
     if (textStyleSettings.italic) s.push('font-style:italic');
     var td = [];
     if (textStyleSettings.underline) td.push('underline');
     if (textStyleSettings.strikethrough) td.push('line-through');
     if (td.length) s.push('text-decoration:' + td.join(' '));
-    var hasStyle = textStyleSettings.color || textStyleSettings.bold || textStyleSettings.italic || textStyleSettings.underline || textStyleSettings.strikethrough;
+    
+    // Animation class
+    if (textStyleSettings.animation) {
+        classes.push('text-' + textStyleSettings.animation);
+    }
+    
+    var hasStyle = textStyleSettings.color || textStyleSettings.gradient || textStyleSettings.bold || 
+                   textStyleSettings.italic || textStyleSettings.underline || textStyleSettings.strikethrough ||
+                   textStyleSettings.glow || textStyleSettings.animation;
+    
     p.style.cssText = s.join(';');
-    p.textContent = hasStyle ? 'Your message will look like this' : 'No styling (default)';
+    p.className = classes.join(' ');
+    p.textContent = hasStyle ? 'Your message will look like this!' : 'No styling (default)';
     if (!hasStyle) { p.style.color = '#666'; p.style.fontStyle = 'italic'; }
 }
 
@@ -735,7 +948,9 @@ function saveStyleSettings() {
 function updateFontBtnIndicator() {
     var btn = document.getElementById('font-tags-btn');
     if (!btn) return;
-    var hasStyle = textStyleSettings.color || textStyleSettings.bold || textStyleSettings.italic || textStyleSettings.underline || textStyleSettings.strikethrough;
+    var hasStyle = textStyleSettings.color || textStyleSettings.gradient || textStyleSettings.bold || 
+                   textStyleSettings.italic || textStyleSettings.underline || textStyleSettings.strikethrough ||
+                   textStyleSettings.glow || textStyleSettings.animation;
     btn.style.borderColor = hasStyle ? 'gold' : '';
     btn.style.boxShadow = hasStyle ? '0 0 8px rgba(255,215,0,0.5)' : '';
 }
@@ -743,11 +958,36 @@ function updateFontBtnIndicator() {
 function buildStyleTags(msg) {
     if (!msg.trim()) return msg;
     var open = '', close = '';
-    if (textStyleSettings.color) { open += '[' + textStyleSettings.color + ']'; close = '[/]' + close; }
+    
+    // Gradient (outermost)
+    if (textStyleSettings.gradient) { 
+        open += '[' + textStyleSettings.gradient + ']'; 
+        close = '[/]' + close; 
+    }
+    // Or solid color
+    else if (textStyleSettings.color) { 
+        open += '[' + textStyleSettings.color + ']'; 
+        close = '[/]' + close; 
+    }
+    
+    // Glow effect
+    if (textStyleSettings.glow) { 
+        open += '[' + textStyleSettings.glow + ']'; 
+        close = '[/]' + close; 
+    }
+    
+    // Animation
+    if (textStyleSettings.animation) { 
+        open += '[' + textStyleSettings.animation + ']'; 
+        close = '[/]' + close; 
+    }
+    
+    // Text formatting (innermost)
     if (textStyleSettings.bold) { open += '[b]'; close = '[/]' + close; }
     if (textStyleSettings.italic) { open += '[i]'; close = '[/]' + close; }
     if (textStyleSettings.underline) { open += '[u]'; close = '[/]' + close; }
     if (textStyleSettings.strikethrough) { open += '[s]'; close = '[/]' + close; }
+    
     return open ? open + msg + close : msg;
 }
 
@@ -759,10 +999,12 @@ function applyStyleToMessage() {
     if (msg.startsWith('/')) return;
     // Skip empty
     if (!msg.trim()) return;
-    // Skip if already has tags
-    if (msg.match(/^\[(?:red|blue|green|yellow|orange|pink|lime|aqua|violet|white|silver|brown|b|i|u|s)\]/)) return;
+    // Skip if already has tags (including new ones)
+    if (msg.match(/^\[(?:red|blue|green|yellow|orange|pink|lime|aqua|violet|white|silver|brown|b|i|u|s|rainbow|fire|ocean|sunset|neon|forest|gold|ice|glow-\w+|shake|pulse|bounce|wave|flicker|spin)\]/)) return;
     // Check if any style is active
-    var hasStyle = textStyleSettings.color || textStyleSettings.bold || textStyleSettings.italic || textStyleSettings.underline || textStyleSettings.strikethrough;
+    var hasStyle = textStyleSettings.color || textStyleSettings.gradient || textStyleSettings.bold || 
+                   textStyleSettings.italic || textStyleSettings.underline || textStyleSettings.strikethrough ||
+                   textStyleSettings.glow || textStyleSettings.animation;
     if (!hasStyle) return;
     // Apply tags
     c.value = buildStyleTags(msg);

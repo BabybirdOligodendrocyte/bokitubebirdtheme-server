@@ -851,3 +851,99 @@ textarea.form-control { height: 500px; }
 }
 
 .filter-note code { background: rgba(255, 255, 255, 0.1); padding: 2px 6px; border-radius: 4px; }
+
+/* ========== TEXT STYLING EFFECTS FOR CHAT ========== */
+
+/* Gradient text styles */
+.text-rainbow {
+    background: linear-gradient(90deg, #ff0000, #ff7700, #ffff00, #00ff00, #0077ff, #8b00ff);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+.text-fire {
+    background: linear-gradient(90deg, #ff0000, #ff5500, #ffaa00, #ffcc00);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+.text-ocean {
+    background: linear-gradient(90deg, #00ffff, #0088ff, #0044aa, #002255);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+.text-sunset {
+    background: linear-gradient(90deg, #ff6b6b, #ffa500, #ffdb58, #ff6b9d);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+.text-neon {
+    background: linear-gradient(90deg, #ff00ff, #00ffff, #ff00ff);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+.text-forest {
+    background: linear-gradient(90deg, #228b22, #32cd32, #90ee90, #006400);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+.text-gold {
+    background: linear-gradient(90deg, #ffd700, #ffec8b, #daa520, #b8860b);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+.text-ice {
+    background: linear-gradient(90deg, #e0ffff, #87ceeb, #add8e6, #b0e0e6);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+/* Glow effects */
+.text-glow-white { text-shadow: 0 0 10px #fff, 0 0 20px #fff, 0 0 30px #fff; }
+.text-glow-red { text-shadow: 0 0 10px #f00, 0 0 20px #f00, 0 0 30px #f00; color: #ff6666; }
+.text-glow-blue { text-shadow: 0 0 10px #00f, 0 0 20px #00f, 0 0 30px #0ff; color: #6666ff; }
+.text-glow-green { text-shadow: 0 0 10px #0f0, 0 0 20px #0f0, 0 0 30px #0f0; color: #66ff66; }
+.text-glow-gold { text-shadow: 0 0 10px #ffd700, 0 0 20px #ffa500, 0 0 30px #ff8c00; color: #ffd700; }
+.text-glow-pink { text-shadow: 0 0 10px #ff69b4, 0 0 20px #ff1493, 0 0 30px #ff69b4; color: #ff69b4; }
+.text-glow-rainbow { text-shadow: 0 0 5px #f00, 0 0 10px #ff0, 0 0 15px #0f0, 0 0 20px #0ff, 0 0 25px #00f, 0 0 30px #f0f; }
+
+/* Animation effects */
+.text-shake { animation: shake 0.5s ease-in-out infinite; display: inline-block; }
+.text-pulse { animation: pulse 1s ease-in-out infinite; display: inline-block; }
+.text-bounce { animation: bounce 0.6s ease infinite; display: inline-block; }
+.text-wave { animation: wave 2s ease-in-out infinite; display: inline-block; }
+.text-flicker { animation: flicker 0.3s ease-in-out infinite; display: inline-block; }
+.text-spin { animation: spin 2s linear infinite; display: inline-block; }
+
+@keyframes shake {
+    0%, 100% { transform: translateX(0); }
+    25% { transform: translateX(-3px); }
+    75% { transform: translateX(3px); }
+}
+@keyframes pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.7; transform: scale(1.05); }
+}
+@keyframes bounce {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-5px); }
+}
+@keyframes wave {
+    0%, 100% { transform: translateY(0) rotate(0deg); }
+    25% { transform: translateY(-3px) rotate(-2deg); }
+    75% { transform: translateY(3px) rotate(2deg); }
+}
+@keyframes flicker {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+}
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
