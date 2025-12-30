@@ -1050,26 +1050,51 @@ function applyStyleToMessage() {
     
     // Process each part: wrap non-emote text with style, leave emotes alone
     var resultParts = [];
+    var hasTextParts = false;
+    var hasEmoteParts = false;
+    
     for (var i = 0; i < parts.length; i++) {
         var part = parts[i];
         if (!part) continue;
         
         // Check if this part is an emote
         if (emoteNames.indexOf(part) !== -1) {
-            resultParts.push('  ' + part + '  '); // Double spaces around emote for word boundaries
+            hasEmoteParts = true;
+            resultParts.push({type: 'emote', value: part});
         } else if (part.trim()) {
-            // Wrap text with style, but trim it first
-            resultParts.push(tags.open + part.trim() + tags.close);
+            hasTextParts = true;
+            resultParts.push({type: 'text', value: part.trim()});
         }
     }
     
-    // Join parts (no additional space since emotes already have spacing)
-    var result = resultParts.join('');
+    // If we have both emotes and text, we need to be careful
+    // CyTube processes emotes on the raw message before filters
+    // So emotes inside or adjacent to our tags won't work
     
-    // Clean up excessive spaces but keep at least one around emotes
-    result = result.replace(/ {3,}/g, '  ').trim();
-    
-    c.value = result;
+    // Strategy: Combine all text parts into one styled block, put emotes at the end
+    if (hasEmoteParts && hasTextParts) {
+        var textContent = [];
+        var emoteContent = [];
+        
+        for (var i = 0; i < resultParts.length; i++) {
+            if (resultParts[i].type === 'text') {
+                textContent.push(resultParts[i].value);
+            } else {
+                emoteContent.push(resultParts[i].value);
+            }
+        }
+        
+        // Build: [styled text] emote emote emote
+        var styledText = tags.open + textContent.join(' ') + tags.close;
+        var emotes = emoteContent.join(' ');
+        c.value = styledText + ' ' + emotes;
+    } else if (hasEmoteParts) {
+        // Only emotes, no styling needed
+        c.value = msg;
+    } else {
+        // Only text
+        c.value = tags.open + msg.trim() + tags.close;
+    }
 }
 
 function initStyleInterceptor() {
