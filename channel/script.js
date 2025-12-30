@@ -191,35 +191,63 @@ $('<button id="clear-btn" class="btn btn-default btn-sm">Clear</button>')
 // Initialize favorites from localStorage
 var emoteFavorites = JSON.parse(localStorage.getItem('emoteFavorites')) || [];
 
+// Pagination settings
+var emotesPerPage = 50;
+var currentEmotePage = 0;
+var currentEmoteList = [];
+
 // Initialize emote panel position from localStorage
-if (!localStorage.emotePanelTop) localStorage.emotePanelTop = 100;
-if (!localStorage.emotePanelLeft) localStorage.emotePanelLeft = 100;
+if (!localStorage.emotePanelTop) localStorage.emotePanelTop = '100';
+if (!localStorage.emotePanelLeft) localStorage.emotePanelLeft = '100';
 
 // Create the floating emote panel container
 function createEmotePanel() {
+    // Remove any existing panel first
+    const existingPanel = document.getElementById('emote-panel');
+    if (existingPanel) existingPanel.remove();
+    
     const panel = document.createElement('div');
     panel.id = 'emote-panel';
     panel.className = 'emote-panel';
-    panel.style.top = localStorage.emotePanelTop + 'px';
-    panel.style.left = localStorage.emotePanelLeft + 'px';
-    panel.style.display = 'none';
+    panel.style.cssText = `
+        position: fixed !important;
+        z-index: 10000 !important;
+        top: ${localStorage.emotePanelTop}px !important;
+        left: ${localStorage.emotePanelLeft}px !important;
+        display: none;
+        width: 420px;
+        max-width: 90vw;
+        height: 500px;
+        max-height: 80vh;
+        flex-direction: column;
+        background: rgba(30, 30, 35, 0.98);
+        border: 1px solid rgba(255, 255, 255, 0.3);
+        border-radius: 12px;
+        box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6);
+        backdrop-filter: blur(10px);
+        -webkit-backdrop-filter: blur(10px);
+        overflow: hidden;
+    `;
     
     panel.innerHTML = `
-        <div class="emote-panel-header" id="emote-panel-header">
-            <span class="emote-panel-title">Emotes</span>
-            <div class="emote-panel-controls">
-                <button class="emote-panel-close" onclick="closeEmotePanel()" title="Close">&times;</button>
-            </div>
+        <div class="emote-panel-header" id="emote-panel-header" style="display: flex; justify-content: space-between; align-items: center; padding: 10px 15px; background: var(--primarycolor, #333); cursor: move; user-select: none;">
+            <span style="font-weight: bold; color: white; font-size: 14px;">Emotes</span>
+            <button onclick="closeEmotePanel()" style="background: none; border: none; color: white; font-size: 24px; cursor: pointer; padding: 0; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; border-radius: 4px;" title="Close">&times;</button>
         </div>
-        <div class="emote-panel-tabs">
-            <button class="emote-tab active" data-tab="all" onclick="switchEmoteTab('all')">All</button>
-            <button class="emote-tab" data-tab="favorites" onclick="switchEmoteTab('favorites')">★ Favorites</button>
+        <div style="display: flex; background: rgba(0, 0, 0, 0.3); padding: 5px; gap: 5px;">
+            <button class="emote-tab active" data-tab="all" onclick="switchEmoteTab('all')" style="flex: 1; padding: 8px 12px; background: var(--tertiarycolor, #555); border: none; color: white; cursor: pointer; border-radius: 6px; font-size: 13px;">All</button>
+            <button class="emote-tab" data-tab="favorites" onclick="switchEmoteTab('favorites')" style="flex: 1; padding: 8px 12px; background: transparent; border: none; color: #aaa; cursor: pointer; border-radius: 6px; font-size: 13px;">★ Favorites</button>
         </div>
-        <div class="emote-panel-search">
-            <input type="text" id="emote-search" placeholder="Search emotes..." oninput="filterEmotes(this.value)">
+        <div style="padding: 8px 10px; background: rgba(0, 0, 0, 0.2);">
+            <input type="text" id="emote-search" placeholder="Search emotes..." oninput="filterEmotes(this.value)" style="width: 100%; padding: 8px 12px; background: rgba(255, 255, 255, 0.1); border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 6px; color: white; font-size: 13px;">
         </div>
-        <div class="emote-panel-body" id="emote-panel-body">
+        <div class="emote-panel-body" id="emote-panel-body" style="flex: 1; overflow-y: auto; padding: 10px; display: flex; flex-wrap: wrap; align-content: flex-start; gap: 5px;">
             <!-- Emotes will be populated here -->
+        </div>
+        <div class="emote-panel-pagination" id="emote-panel-pagination" style="display: flex; justify-content: center; align-items: center; gap: 10px; padding: 10px; background: rgba(0, 0, 0, 0.3); border-top: 1px solid rgba(255, 255, 255, 0.1);">
+            <button onclick="prevEmotePage()" id="emote-prev-btn" style="padding: 6px 12px; background: var(--tertiarycolor, #555); border: none; color: white; border-radius: 4px; cursor: pointer;">◀ Prev</button>
+            <span id="emote-page-info" style="color: #ccc; font-size: 13px;">Page 1 of 1</span>
+            <button onclick="nextEmotePage()" id="emote-next-btn" style="padding: 6px 12px; background: var(--tertiarycolor, #555); border: none; color: white; border-radius: 4px; cursor: pointer;">Next ▶</button>
         </div>
     `;
     
@@ -229,90 +257,171 @@ function createEmotePanel() {
     makeDraggable(panel, document.getElementById('emote-panel-header'));
 }
 
+// Pagination functions
+function updatePagination() {
+    const totalPages = Math.ceil(currentEmoteList.length / emotesPerPage) || 1;
+    const pageInfo = document.getElementById('emote-page-info');
+    const prevBtn = document.getElementById('emote-prev-btn');
+    const nextBtn = document.getElementById('emote-next-btn');
+    
+    if (pageInfo) pageInfo.textContent = `Page ${currentEmotePage + 1} of ${totalPages}`;
+    if (prevBtn) prevBtn.disabled = currentEmotePage === 0;
+    if (nextBtn) nextBtn.disabled = currentEmotePage >= totalPages - 1;
+}
+
+function prevEmotePage() {
+    if (currentEmotePage > 0) {
+        currentEmotePage--;
+        renderCurrentEmotePage();
+    }
+}
+
+function nextEmotePage() {
+    const totalPages = Math.ceil(currentEmoteList.length / emotesPerPage);
+    if (currentEmotePage < totalPages - 1) {
+        currentEmotePage++;
+        renderCurrentEmotePage();
+    }
+}
+
+function renderCurrentEmotePage() {
+    const body = document.getElementById('emote-panel-body');
+    if (!body) return;
+    
+    body.innerHTML = '';
+    
+    const start = currentEmotePage * emotesPerPage;
+    const end = Math.min(start + emotesPerPage, currentEmoteList.length);
+    const pageEmotes = currentEmoteList.slice(start, end);
+    
+    if (pageEmotes.length === 0) {
+        const activeTab = document.querySelector('.emote-tab.active');
+        const isFavoritesTab = activeTab && activeTab.dataset.tab === 'favorites';
+        body.innerHTML = `<div style="width: 100%; text-align: center; color: #888; padding: 40px 20px; font-size: 14px;">${isFavoritesTab ? 'No favorite emotes yet. Click ★ on emotes to add them!' : 'No emotes found.'}</div>`;
+    } else {
+        pageEmotes.forEach(emote => {
+            const emoteItem = document.createElement('div');
+            emoteItem.style.cssText = 'position: relative; display: flex; align-items: center; justify-content: center; width: 60px; height: 60px; background: rgba(255, 255, 255, 0.05); border-radius: 8px; cursor: pointer; transition: all 0.2s;';
+            emoteItem.onmouseenter = function() { this.style.background = 'rgba(255, 255, 255, 0.15)'; this.style.transform = 'scale(1.05)'; };
+            emoteItem.onmouseleave = function() { this.style.background = 'rgba(255, 255, 255, 0.05)'; this.style.transform = 'scale(1)'; };
+            
+            const isFavorite = emoteFavorites.includes(emote.name);
+            
+            const img = document.createElement('img');
+            img.src = emote.image;
+            img.alt = emote.name;
+            img.title = emote.name;
+            img.style.cssText = 'max-width: 50px; max-height: 50px; object-fit: contain;';
+            img.onclick = function() { insertEmote(emote.name); };
+            
+            const favBtn = document.createElement('button');
+            favBtn.className = isFavorite ? 'favorited' : '';
+            favBtn.innerHTML = '★';
+            favBtn.title = isFavorite ? 'Remove from favorites' : 'Add to favorites';
+            favBtn.style.cssText = `position: absolute; top: -4px; right: -4px; width: 20px; height: 20px; padding: 0; background: rgba(0, 0, 0, 0.7); border: 1px solid rgba(255, 255, 255, 0.3); border-radius: 50%; color: ${isFavorite ? '#FFD700' : '#666'}; font-size: 12px; cursor: pointer; display: flex; align-items: center; justify-content: center; opacity: ${isFavorite ? '1' : '0'}; transition: all 0.2s;`;
+            favBtn.onclick = function(e) { toggleFavorite(emote.name, e, favBtn); };
+            
+            emoteItem.onmouseenter = function() { 
+                this.style.background = 'rgba(255, 255, 255, 0.15)'; 
+                this.style.transform = 'scale(1.05)';
+                favBtn.style.opacity = '1';
+            };
+            emoteItem.onmouseleave = function() { 
+                this.style.background = 'rgba(255, 255, 255, 0.05)'; 
+                this.style.transform = 'scale(1)';
+                if (!favBtn.classList.contains('favorited')) favBtn.style.opacity = '0';
+            };
+            
+            emoteItem.appendChild(img);
+            emoteItem.appendChild(favBtn);
+            body.appendChild(emoteItem);
+        });
+    }
+    
+    updatePagination();
+}
+
 // Switch between All and Favorites tabs
 function switchEmoteTab(tab) {
-    document.querySelectorAll('.emote-tab').forEach(t => t.classList.remove('active'));
-    document.querySelector(`.emote-tab[data-tab="${tab}"]`).classList.add('active');
+    document.querySelectorAll('.emote-tab').forEach(t => {
+        t.classList.remove('active');
+        t.style.background = 'transparent';
+        t.style.color = '#aaa';
+    });
+    const activeTab = document.querySelector(`.emote-tab[data-tab="${tab}"]`);
+    if (activeTab) {
+        activeTab.classList.add('active');
+        activeTab.style.background = 'var(--tertiarycolor, #555)';
+        activeTab.style.color = 'white';
+    }
+    
+    currentEmotePage = 0;
     
     if (tab === 'all') {
-        populateEmotePanel(CHANNEL.emotes);
+        currentEmoteList = CHANNEL.emotes ? [...CHANNEL.emotes] : [];
     } else {
-        const favoriteEmotes = CHANNEL.emotes.filter(e => emoteFavorites.includes(e.name));
-        populateEmotePanel(favoriteEmotes, true);
+        currentEmoteList = CHANNEL.emotes ? CHANNEL.emotes.filter(e => emoteFavorites.includes(e.name)) : [];
     }
+    
+    renderCurrentEmotePage();
 }
 
 // Filter emotes by search term
 function filterEmotes(searchTerm) {
-    const activeTab = document.querySelector('.emote-tab.active').dataset.tab;
-    let emotes = CHANNEL.emotes;
+    const activeTab = document.querySelector('.emote-tab.active');
+    const tab = activeTab ? activeTab.dataset.tab : 'all';
+    let emotes = CHANNEL.emotes ? [...CHANNEL.emotes] : [];
     
-    if (activeTab === 'favorites') {
-        emotes = CHANNEL.emotes.filter(e => emoteFavorites.includes(e.name));
+    if (tab === 'favorites') {
+        emotes = emotes.filter(e => emoteFavorites.includes(e.name));
     }
     
-    if (searchTerm.trim()) {
+    if (searchTerm && searchTerm.trim()) {
         emotes = emotes.filter(e => e.name.toLowerCase().includes(searchTerm.toLowerCase()));
     }
     
-    populateEmotePanel(emotes, activeTab === 'favorites');
-}
-
-// Populate the emote panel with emotes
-function populateEmotePanel(emotes, isFavoritesTab = false) {
-    const body = document.getElementById('emote-panel-body');
-    body.innerHTML = '';
-    
-    if (emotes.length === 0) {
-        body.innerHTML = `<div class="emote-panel-empty">${isFavoritesTab ? 'No favorite emotes yet. Click ★ on emotes to add them!' : 'No emotes found.'}</div>`;
-        return;
-    }
-    
-    emotes.forEach(emote => {
-        const emoteItem = document.createElement('div');
-        emoteItem.className = 'emote-item';
-        
-        const isFavorite = emoteFavorites.includes(emote.name);
-        
-        emoteItem.innerHTML = `
-            <img src="${emote.image}" alt="${emote.name}" title="${emote.name}" onclick="insertEmote('${emote.name}')">
-            <button class="emote-fav-btn ${isFavorite ? 'favorited' : ''}" onclick="toggleFavorite('${emote.name}', event)" title="${isFavorite ? 'Remove from favorites' : 'Add to favorites'}">★</button>
-        `;
-        
-        body.appendChild(emoteItem);
-    });
+    currentEmotePage = 0;
+    currentEmoteList = emotes;
+    renderCurrentEmotePage();
 }
 
 // Insert emote into chat
 function insertEmote(emoteName) {
-    $("#chatline").val($("#chatline").val() + emoteName + ' ').focus();
+    const chatline = document.getElementById('chatline');
+    if (chatline) {
+        chatline.value = chatline.value + emoteName + ' ';
+        chatline.focus();
+    }
 }
 
 // Toggle favorite status
-function toggleFavorite(emoteName, event) {
+function toggleFavorite(emoteName, event, btnElement) {
     event.stopPropagation();
     
     const index = emoteFavorites.indexOf(emoteName);
     if (index > -1) {
         emoteFavorites.splice(index, 1);
+        if (btnElement) {
+            btnElement.classList.remove('favorited');
+            btnElement.style.color = '#666';
+            btnElement.title = 'Add to favorites';
+        }
     } else {
         emoteFavorites.unshift(emoteName);
+        if (btnElement) {
+            btnElement.classList.add('favorited');
+            btnElement.style.color = '#FFD700';
+            btnElement.title = 'Remove from favorites';
+        }
     }
     
     localStorage.setItem('emoteFavorites', JSON.stringify(emoteFavorites));
     
-    // Update UI
-    const btn = event.target;
-    btn.classList.toggle('favorited');
-    
     // If on favorites tab, refresh the view
-    const activeTab = document.querySelector('.emote-tab.active').dataset.tab;
-    if (activeTab === 'favorites') {
+    const activeTab = document.querySelector('.emote-tab.active');
+    if (activeTab && activeTab.dataset.tab === 'favorites') {
         switchEmoteTab('favorites');
     }
-    
-    // Update favorites dropdown if open
-    updateFavoritesDropdown();
 }
 
 // Open emote panel
@@ -356,6 +465,7 @@ function makeDraggable(element, handle) {
     let pos1 = 0, pos2 = 0, pos3 = 0, pos4 = 0;
     
     handle.onmousedown = dragMouseDown;
+    handle.ontouchstart = dragTouchStart;
     
     function dragMouseDown(e) {
         e.preventDefault();
@@ -363,6 +473,14 @@ function makeDraggable(element, handle) {
         pos4 = e.clientY;
         document.onmouseup = closeDragElement;
         document.onmousemove = elementDrag;
+    }
+    
+    function dragTouchStart(e) {
+        const touch = e.touches[0];
+        pos3 = touch.clientX;
+        pos4 = touch.clientY;
+        document.ontouchend = closeDragElement;
+        document.ontouchmove = elementTouchDrag;
     }
     
     function elementDrag(e) {
@@ -383,9 +501,28 @@ function makeDraggable(element, handle) {
         element.style.left = newLeft + "px";
     }
     
+    function elementTouchDrag(e) {
+        const touch = e.touches[0];
+        pos1 = pos3 - touch.clientX;
+        pos2 = pos4 - touch.clientY;
+        pos3 = touch.clientX;
+        pos4 = touch.clientY;
+        
+        let newTop = element.offsetTop - pos2;
+        let newLeft = element.offsetLeft - pos1;
+        
+        newTop = Math.max(0, Math.min(newTop, window.innerHeight - 100));
+        newLeft = Math.max(0, Math.min(newLeft, window.innerWidth - 100));
+        
+        element.style.top = newTop + "px";
+        element.style.left = newLeft + "px";
+    }
+    
     function closeDragElement() {
         document.onmouseup = null;
         document.onmousemove = null;
+        document.ontouchend = null;
+        document.ontouchmove = null;
         
         // Save position
         localStorage.emotePanelTop = parseInt(element.style.top);
@@ -395,76 +532,77 @@ function makeDraggable(element, handle) {
 
 /* ========== FAVORITES QUICK ACCESS DROPDOWN ========== */
 
-// Create favorites dropdown
-function createFavoritesDropdown() {
-    const dropdown = document.createElement('div');
-    dropdown.id = 'favorites-dropdown';
-    dropdown.className = 'favorites-dropdown';
-    dropdown.style.display = 'none';
-    
-    document.body.appendChild(dropdown);
-    
-    return dropdown;
-}
-
-// Update favorites dropdown content
-function updateFavoritesDropdown() {
-    let dropdown = document.getElementById('favorites-dropdown');
-    if (!dropdown) return;
-    
-    dropdown.innerHTML = '';
-    
-    if (emoteFavorites.length === 0) {
-        dropdown.innerHTML = '<div class="favorites-empty">No favorites yet!</div>';
-        return;
-    }
-    
-    emoteFavorites.forEach(emoteName => {
-        const emote = CHANNEL.emotes.find(e => e.name === emoteName);
-        if (emote) {
-            const img = document.createElement('img');
-            img.src = emote.image;
-            img.alt = emote.name;
-            img.title = emote.name;
-            img.onclick = function() {
-                insertEmote(emote.name);
-                closeFavoritesDropdown();
-            };
-            dropdown.appendChild(img);
-        }
-    });
-}
-
 // Show favorites dropdown
 function showFavoritesDropdown() {
-    let dropdown = document.getElementById('favorites-dropdown');
-    if (!dropdown) {
-        dropdown = createFavoritesDropdown();
-    }
+    // Remove any existing dropdown
+    closeFavoritesDropdown();
     
-    updateFavoritesDropdown();
+    const dropdown = document.createElement('div');
+    dropdown.id = 'favorites-dropdown';
+    dropdown.style.cssText = `
+        position: fixed !important;
+        z-index: 10001 !important;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        padding: 10px;
+        max-width: 320px;
+        max-height: 200px;
+        overflow-y: auto;
+        background: rgba(30, 30, 35, 0.98);
+        border: 1px solid rgba(255, 255, 255, 0.3);
+        border-radius: 10px;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+        backdrop-filter: blur(10px);
+        -webkit-backdrop-filter: blur(10px);
+    `;
     
     // Position near the favorites button
     const btn = document.getElementById('favorites-btn');
-    const rect = btn.getBoundingClientRect();
+    if (btn) {
+        const rect = btn.getBoundingClientRect();
+        dropdown.style.bottom = (window.innerHeight - rect.top + 5) + 'px';
+        dropdown.style.left = Math.max(10, rect.left) + 'px';
+    }
     
-    dropdown.style.bottom = (window.innerHeight - rect.top + 5) + 'px';
-    dropdown.style.left = rect.left + 'px';
-    dropdown.style.display = 'flex';
+    // Populate with favorites
+    if (emoteFavorites.length === 0) {
+        dropdown.innerHTML = '<div style="color: #888; font-size: 13px; padding: 10px; text-align: center; width: 100%;">No favorites yet!<br>Open emotes panel and click ★</div>';
+    } else {
+        emoteFavorites.forEach(emoteName => {
+            const emote = CHANNEL.emotes ? CHANNEL.emotes.find(e => e.name === emoteName) : null;
+            if (emote) {
+                const img = document.createElement('img');
+                img.src = emote.image;
+                img.alt = emote.name;
+                img.title = emote.name;
+                img.style.cssText = 'width: 45px; height: 45px; object-fit: contain; cursor: pointer; padding: 4px; background: rgba(255, 255, 255, 0.05); border-radius: 6px; transition: all 0.2s;';
+                img.onmouseenter = function() { this.style.background = 'rgba(255, 255, 255, 0.15)'; this.style.transform = 'scale(1.1)'; };
+                img.onmouseleave = function() { this.style.background = 'rgba(255, 255, 255, 0.05)'; this.style.transform = 'scale(1)'; };
+                img.onclick = function() {
+                    insertEmote(emote.name);
+                    closeFavoritesDropdown();
+                };
+                dropdown.appendChild(img);
+            }
+        });
+    }
+    
+    document.body.appendChild(dropdown);
 }
 
 // Close favorites dropdown
 function closeFavoritesDropdown() {
     const dropdown = document.getElementById('favorites-dropdown');
     if (dropdown) {
-        dropdown.style.display = 'none';
+        dropdown.remove();
     }
 }
 
 // Toggle favorites dropdown
 function toggleFavoritesDropdown() {
     const dropdown = document.getElementById('favorites-dropdown');
-    if (dropdown && dropdown.style.display !== 'none') {
+    if (dropdown) {
         closeFavoritesDropdown();
     } else {
         showFavoritesDropdown();
@@ -476,7 +614,7 @@ document.addEventListener('click', function(e) {
     const dropdown = document.getElementById('favorites-dropdown');
     const favBtn = document.getElementById('favorites-btn');
     
-    if (dropdown && dropdown.style.display !== 'none') {
+    if (dropdown) {
         if (!dropdown.contains(e.target) && e.target !== favBtn && !favBtn.contains(e.target)) {
             closeFavoritesDropdown();
         }
@@ -613,12 +751,31 @@ function initTextStyleInterceptor() {
     }, true); // Use capture phase to run before CyTube's handler
 }
 
-// Create the text styling panel
+// Create the text styling panel as a proper floating window
 function createFontTagsPanel() {
+    // Remove existing panel first
+    const existingPanel = document.getElementById('font-tags-panel');
+    if (existingPanel) existingPanel.remove();
+    
     const panel = document.createElement('div');
     panel.id = 'font-tags-panel';
-    panel.className = 'font-tags-panel';
-    panel.style.display = 'none';
+    panel.style.cssText = `
+        position: fixed !important;
+        z-index: 10000 !important;
+        top: 50% !important;
+        left: 50% !important;
+        transform: translate(-50%, -50%) !important;
+        width: 400px;
+        max-width: 95vw;
+        max-height: 85vh;
+        display: none;
+        flex-direction: column;
+        background: rgba(30, 30, 35, 0.98);
+        border: 1px solid rgba(255, 255, 255, 0.3);
+        border-radius: 12px;
+        box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6);
+        overflow: hidden;
+    `;
     
     const colors = [
         { name: 'white', css: 'color: white; background: #333;' },
@@ -636,54 +793,54 @@ function createFontTagsPanel() {
     ];
     
     let colorButtons = colors.map(c => 
-        `<button class="font-tag-btn color-select-btn ${textStyleSettings.color === c.name ? 'active' : ''}" 
-                style="${c.css}" 
+        `<button class="color-select-btn ${textStyleSettings.color === c.name ? 'active' : ''}" 
+                style="padding: 6px 10px; background: rgba(255, 255, 255, 0.1); border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 6px; ${c.css} font-size: 12px; cursor: pointer; transition: all 0.2s; ${textStyleSettings.color === c.name ? 'background: rgba(255, 215, 0, 0.3) !important; border-color: #FFD700 !important; box-shadow: 0 0 8px rgba(255, 215, 0, 0.4);' : ''}" 
                 data-color="${c.name}" 
                 onclick="selectTextColor('${c.name}')">${c.name}</button>`
     ).join('');
     
     panel.innerHTML = `
-        <div class="font-tags-header">
+        <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px 15px; background: var(--primarycolor, #333); color: white; font-weight: bold;">
             <span>Text Style Settings</span>
-            <button class="font-tags-close" onclick="closeFontTagsPanel()">&times;</button>
+            <button onclick="closeFontTagsPanel()" style="background: none; border: none; color: white; font-size: 24px; cursor: pointer; padding: 0; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; border-radius: 4px;">&times;</button>
         </div>
-        <div class="font-tags-info">
-            <p>Select your text style below. It will <strong>auto-apply</strong> to all your messages.</p>
-            <p class="font-tags-note">⚠️ <strong>Admin Setup Required:</strong> Styles only work if Chat Filters are configured. <a href="#" onclick="showFilterInstructions(); return false;">View setup instructions</a></p>
+        <div style="padding: 12px 15px; background: rgba(0, 0, 0, 0.3); font-size: 12px; color: #ccc;">
+            <p style="margin: 0 0 8px 0;">Select your text style below. It will <strong>auto-apply</strong> to all your messages.</p>
+            <p style="margin: 0; color: #ffcc00;">⚠️ <strong>Admin Setup Required:</strong> Styles only work if Chat Filters are configured. <a href="#" onclick="showFilterInstructions(); return false;" style="color: #5dadec; text-decoration: underline;">View setup instructions</a></p>
         </div>
-        <div class="font-tags-section">
-            <h4>Text Color</h4>
-            <div class="font-tags-grid" id="color-buttons">
+        <div style="padding: 12px 15px; border-bottom: 1px solid rgba(255, 255, 255, 0.1);">
+            <h4 style="margin: 0 0 10px 0; color: #aaa; font-size: 12px; text-transform: uppercase; letter-spacing: 1px;">Text Color</h4>
+            <div id="color-buttons" style="display: flex; flex-wrap: wrap; gap: 6px;">
                 ${colorButtons}
             </div>
         </div>
-        <div class="font-tags-section">
-            <h4>Text Effects</h4>
-            <div class="font-tags-grid">
-                <button class="font-tag-btn effect-toggle-btn ${textStyleSettings.bold ? 'active' : ''}" 
-                        style="font-weight: bold;" 
+        <div style="padding: 12px 15px; border-bottom: 1px solid rgba(255, 255, 255, 0.1);">
+            <h4 style="margin: 0 0 10px 0; color: #aaa; font-size: 12px; text-transform: uppercase; letter-spacing: 1px;">Text Effects</h4>
+            <div style="display: flex; flex-wrap: wrap; gap: 6px;">
+                <button class="effect-toggle-btn ${textStyleSettings.bold ? 'active' : ''}" 
+                        style="padding: 6px 10px; background: rgba(255, 255, 255, 0.1); border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 6px; color: white; font-size: 12px; font-weight: bold; cursor: pointer; ${textStyleSettings.bold ? 'background: rgba(255, 215, 0, 0.3) !important; border-color: #FFD700 !important; box-shadow: 0 0 8px rgba(255, 215, 0, 0.4);' : ''}" 
                         data-effect="bold" 
                         onclick="toggleTextEffect('bold')">Bold</button>
-                <button class="font-tag-btn effect-toggle-btn ${textStyleSettings.italic ? 'active' : ''}" 
-                        style="font-style: italic;" 
+                <button class="effect-toggle-btn ${textStyleSettings.italic ? 'active' : ''}" 
+                        style="padding: 6px 10px; background: rgba(255, 255, 255, 0.1); border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 6px; color: white; font-size: 12px; font-style: italic; cursor: pointer; ${textStyleSettings.italic ? 'background: rgba(255, 215, 0, 0.3) !important; border-color: #FFD700 !important; box-shadow: 0 0 8px rgba(255, 215, 0, 0.4);' : ''}" 
                         data-effect="italic" 
                         onclick="toggleTextEffect('italic')">Italic</button>
-                <button class="font-tag-btn effect-toggle-btn ${textStyleSettings.underline ? 'active' : ''}" 
-                        style="text-decoration: underline;" 
+                <button class="effect-toggle-btn ${textStyleSettings.underline ? 'active' : ''}" 
+                        style="padding: 6px 10px; background: rgba(255, 255, 255, 0.1); border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 6px; color: white; font-size: 12px; text-decoration: underline; cursor: pointer; ${textStyleSettings.underline ? 'background: rgba(255, 215, 0, 0.3) !important; border-color: #FFD700 !important; box-shadow: 0 0 8px rgba(255, 215, 0, 0.4);' : ''}" 
                         data-effect="underline" 
                         onclick="toggleTextEffect('underline')">Underline</button>
-                <button class="font-tag-btn effect-toggle-btn ${textStyleSettings.strikethrough ? 'active' : ''}" 
-                        style="text-decoration: line-through;" 
+                <button class="effect-toggle-btn ${textStyleSettings.strikethrough ? 'active' : ''}" 
+                        style="padding: 6px 10px; background: rgba(255, 255, 255, 0.1); border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 6px; color: white; font-size: 12px; text-decoration: line-through; cursor: pointer; ${textStyleSettings.strikethrough ? 'background: rgba(255, 215, 0, 0.3) !important; border-color: #FFD700 !important; box-shadow: 0 0 8px rgba(255, 215, 0, 0.4);' : ''}" 
                         data-effect="strikethrough" 
                         onclick="toggleTextEffect('strikethrough')">Strike</button>
             </div>
         </div>
-        <div class="font-tags-section">
-            <h4>Preview</h4>
-            <div class="style-preview-box" id="style-preview">Your message will look like this</div>
+        <div style="padding: 12px 15px; border-bottom: 1px solid rgba(255, 255, 255, 0.1);">
+            <h4 style="margin: 0 0 10px 0; color: #aaa; font-size: 12px; text-transform: uppercase; letter-spacing: 1px;">Preview</h4>
+            <div id="style-preview" style="padding: 15px; background: rgba(0, 0, 0, 0.4); border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 8px; min-height: 50px; display: flex; align-items: center; justify-content: center; font-size: 14px;">Your message will look like this</div>
         </div>
-        <div class="font-tags-section" style="border-bottom: none;">
-            <button class="reset-style-btn" onclick="resetTextStyle()">↺ Reset to Default (No Styling)</button>
+        <div style="padding: 12px 15px;">
+            <button onclick="resetTextStyle()" style="width: 100%; padding: 12px; background: rgba(255, 100, 100, 0.2); border: 1px solid rgba(255, 100, 100, 0.4); border-radius: 8px; color: #ff8888; font-size: 14px; cursor: pointer;">↺ Reset to Default (No Styling)</button>
         </div>
     `;
     
@@ -812,50 +969,73 @@ function closeFontTagsPanel() {
 function showFilterInstructions() {
     closeFontTagsPanel();
     
+    // Remove any existing modal
+    const existingModal = document.getElementById('filter-instructions-modal');
+    if (existingModal) existingModal.remove();
+    
     const modal = document.createElement('div');
     modal.id = 'filter-instructions-modal';
-    modal.className = 'filter-instructions-modal';
+    modal.style.cssText = `
+        position: fixed !important;
+        z-index: 10002 !important;
+        top: 0 !important;
+        left: 0 !important;
+        width: 100% !important;
+        height: 100% !important;
+        background: rgba(0, 0, 0, 0.8);
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        padding: 20px;
+    `;
+    
     modal.innerHTML = `
-        <div class="filter-instructions-content">
-            <div class="filter-instructions-header">
-                <h2>Chat Filters Setup (Admin Only)</h2>
-                <button onclick="closeFilterInstructions()">&times;</button>
+        <div style="background: rgba(30, 30, 35, 0.98); border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 12px; max-width: 700px; max-height: 90vh; overflow: hidden; display: flex; flex-direction: column;">
+            <div style="display: flex; justify-content: space-between; align-items: center; padding: 15px 20px; background: var(--primarycolor, #333);">
+                <h2 style="margin: 0; color: white; font-size: 18px;">Chat Filters Setup (Admin Only)</h2>
+                <button onclick="closeFilterInstructions()" style="background: none; border: none; color: white; font-size: 28px; cursor: pointer; padding: 0; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; border-radius: 4px;">&times;</button>
             </div>
-            <div class="filter-instructions-body">
-                <p>To enable text formatting visible to <strong>all users</strong>, a channel admin must set up Chat Filters:</p>
-                <ol>
-                    <li>Go to <strong>Channel Settings</strong> → <strong>Edit</strong> → <strong>Chat Filters</strong></li>
-                    <li>Add the following filters (one at a time):</li>
+            <div style="padding: 20px; overflow-y: auto; color: #ddd; font-size: 14px; line-height: 1.6;">
+                <p style="margin: 0 0 15px 0;">To enable text formatting visible to <strong>all users</strong>, a channel admin must set up Chat Filters:</p>
+                <ol style="margin: 0 0 20px 0; padding-left: 20px;">
+                    <li style="margin-bottom: 8px;">Go to <strong>Channel Settings</strong> → <strong>Edit</strong> → <strong>Chat Filters</strong></li>
+                    <li style="margin-bottom: 8px;">Add the following filters (one at a time):</li>
                 </ol>
-                <div class="filter-list">
-                    <table>
-                        <tr><th>Name</th><th>Regex</th><th>Flags</th><th>Replacement</th></tr>
-                        <tr><td>red</td><td>\\[red\\]([^\\[]+)\\[/\\]</td><td>g</td><td>&lt;span style="color:red"&gt;$1&lt;/span&gt;</td></tr>
-                        <tr><td>blue</td><td>\\[blue\\]([^\\[]+)\\[/\\]</td><td>g</td><td>&lt;span style="color:#5555ff"&gt;$1&lt;/span&gt;</td></tr>
-                        <tr><td>green</td><td>\\[green\\]([^\\[]+)\\[/\\]</td><td>g</td><td>&lt;span style="color:green"&gt;$1&lt;/span&gt;</td></tr>
-                        <tr><td>yellow</td><td>\\[yellow\\]([^\\[]+)\\[/\\]</td><td>g</td><td>&lt;span style="color:yellow"&gt;$1&lt;/span&gt;</td></tr>
-                        <tr><td>orange</td><td>\\[orange\\]([^\\[]+)\\[/\\]</td><td>g</td><td>&lt;span style="color:orange"&gt;$1&lt;/span&gt;</td></tr>
-                        <tr><td>pink</td><td>\\[pink\\]([^\\[]+)\\[/\\]</td><td>g</td><td>&lt;span style="color:pink"&gt;$1&lt;/span&gt;</td></tr>
-                        <tr><td>lime</td><td>\\[lime\\]([^\\[]+)\\[/\\]</td><td>g</td><td>&lt;span style="color:lime"&gt;$1&lt;/span&gt;</td></tr>
-                        <tr><td>aqua</td><td>\\[aqua\\]([^\\[]+)\\[/\\]</td><td>g</td><td>&lt;span style="color:aqua"&gt;$1&lt;/span&gt;</td></tr>
-                        <tr><td>violet</td><td>\\[violet\\]([^\\[]+)\\[/\\]</td><td>g</td><td>&lt;span style="color:violet"&gt;$1&lt;/span&gt;</td></tr>
-                        <tr><td>white</td><td>\\[white\\]([^\\[]+)\\[/\\]</td><td>g</td><td>&lt;span style="color:white"&gt;$1&lt;/span&gt;</td></tr>
-                        <tr><td>silver</td><td>\\[silver\\]([^\\[]+)\\[/\\]</td><td>g</td><td>&lt;span style="color:silver"&gt;$1&lt;/span&gt;</td></tr>
-                        <tr><td>brown</td><td>\\[brown\\]([^\\[]+)\\[/\\]</td><td>g</td><td>&lt;span style="color:brown"&gt;$1&lt;/span&gt;</td></tr>
-                        <tr><td>bold</td><td>\\[b\\]([^\\[]+)\\[/\\]</td><td>g</td><td>&lt;strong&gt;$1&lt;/strong&gt;</td></tr>
-                        <tr><td>italic</td><td>\\[i\\]([^\\[]+)\\[/\\]</td><td>g</td><td>&lt;em&gt;$1&lt;/em&gt;</td></tr>
-                        <tr><td>underline</td><td>\\[u\\]([^\\[]+)\\[/\\]</td><td>g</td><td>&lt;u&gt;$1&lt;/u&gt;</td></tr>
-                        <tr><td>strike</td><td>\\[s\\]([^\\[]+)\\[/\\]</td><td>g</td><td>&lt;s&gt;$1&lt;/s&gt;</td></tr>
-                        <tr><td>spoiler</td><td>\\[sp\\]([^\\[]+)\\[/\\]</td><td>g</td><td>&lt;span class="spoiler"&gt;$1&lt;/span&gt;</td></tr>
+                <div style="overflow-x: auto; margin: 15px 0;">
+                    <table style="width: 100%; border-collapse: collapse; font-size: 12px;">
+                        <tr><th style="padding: 8px 10px; text-align: left; border: 1px solid rgba(255, 255, 255, 0.2); background: var(--primarycolor, #333); color: white; font-weight: bold;">Name</th><th style="padding: 8px 10px; text-align: left; border: 1px solid rgba(255, 255, 255, 0.2); background: var(--primarycolor, #333); color: white; font-weight: bold;">Regex</th><th style="padding: 8px 10px; text-align: left; border: 1px solid rgba(255, 255, 255, 0.2); background: var(--primarycolor, #333); color: white; font-weight: bold;">Flags</th><th style="padding: 8px 10px; text-align: left; border: 1px solid rgba(255, 255, 255, 0.2); background: var(--primarycolor, #333); color: white; font-weight: bold;">Replacement</th></tr>
+                        <tr><td style="padding: 8px 10px; border: 1px solid rgba(255, 255, 255, 0.2); background: rgba(0, 0, 0, 0.2); font-family: monospace; font-size: 11px;">red</td><td style="padding: 8px 10px; border: 1px solid rgba(255, 255, 255, 0.2); background: rgba(0, 0, 0, 0.2); font-family: monospace; font-size: 11px;">\\[red\\]([^\\[]+)\\[/\\]</td><td style="padding: 8px 10px; border: 1px solid rgba(255, 255, 255, 0.2); background: rgba(0, 0, 0, 0.2); font-family: monospace; font-size: 11px;">g</td><td style="padding: 8px 10px; border: 1px solid rgba(255, 255, 255, 0.2); background: rgba(0, 0, 0, 0.2); font-family: monospace; font-size: 11px;">&lt;span style="color:red"&gt;$1&lt;/span&gt;</td></tr>
+                        <tr><td style="padding: 8px 10px; border: 1px solid rgba(255, 255, 255, 0.2); background: rgba(0, 0, 0, 0.2); font-family: monospace; font-size: 11px;">blue</td><td style="padding: 8px 10px; border: 1px solid rgba(255, 255, 255, 0.2); background: rgba(0, 0, 0, 0.2); font-family: monospace; font-size: 11px;">\\[blue\\]([^\\[]+)\\[/\\]</td><td style="padding: 8px 10px; border: 1px solid rgba(255, 255, 255, 0.2); background: rgba(0, 0, 0, 0.2); font-family: monospace; font-size: 11px;">g</td><td style="padding: 8px 10px; border: 1px solid rgba(255, 255, 255, 0.2); background: rgba(0, 0, 0, 0.2); font-family: monospace; font-size: 11px;">&lt;span style="color:#5555ff"&gt;$1&lt;/span&gt;</td></tr>
+                        <tr><td style="padding: 8px 10px; border: 1px solid rgba(255, 255, 255, 0.2); background: rgba(0, 0, 0, 0.2); font-family: monospace; font-size: 11px;">green</td><td style="padding: 8px 10px; border: 1px solid rgba(255, 255, 255, 0.2); background: rgba(0, 0, 0, 0.2); font-family: monospace; font-size: 11px;">\\[green\\]([^\\[]+)\\[/\\]</td><td style="padding: 8px 10px; border: 1px solid rgba(255, 255, 255, 0.2); background: rgba(0, 0, 0, 0.2); font-family: monospace; font-size: 11px;">g</td><td style="padding: 8px 10px; border: 1px solid rgba(255, 255, 255, 0.2); background: rgba(0, 0, 0, 0.2); font-family: monospace; font-size: 11px;">&lt;span style="color:green"&gt;$1&lt;/span&gt;</td></tr>
+                        <tr><td style="padding: 8px 10px; border: 1px solid rgba(255, 255, 255, 0.2); background: rgba(0, 0, 0, 0.2); font-family: monospace; font-size: 11px;">yellow</td><td style="padding: 8px 10px; border: 1px solid rgba(255, 255, 255, 0.2); background: rgba(0, 0, 0, 0.2); font-family: monospace; font-size: 11px;">\\[yellow\\]([^\\[]+)\\[/\\]</td><td style="padding: 8px 10px; border: 1px solid rgba(255, 255, 255, 0.2); background: rgba(0, 0, 0, 0.2); font-family: monospace; font-size: 11px;">g</td><td style="padding: 8px 10px; border: 1px solid rgba(255, 255, 255, 0.2); background: rgba(0, 0, 0, 0.2); font-family: monospace; font-size: 11px;">&lt;span style="color:yellow"&gt;$1&lt;/span&gt;</td></tr>
+                        <tr><td style="padding: 8px 10px; border: 1px solid rgba(255, 255, 255, 0.2); background: rgba(0, 0, 0, 0.2); font-family: monospace; font-size: 11px;">orange</td><td style="padding: 8px 10px; border: 1px solid rgba(255, 255, 255, 0.2); background: rgba(0, 0, 0, 0.2); font-family: monospace; font-size: 11px;">\\[orange\\]([^\\[]+)\\[/\\]</td><td style="padding: 8px 10px; border: 1px solid rgba(255, 255, 255, 0.2); background: rgba(0, 0, 0, 0.2); font-family: monospace; font-size: 11px;">g</td><td style="padding: 8px 10px; border: 1px solid rgba(255, 255, 255, 0.2); background: rgba(0, 0, 0, 0.2); font-family: monospace; font-size: 11px;">&lt;span style="color:orange"&gt;$1&lt;/span&gt;</td></tr>
+                        <tr><td style="padding: 8px 10px; border: 1px solid rgba(255, 255, 255, 0.2); background: rgba(0, 0, 0, 0.2); font-family: monospace; font-size: 11px;">pink</td><td style="padding: 8px 10px; border: 1px solid rgba(255, 255, 255, 0.2); background: rgba(0, 0, 0, 0.2); font-family: monospace; font-size: 11px;">\\[pink\\]([^\\[]+)\\[/\\]</td><td style="padding: 8px 10px; border: 1px solid rgba(255, 255, 255, 0.2); background: rgba(0, 0, 0, 0.2); font-family: monospace; font-size: 11px;">g</td><td style="padding: 8px 10px; border: 1px solid rgba(255, 255, 255, 0.2); background: rgba(0, 0, 0, 0.2); font-family: monospace; font-size: 11px;">&lt;span style="color:pink"&gt;$1&lt;/span&gt;</td></tr>
+                        <tr><td style="padding: 8px 10px; border: 1px solid rgba(255, 255, 255, 0.2); background: rgba(0, 0, 0, 0.2); font-family: monospace; font-size: 11px;">lime</td><td style="padding: 8px 10px; border: 1px solid rgba(255, 255, 255, 0.2); background: rgba(0, 0, 0, 0.2); font-family: monospace; font-size: 11px;">\\[lime\\]([^\\[]+)\\[/\\]</td><td style="padding: 8px 10px; border: 1px solid rgba(255, 255, 255, 0.2); background: rgba(0, 0, 0, 0.2); font-family: monospace; font-size: 11px;">g</td><td style="padding: 8px 10px; border: 1px solid rgba(255, 255, 255, 0.2); background: rgba(0, 0, 0, 0.2); font-family: monospace; font-size: 11px;">&lt;span style="color:lime"&gt;$1&lt;/span&gt;</td></tr>
+                        <tr><td style="padding: 8px 10px; border: 1px solid rgba(255, 255, 255, 0.2); background: rgba(0, 0, 0, 0.2); font-family: monospace; font-size: 11px;">aqua</td><td style="padding: 8px 10px; border: 1px solid rgba(255, 255, 255, 0.2); background: rgba(0, 0, 0, 0.2); font-family: monospace; font-size: 11px;">\\[aqua\\]([^\\[]+)\\[/\\]</td><td style="padding: 8px 10px; border: 1px solid rgba(255, 255, 255, 0.2); background: rgba(0, 0, 0, 0.2); font-family: monospace; font-size: 11px;">g</td><td style="padding: 8px 10px; border: 1px solid rgba(255, 255, 255, 0.2); background: rgba(0, 0, 0, 0.2); font-family: monospace; font-size: 11px;">&lt;span style="color:aqua"&gt;$1&lt;/span&gt;</td></tr>
+                        <tr><td style="padding: 8px 10px; border: 1px solid rgba(255, 255, 255, 0.2); background: rgba(0, 0, 0, 0.2); font-family: monospace; font-size: 11px;">violet</td><td style="padding: 8px 10px; border: 1px solid rgba(255, 255, 255, 0.2); background: rgba(0, 0, 0, 0.2); font-family: monospace; font-size: 11px;">\\[violet\\]([^\\[]+)\\[/\\]</td><td style="padding: 8px 10px; border: 1px solid rgba(255, 255, 255, 0.2); background: rgba(0, 0, 0, 0.2); font-family: monospace; font-size: 11px;">g</td><td style="padding: 8px 10px; border: 1px solid rgba(255, 255, 255, 0.2); background: rgba(0, 0, 0, 0.2); font-family: monospace; font-size: 11px;">&lt;span style="color:violet"&gt;$1&lt;/span&gt;</td></tr>
+                        <tr><td style="padding: 8px 10px; border: 1px solid rgba(255, 255, 255, 0.2); background: rgba(0, 0, 0, 0.2); font-family: monospace; font-size: 11px;">white</td><td style="padding: 8px 10px; border: 1px solid rgba(255, 255, 255, 0.2); background: rgba(0, 0, 0, 0.2); font-family: monospace; font-size: 11px;">\\[white\\]([^\\[]+)\\[/\\]</td><td style="padding: 8px 10px; border: 1px solid rgba(255, 255, 255, 0.2); background: rgba(0, 0, 0, 0.2); font-family: monospace; font-size: 11px;">g</td><td style="padding: 8px 10px; border: 1px solid rgba(255, 255, 255, 0.2); background: rgba(0, 0, 0, 0.2); font-family: monospace; font-size: 11px;">&lt;span style="color:white"&gt;$1&lt;/span&gt;</td></tr>
+                        <tr><td style="padding: 8px 10px; border: 1px solid rgba(255, 255, 255, 0.2); background: rgba(0, 0, 0, 0.2); font-family: monospace; font-size: 11px;">silver</td><td style="padding: 8px 10px; border: 1px solid rgba(255, 255, 255, 0.2); background: rgba(0, 0, 0, 0.2); font-family: monospace; font-size: 11px;">\\[silver\\]([^\\[]+)\\[/\\]</td><td style="padding: 8px 10px; border: 1px solid rgba(255, 255, 255, 0.2); background: rgba(0, 0, 0, 0.2); font-family: monospace; font-size: 11px;">g</td><td style="padding: 8px 10px; border: 1px solid rgba(255, 255, 255, 0.2); background: rgba(0, 0, 0, 0.2); font-family: monospace; font-size: 11px;">&lt;span style="color:silver"&gt;$1&lt;/span&gt;</td></tr>
+                        <tr><td style="padding: 8px 10px; border: 1px solid rgba(255, 255, 255, 0.2); background: rgba(0, 0, 0, 0.2); font-family: monospace; font-size: 11px;">brown</td><td style="padding: 8px 10px; border: 1px solid rgba(255, 255, 255, 0.2); background: rgba(0, 0, 0, 0.2); font-family: monospace; font-size: 11px;">\\[brown\\]([^\\[]+)\\[/\\]</td><td style="padding: 8px 10px; border: 1px solid rgba(255, 255, 255, 0.2); background: rgba(0, 0, 0, 0.2); font-family: monospace; font-size: 11px;">g</td><td style="padding: 8px 10px; border: 1px solid rgba(255, 255, 255, 0.2); background: rgba(0, 0, 0, 0.2); font-family: monospace; font-size: 11px;">&lt;span style="color:brown"&gt;$1&lt;/span&gt;</td></tr>
+                        <tr><td style="padding: 8px 10px; border: 1px solid rgba(255, 255, 255, 0.2); background: rgba(0, 0, 0, 0.2); font-family: monospace; font-size: 11px;">bold</td><td style="padding: 8px 10px; border: 1px solid rgba(255, 255, 255, 0.2); background: rgba(0, 0, 0, 0.2); font-family: monospace; font-size: 11px;">\\[b\\]([^\\[]+)\\[/\\]</td><td style="padding: 8px 10px; border: 1px solid rgba(255, 255, 255, 0.2); background: rgba(0, 0, 0, 0.2); font-family: monospace; font-size: 11px;">g</td><td style="padding: 8px 10px; border: 1px solid rgba(255, 255, 255, 0.2); background: rgba(0, 0, 0, 0.2); font-family: monospace; font-size: 11px;">&lt;strong&gt;$1&lt;/strong&gt;</td></tr>
+                        <tr><td style="padding: 8px 10px; border: 1px solid rgba(255, 255, 255, 0.2); background: rgba(0, 0, 0, 0.2); font-family: monospace; font-size: 11px;">italic</td><td style="padding: 8px 10px; border: 1px solid rgba(255, 255, 255, 0.2); background: rgba(0, 0, 0, 0.2); font-family: monospace; font-size: 11px;">\\[i\\]([^\\[]+)\\[/\\]</td><td style="padding: 8px 10px; border: 1px solid rgba(255, 255, 255, 0.2); background: rgba(0, 0, 0, 0.2); font-family: monospace; font-size: 11px;">g</td><td style="padding: 8px 10px; border: 1px solid rgba(255, 255, 255, 0.2); background: rgba(0, 0, 0, 0.2); font-family: monospace; font-size: 11px;">&lt;em&gt;$1&lt;/em&gt;</td></tr>
+                        <tr><td style="padding: 8px 10px; border: 1px solid rgba(255, 255, 255, 0.2); background: rgba(0, 0, 0, 0.2); font-family: monospace; font-size: 11px;">underline</td><td style="padding: 8px 10px; border: 1px solid rgba(255, 255, 255, 0.2); background: rgba(0, 0, 0, 0.2); font-family: monospace; font-size: 11px;">\\[u\\]([^\\[]+)\\[/\\]</td><td style="padding: 8px 10px; border: 1px solid rgba(255, 255, 255, 0.2); background: rgba(0, 0, 0, 0.2); font-family: monospace; font-size: 11px;">g</td><td style="padding: 8px 10px; border: 1px solid rgba(255, 255, 255, 0.2); background: rgba(0, 0, 0, 0.2); font-family: monospace; font-size: 11px;">&lt;u&gt;$1&lt;/u&gt;</td></tr>
+                        <tr><td style="padding: 8px 10px; border: 1px solid rgba(255, 255, 255, 0.2); background: rgba(0, 0, 0, 0.2); font-family: monospace; font-size: 11px;">strike</td><td style="padding: 8px 10px; border: 1px solid rgba(255, 255, 255, 0.2); background: rgba(0, 0, 0, 0.2); font-family: monospace; font-size: 11px;">\\[s\\]([^\\[]+)\\[/\\]</td><td style="padding: 8px 10px; border: 1px solid rgba(255, 255, 255, 0.2); background: rgba(0, 0, 0, 0.2); font-family: monospace; font-size: 11px;">g</td><td style="padding: 8px 10px; border: 1px solid rgba(255, 255, 255, 0.2); background: rgba(0, 0, 0, 0.2); font-family: monospace; font-size: 11px;">&lt;s&gt;$1&lt;/s&gt;</td></tr>
+                        <tr><td style="padding: 8px 10px; border: 1px solid rgba(255, 255, 255, 0.2); background: rgba(0, 0, 0, 0.2); font-family: monospace; font-size: 11px;">spoiler</td><td style="padding: 8px 10px; border: 1px solid rgba(255, 255, 255, 0.2); background: rgba(0, 0, 0, 0.2); font-family: monospace; font-size: 11px;">\\[sp\\]([^\\[]+)\\[/\\]</td><td style="padding: 8px 10px; border: 1px solid rgba(255, 255, 255, 0.2); background: rgba(0, 0, 0, 0.2); font-family: monospace; font-size: 11px;">g</td><td style="padding: 8px 10px; border: 1px solid rgba(255, 255, 255, 0.2); background: rgba(0, 0, 0, 0.2); font-family: monospace; font-size: 11px;">&lt;span class="spoiler"&gt;$1&lt;/span&gt;</td></tr>
                     </table>
                 </div>
-                <p class="filter-note">After adding these filters, the text styling panel will work for all users!</p>
+                <p style="background: rgba(93, 173, 236, 0.1); border: 1px solid rgba(93, 173, 236, 0.3); border-radius: 6px; padding: 12px; margin-top: 15px;">After adding these filters, the text styling panel will work for all users!</p>
             </div>
         </div>
     `;
     
+    // Close when clicking backdrop
+    modal.onclick = function(e) {
+        if (e.target === modal) {
+            closeFilterInstructions();
+        }
+    };
+    
     document.body.appendChild(modal);
-    modal.style.display = 'flex';
 }
 
 function closeFilterInstructions() {
