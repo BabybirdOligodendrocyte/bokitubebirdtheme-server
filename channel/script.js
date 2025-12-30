@@ -47,8 +47,6 @@ $("#videowrap-header").prependTo($("#currenttitlewrap"));
 
 const nodecurrenttitle = document.getElementById("currenttitle");
 const clonecurrenttitle = nodecurrenttitle.cloneNode(true);
-/* $("#videowrap-header").append($("<span> </span>"));
-document.getElementById("videowrap-header").appendChild(clone); */
 
 /* Remove padding on wrap */
 const pagewrap = document.getElementById("wrap");
@@ -60,42 +58,38 @@ chatline.removeAttribute("placeholder");
 chatline.setAttribute("placeholder", "Send a message");
 chatline.setAttribute("spellcheck", "false");
 
-/* Sets the variable used for mobile chat sizing every 20 milliseconds - there is probably a better implementation of this */
+/* Sets the variable used for mobile chat sizing every 20 milliseconds */
 setInterval(function () {document.documentElement.style.setProperty('--vh', `${window.innerHeight/100}px`);}, 20);
 
 /* Positions the chat depending on media query */
 function chatPosition(x) {
-    if (x.matches) { // If media query matches
+    if (x.matches) {
         $("#rightcontent").appendTo($("#leftcontent"));
         $("#channel-content").appendTo($("#leftcontent"));
         $("#footer").appendTo($("#leftcontent"));
         
-        /* When user clicks chatline on devices with width < 768px, scroll up continuously for 0.5 seconds */
         document.getElementById("chatline").onclick = function() {
             var counter = 0;
             var clickChatInterval = setInterval(() => {
                 document.documentElement.scrollTop = 0;
-
                 if (++counter === 10) {
                     window.clearInterval(clickChatInterval);
                 }
             }, 50);
         }
 
-        /* Sets the variable used for mobile chat sizing every 20 milliseconds - there is probably a better implementation of this */
         setInterval(function () {
             document.documentElement.style.setProperty('--vh', `${window.innerHeight/100}px`);
         }, 20);
     } else {
         $("#rightcontent").appendTo($("#content-wrap"));
-        
         document.documentElement.style.setProperty('--vh', `${window.innerHeight/100}px`);
     }
 }
   
 var mediaQuery = window.matchMedia("(max-width: 768px)");
-chatPosition(mediaQuery); // Call listener function at run time
-mediaQuery.addEventListener('change', chatPosition); // Attach listener function on state changes
+chatPosition(mediaQuery);
+mediaQuery.addEventListener('change', chatPosition);
 
 /* Add jump to current item button */
 const jumpBtn = document.createElement("button");
@@ -107,8 +101,6 @@ jumpBtn.onclick = function() {
 }
 const rightControls = document.getElementById("rightcontrols");
 rightControls.insertBefore(jumpBtn, rightControls.children[1]);
-
-
 
 //OLDER CODE: DON'T TOUCH
 /* AFK on unfocus function */
@@ -149,14 +141,12 @@ window.addEventListener("blur", () => {
 
 /* Adds favicon and externally hosted fonts from Google Fonts */
 $(document).ready(function() {
-    /* Navbar title */
     if (window.location.host == 'cytu.be') {
         if (typeof channelName !== 'undefined') $(".navbar-brand").html(channelName);
         if (typeof faviconUrl !== 'undefined') $('<link id="chanfavicon" href="' + faviconUrl + '" type="image/x-icon" rel="shortcut icon" />').appendTo("head");
     }
 
     $('<link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Ubuntu">').appendTo("head");
-    
     $('<link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Quicksand">').appendTo("head");
 });
 
@@ -196,282 +186,517 @@ $('<button id="clear-btn" class="btn btn-default btn-sm">Clear</button>')
         });
     });
 
-/* Initialize default values for floating emotes panel positioning for new users */
-if (!localStorage.epFlTop || !localStorage.epFlLeft) {
-    localStorage.epFlTop = 100;
-    localStorage.epFlLeft = -15;
+/* ========== EMOTE PANEL SYSTEM ========== */
+
+// Initialize favorites from localStorage
+var emoteFavorites = JSON.parse(localStorage.getItem('emoteFavorites')) || [];
+
+// Initialize emote panel position from localStorage
+if (!localStorage.emotePanelTop) localStorage.emotePanelTop = 100;
+if (!localStorage.emotePanelLeft) localStorage.emotePanelLeft = 100;
+
+// Create the floating emote panel container
+function createEmotePanel() {
+    const panel = document.createElement('div');
+    panel.id = 'emote-panel';
+    panel.className = 'emote-panel';
+    panel.style.top = localStorage.emotePanelTop + 'px';
+    panel.style.left = localStorage.emotePanelLeft + 'px';
+    panel.style.display = 'none';
+    
+    panel.innerHTML = `
+        <div class="emote-panel-header" id="emote-panel-header">
+            <span class="emote-panel-title">Emotes</span>
+            <div class="emote-panel-controls">
+                <button class="emote-panel-close" onclick="closeEmotePanel()" title="Close">&times;</button>
+            </div>
+        </div>
+        <div class="emote-panel-tabs">
+            <button class="emote-tab active" data-tab="all" onclick="switchEmoteTab('all')">All</button>
+            <button class="emote-tab" data-tab="favorites" onclick="switchEmoteTab('favorites')">★ Favorites</button>
+        </div>
+        <div class="emote-panel-search">
+            <input type="text" id="emote-search" placeholder="Search emotes..." oninput="filterEmotes(this.value)">
+        </div>
+        <div class="emote-panel-body" id="emote-panel-body">
+            <!-- Emotes will be populated here -->
+        </div>
+    `;
+    
+    document.body.appendChild(panel);
+    
+    // Make panel draggable
+    makeDraggable(panel, document.getElementById('emote-panel-header'));
 }
 
-$('<div class="emotewrap" id="emotewrap" style="top: ' + localStorage.epFlTop + 'px; left: ' + localStorage.epFlLeft + 'px;">').appendTo($("#rightcontent"));
-
-/* Initialize default values for emotes panel positioning for new users */
-if (!localStorage.epposition) {
-    localStorage.epposition = 1;
-    emotespanel = $('<div id="emotespanel" class="ep__fixed" style="display:none" />').insertAfter('#userlist');
-}
-
-/* Set emotes panel to floating or fixed depending on last session */
-if (localStorage.epposition == 0) {
-    emotespanel = $('<div id="emotespanel" class="ep__floating" style="display:none" />').appendTo($("#emotewrap"));
-} else {
-    emotespanel = $('<div id="emotespanel" class="ep__fixed" style="display:none" />').insertAfter('#userlist');
-}
-
-/* Initialize default values for emotes panel state for new users */
-if (!localStorage.epIsOpen) {
-    localStorage.epIsOpen = 0;
-}
-if (localStorage.epIsOpen == 1) {
-    toggleDiv(emotespanel);
-}
-
-function toggleDiv(div) {
-    $(div).css('display') == "none" ? $(div).show() : $(div).hide();
-}
-function insertText(str) {
-    $("#chatline").val($("#chatline").val() + str).focus(); // TODO: remove this utility function so that the chatline doesn't get focused on emote press on mobile
-}
-
-/* Initialize intersection observer to improve performance - see https://github.com/deafnv/bokitube-server/commit/1d81d089762a7cb421d252dba385cd706ede4960 */
-let observer = new IntersectionObserver(observerCallback);
-function observerCallback() {
-    toggleDiv('#queue');
-}
-
-/* Custom emotes panel */
-var autocompleteArr = [];
-function emotesPanel() {
-    emotespanel.removeClass('row');
-    document.querySelector('#emotespanel').replaceChildren();
-
-    len = CHANNEL.emotes.length;
-    if (len < 1) {
-        emotespanel.addClass('row');
-        makeAlert("No emotes available", "Ask channel administrator. This panel will update every second until an emote is found.").appendTo(emotespanel);
-
-        if (!document.querySelector('#content-wrap').contains(document.querySelector('#needpw')))
-            $("#needpw").appendTo($("#content-wrap"));
-
-        console.log('No emotes found, reloading in 1 second')
-        setTimeout(function() {emotesPanel()}, 1000);
+// Switch between All and Favorites tabs
+function switchEmoteTab(tab) {
+    document.querySelectorAll('.emote-tab').forEach(t => t.classList.remove('active'));
+    document.querySelector(`.emote-tab[data-tab="${tab}"]`).classList.add('active');
+    
+    if (tab === 'all') {
+        populateEmotePanel(CHANNEL.emotes);
     } else {
-        for (i in CHANNEL.emotes) {
-            $('<img onclick="insertText(\'' + CHANNEL.emotes[i].name + ' \')" />')
-                .attr({
-                    'src': CHANNEL.emotes[i].image,
-                    'title': CHANNEL.emotes[i].name
-                })
-                .appendTo(emotespanel);
-            autocompleteArr.push({"name":CHANNEL.emotes[i].name, "image": CHANNEL.emotes[i].image});
-        }
-        autocompleteArr.sort((a, b) => a.name.localeCompare(b.name));
-        // Disable autocomplete on mobile - legacy, enable if needed, although mobile has less vertical space as is
-        if (!window.matchMedia("(max-width: 768px)").matches) {
-            autocomplete(document.getElementById("chatline"), autocompleteArr);
-        } else {
-            // See line 212 for details
-            observer.observe(document.querySelector('#rightpane-inner').children[5]);
-        }
+        const favoriteEmotes = CHANNEL.emotes.filter(e => emoteFavorites.includes(e.name));
+        populateEmotePanel(favoriteEmotes, true);
     }
 }
-emotesPanel();
+
+// Filter emotes by search term
+function filterEmotes(searchTerm) {
+    const activeTab = document.querySelector('.emote-tab.active').dataset.tab;
+    let emotes = CHANNEL.emotes;
+    
+    if (activeTab === 'favorites') {
+        emotes = CHANNEL.emotes.filter(e => emoteFavorites.includes(e.name));
+    }
+    
+    if (searchTerm.trim()) {
+        emotes = emotes.filter(e => e.name.toLowerCase().includes(searchTerm.toLowerCase()));
+    }
+    
+    populateEmotePanel(emotes, activeTab === 'favorites');
+}
+
+// Populate the emote panel with emotes
+function populateEmotePanel(emotes, isFavoritesTab = false) {
+    const body = document.getElementById('emote-panel-body');
+    body.innerHTML = '';
+    
+    if (emotes.length === 0) {
+        body.innerHTML = `<div class="emote-panel-empty">${isFavoritesTab ? 'No favorite emotes yet. Click ★ on emotes to add them!' : 'No emotes found.'}</div>`;
+        return;
+    }
+    
+    emotes.forEach(emote => {
+        const emoteItem = document.createElement('div');
+        emoteItem.className = 'emote-item';
+        
+        const isFavorite = emoteFavorites.includes(emote.name);
+        
+        emoteItem.innerHTML = `
+            <img src="${emote.image}" alt="${emote.name}" title="${emote.name}" onclick="insertEmote('${emote.name}')">
+            <button class="emote-fav-btn ${isFavorite ? 'favorited' : ''}" onclick="toggleFavorite('${emote.name}', event)" title="${isFavorite ? 'Remove from favorites' : 'Add to favorites'}">★</button>
+        `;
+        
+        body.appendChild(emoteItem);
+    });
+}
+
+// Insert emote into chat
+function insertEmote(emoteName) {
+    $("#chatline").val($("#chatline").val() + emoteName + ' ').focus();
+}
+
+// Toggle favorite status
+function toggleFavorite(emoteName, event) {
+    event.stopPropagation();
+    
+    const index = emoteFavorites.indexOf(emoteName);
+    if (index > -1) {
+        emoteFavorites.splice(index, 1);
+    } else {
+        emoteFavorites.unshift(emoteName);
+    }
+    
+    localStorage.setItem('emoteFavorites', JSON.stringify(emoteFavorites));
+    
+    // Update UI
+    const btn = event.target;
+    btn.classList.toggle('favorited');
+    
+    // If on favorites tab, refresh the view
+    const activeTab = document.querySelector('.emote-tab.active').dataset.tab;
+    if (activeTab === 'favorites') {
+        switchEmoteTab('favorites');
+    }
+    
+    // Update favorites dropdown if open
+    updateFavoritesDropdown();
+}
+
+// Open emote panel
+function openEmotePanel() {
+    let panel = document.getElementById('emote-panel');
+    if (!panel) {
+        createEmotePanel();
+        panel = document.getElementById('emote-panel');
+    }
+    
+    // Reset search
+    const searchInput = document.getElementById('emote-search');
+    if (searchInput) searchInput.value = '';
+    
+    // Reset to All tab
+    switchEmoteTab('all');
+    
+    panel.style.display = 'flex';
+}
+
+// Close emote panel
+function closeEmotePanel() {
+    const panel = document.getElementById('emote-panel');
+    if (panel) {
+        panel.style.display = 'none';
+    }
+}
+
+// Toggle emote panel
+function toggleEmotePanel() {
+    const panel = document.getElementById('emote-panel');
+    if (panel && panel.style.display !== 'none') {
+        closeEmotePanel();
+    } else {
+        openEmotePanel();
+    }
+}
+
+// Make element draggable
+function makeDraggable(element, handle) {
+    let pos1 = 0, pos2 = 0, pos3 = 0, pos4 = 0;
+    
+    handle.onmousedown = dragMouseDown;
+    
+    function dragMouseDown(e) {
+        e.preventDefault();
+        pos3 = e.clientX;
+        pos4 = e.clientY;
+        document.onmouseup = closeDragElement;
+        document.onmousemove = elementDrag;
+    }
+    
+    function elementDrag(e) {
+        e.preventDefault();
+        pos1 = pos3 - e.clientX;
+        pos2 = pos4 - e.clientY;
+        pos3 = e.clientX;
+        pos4 = e.clientY;
+        
+        let newTop = element.offsetTop - pos2;
+        let newLeft = element.offsetLeft - pos1;
+        
+        // Keep within viewport
+        newTop = Math.max(0, Math.min(newTop, window.innerHeight - 100));
+        newLeft = Math.max(0, Math.min(newLeft, window.innerWidth - 100));
+        
+        element.style.top = newTop + "px";
+        element.style.left = newLeft + "px";
+    }
+    
+    function closeDragElement() {
+        document.onmouseup = null;
+        document.onmousemove = null;
+        
+        // Save position
+        localStorage.emotePanelTop = parseInt(element.style.top);
+        localStorage.emotePanelLeft = parseInt(element.style.left);
+    }
+}
+
+/* ========== FAVORITES QUICK ACCESS DROPDOWN ========== */
+
+// Create favorites dropdown
+function createFavoritesDropdown() {
+    const dropdown = document.createElement('div');
+    dropdown.id = 'favorites-dropdown';
+    dropdown.className = 'favorites-dropdown';
+    dropdown.style.display = 'none';
+    
+    document.body.appendChild(dropdown);
+    
+    return dropdown;
+}
+
+// Update favorites dropdown content
+function updateFavoritesDropdown() {
+    let dropdown = document.getElementById('favorites-dropdown');
+    if (!dropdown) return;
+    
+    dropdown.innerHTML = '';
+    
+    if (emoteFavorites.length === 0) {
+        dropdown.innerHTML = '<div class="favorites-empty">No favorites yet!</div>';
+        return;
+    }
+    
+    emoteFavorites.forEach(emoteName => {
+        const emote = CHANNEL.emotes.find(e => e.name === emoteName);
+        if (emote) {
+            const img = document.createElement('img');
+            img.src = emote.image;
+            img.alt = emote.name;
+            img.title = emote.name;
+            img.onclick = function() {
+                insertEmote(emote.name);
+                closeFavoritesDropdown();
+            };
+            dropdown.appendChild(img);
+        }
+    });
+}
+
+// Show favorites dropdown
+function showFavoritesDropdown() {
+    let dropdown = document.getElementById('favorites-dropdown');
+    if (!dropdown) {
+        dropdown = createFavoritesDropdown();
+    }
+    
+    updateFavoritesDropdown();
+    
+    // Position near the favorites button
+    const btn = document.getElementById('favorites-btn');
+    const rect = btn.getBoundingClientRect();
+    
+    dropdown.style.bottom = (window.innerHeight - rect.top + 5) + 'px';
+    dropdown.style.left = rect.left + 'px';
+    dropdown.style.display = 'flex';
+}
+
+// Close favorites dropdown
+function closeFavoritesDropdown() {
+    const dropdown = document.getElementById('favorites-dropdown');
+    if (dropdown) {
+        dropdown.style.display = 'none';
+    }
+}
+
+// Toggle favorites dropdown
+function toggleFavoritesDropdown() {
+    const dropdown = document.getElementById('favorites-dropdown');
+    if (dropdown && dropdown.style.display !== 'none') {
+        closeFavoritesDropdown();
+    } else {
+        showFavoritesDropdown();
+    }
+}
+
+// Close dropdown when clicking outside
+document.addEventListener('click', function(e) {
+    const dropdown = document.getElementById('favorites-dropdown');
+    const favBtn = document.getElementById('favorites-btn');
+    
+    if (dropdown && dropdown.style.display !== 'none') {
+        if (!dropdown.contains(e.target) && e.target !== favBtn && !favBtn.contains(e.target)) {
+            closeFavoritesDropdown();
+        }
+    }
+});
+
+/* ========== BUTTON SETUP ========== */
 
 /* Remove original emote button */
 $("#emotelistbtn").remove();
 
 /* Replace text with icons */
-$("#newpollbtn").html(`<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="#FFFFFF" height="800px" width="800px" version="1.1" id="Capa_1" viewBox="0 0 490.4 490.4" xml:space="preserve"><path d="M17.2,251.55c-9.5,0-17.2,7.7-17.2,17.1v179.7c0,9.5,7.7,17.2,17.2,17.2h113c9.5,0,17.1-7.7,17.1-17.2v-179.7 c0-9.5-7.7-17.1-17.1-17.1L17.2,251.55L17.2,251.55z M113,431.25H34.3v-145.4H113V431.25z"/><path d="M490.4,448.45v-283.7c0-9.5-7.7-17.2-17.2-17.2h-113c-9.5,0-17.2,7.7-17.2,17.2v283.6c0,9.5,7.7,17.2,17.2,17.2h113 C482.7,465.55,490.4,457.85,490.4,448.45z M456.1,431.25h-78.7v-249.3h78.7L456.1,431.25L456.1,431.25z"/> <path d="M301.7,465.55c9.5,0,17.1-7.7,17.1-17.2V42.05c0-9.5-7.7-17.2-17.1-17.2h-113c-9.5,0-17.2,7.7-17.2,17.2v406.3 c0,9.5,7.7,17.2,17.2,17.2H301.7z M205.9,59.25h78.7v372h-78.7L205.9,59.25L205.9,59.25z"/></svg>`)
+$("#newpollbtn").html(`<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="#FFFFFF" viewBox="0 0 490.4 490.4"><path d="M17.2,251.55c-9.5,0-17.2,7.7-17.2,17.1v179.7c0,9.5,7.7,17.2,17.2,17.2h113c9.5,0,17.1-7.7,17.1-17.2v-179.7c0-9.5-7.7-17.1-17.1-17.1L17.2,251.55L17.2,251.55z M113,431.25H34.3v-145.4H113V431.25z"/><path d="M490.4,448.45v-283.7c0-9.5-7.7-17.2-17.2-17.2h-113c-9.5,0-17.2,7.7-17.2,17.2v283.6c0,9.5,7.7,17.2,17.2,17.2h113C482.7,465.55,490.4,457.85,490.4,448.45z M456.1,431.25h-78.7v-249.3h78.7L456.1,431.25L456.1,431.25z"/><path d="M301.7,465.55c9.5,0,17.1-7.7,17.1-17.2V42.05c0-9.5-7.7-17.2-17.1-17.2h-113c-9.5,0-17.2,7.7-17.2,17.2v406.3c0,9.5,7.7,17.2,17.2,17.2H301.7z M205.9,59.25h78.7v372h-78.7L205.9,59.25L205.9,59.25z"/></svg>`)
 $('#newpollbtn').attr("title", "Create new poll")
 
-/* Add custom emotes panel button and favorites system */
-// Initialize favorites from localStorage
-var emoteFavorites = JSON.parse(localStorage.getItem('emoteFavorites')) || [];
-
-// Create modal overlay for emotes
-function createEmoteModal() {
-        const modal = document.createElement('div');
-        modal.id = 'emote-modal';
-        modal.className = 'emote-modal';
-        modal.innerHTML = `
-                <div class="emote-modal-content">
-                            <div class="emote-modal-header">
-                                            <h2>Emotes</h2>
-                                                            <button class="emote-modal-close" onclick="closeEmoteModal()">&times;</button>
-                                                                        </div>
-                                                                                    <div class="emote-modal-body" id="emote-modal-body">
-                                                                                                    <!-- Emotes will be populated here -->
-                                                                                                                </div>
-                                                                                                                        </div>
-                                                                                                                            `;
-        document.body.appendChild(modal);
-}
-
-function openEmoteModal() {
-        let modal = document.getElementById('emote-modal');
-        if (!modal) {
-                    createEmoteModal();
-                    modal = document.getElementById('emote-modal');
-        }
-
-        const modalBody = document.getElementById('emote-modal-body');
-        modalBody.innerHTML = '';
-
-        CHANNEL.emotes.forEach(emote => {
-                    const emoteCard = document.createElement('div');
-                    emoteCard.className = 'emote-card';
-                    const isFavorite = emoteFavorites.includes(emote.name);
-                    emoteCard.innerHTML = `
-                                <div class="emote-card-content">
-                                                <img src="${emote.image}" alt="${emote.name}" class="emote-card-image" onclick="insertText('${emote.name} ')">
-                                                                <button class="emote-favorite-btn ${isFavorite ? 'favorited' : ''}" onclick="toggleEmoteFavorite('${emote.name}', event)" title="Add to favorites">★</button>
-                                                                            </div>
-                                                                                        <p class="emote-card-name">${emote.name}</p>
-                                                                                                `;
-                    modalBody.appendChild(emoteCard);
-        });
-
-        modal.style.display = 'flex';
-}
-
-function closeEmoteModal() {
-        const modal = document.getElementById('emote-modal');
-        if (modal) {
-                    modal.style.display = 'none';
-        }
-}
-
-function toggleEmoteFavorite(emoteName, event) {
-        event.stopPropagation();
-        const index = emoteFavorites.indexOf(emoteName);
-        if (index > -1) {
-                    emoteFavorites.splice(index, 1);
-        } else {
-                    emoteFavorites.unshift(emoteName);
-        }
-        localStorage.setItem('emoteFavorites', JSON.stringify(emoteFavorites));
-
-        // Update star button
-        const btn = event.target;
-        btn.classList.toggle('favorited');
-
-        // Refresh modal if open
-        if (document.getElementById('emote-modal')?.style.display === 'flex') {
-                    openEmoteModal();
-        }
-}
-
-emotesbtn = $('<button id="emotes-btn" class="btn btn-sm btn-default" title="Display emotes panel"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="#FFFFFF" viewBox="0 0 24 24"><path d="M12 2c5.514 0 10 4.486 10 10s-4.486 10-10 10-10-4.486-10-10 4.486-10 10-10zm0-2c-6.627 0-12 5.373-12 12s5.373 12 12 12 12-5.373 12-12-5.373-12-12-12zm5.507 13.941c-1.512 1.195-3.174 1.931-5.506 1.931-2.334 0-3.996-.736-5.508-1.931l-.493.493c1.127 1.72 3.2 3.566 6.001 3.566 2.8 0 4.872-1.846 5.999-3.566l-.493-.493zm-9.007-5.941c-.828 0-1.5.671-1.5 1.5s.672 1.5 1.5 1.5 1.5-.671 1.5-1.5-.672-1.5-1.5-1.5zm7 0c-.828 0-1.5.671-1.5 1.5s.672 1.5 1.5 1.5 1.5-.671 1.5-1.5-.672-1.5-1.5-1.5z"/></svg></button>')
+/* Add emotes button (happy face) */
+const emotesbtn = $('<button id="emotes-btn" class="btn btn-sm btn-default" title="Open emotes panel"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="#FFFFFF" viewBox="0 0 24 24"><path d="M12 2c5.514 0 10 4.486 10 10s-4.486 10-10 10-10-4.486-10-10 4.486-10 10-10zm0-2c-6.627 0-12 5.373-12 12s5.373 12 12 12 12-5.373 12-12-5.373-12-12-12zm5.507 13.941c-1.512 1.195-3.174 1.931-5.506 1.931-2.334 0-3.996-.736-5.508-1.931l-.493.493c1.127 1.72 3.2 3.566 6.001 3.566 2.8 0 4.872-1.846 5.999-3.566l-.493-.493zm-9.007-5.941c-.828 0-1.5.671-1.5 1.5s.672 1.5 1.5 1.5 1.5-.671 1.5-1.5-.672-1.5-1.5-1.5zm7 0c-.828 0-1.5.671-1.5 1.5s.672 1.5 1.5 1.5 1.5-.671 1.5-1.5-.672-1.5-1.5-1.5z"/></svg></button>')
     .prependTo("#leftcontrols")
     .on("click", function() { 
-                openEmoteModal(); 
+        toggleEmotePanel(); 
     });
 
-// Add favorites button with star icon
-const favoritesbtn = $('<button id="favorites-btn" class="btn btn-sm btn-default" title="Show favorite emotes"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="#FFD700" viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg></button>')
+/* Add favorites button (star) next to emotes button */
+const favoritesbtn = $('<button id="favorites-btn" class="btn btn-sm btn-default" title="Quick access to favorite emotes"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="#FFD700" viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg></button>')
     .insertAfter("#emotes-btn")
-    .on("click", function() {
-                emotespanel.removeClass('row');
-                document.querySelector('#emotespanel').replaceChildren();
-
-                if (emoteFavorites.length === 0) {
-                                emotespanel.addClass('row');
-                                makeAlert("No favorite emotes", "Click the star icon in the emote panel to add favorites.").appendTo(emotespanel);
-                } else {
-                                emoteFavorites.forEach(emoteName => {
-                                                    const emote = CHANNEL.emotes.find(e => e.name === emoteName);
-                                                    if (emote) {
-                                                                            $('<img onclick="insertText(\'' + emote.name + ' \')" />')
-                                                                                .attr({ 'src': emote.image, 'title': emote.name })
-                                                                                .appendTo(emotespanel);
-                                                    }
-                                });
-                }
-
-                toggleDiv(emotespanel);
-                localStorage.epIsOpen == 0 ? localStorage.epIsOpen = 1 : localStorage.epIsOpen = 0;
+    .on("click", function(e) {
+        e.stopPropagation();
+        toggleFavoritesDropdown();
     });
 
-$("#emotes-btn").after($("#voteskip"))
+/* Add font tags button for text styling */
+const fontTagsBtn = $('<button id="font-tags-btn" class="btn btn-sm btn-default" title="Text formatting tags (requires Chat Filters setup)"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="#FFFFFF" viewBox="0 0 24 24"><path d="M5 4v3h5.5v12h3V7H19V4z"/></svg></button>')
+    .insertAfter("#favorites-btn")
+    .on("click", function() {
+        openFontTagsPanel();
+    });
 
-/* Switch emotes panel - fixed or floating */
-$('<li><a onclick="switchEp()" style="cursor: pointer;">Switch EP</a></li>').appendTo(".navbar-nav")
-
-function switchEp() {
-    const panel = document.querySelector("#emotespanel");
-    if(localStorage.epposition == 1) { 
-        panel.setAttribute("class", "ep__floating");
-        $("#emotespanel").appendTo($("#emotewrap"));
-        localStorage.epposition = 0;
-        document.querySelector('#emotewrap').style.top = '100px';
-        document.querySelector('#emotewrap').style.left = '-15px';
-        localStorage.epFlTop = 100;
-        localStorage.epFlLeft = -15;
-    } else {
-        panel.setAttribute("class", "ep__fixed");
-        $("#emotespanel").insertAfter('#userlist');
-        localStorage.epposition = 1;
-    }
-}
-
+$("#favorites-btn").after($("#voteskip"));
 $('#newpollbtn').prependTo($("#leftcontrols"));
 
-/* Makes the custom emotes panel draggable */
-dragElement(document.getElementById("emotewrap"));
+/* ========== FONT TAGS PANEL (Server-Side Compatible) ========== */
 
-function dragElement(elmnt) {
-    var pos1 = 0, pos2 = 0, pos3 = 0, pos4 = 0;
-    if (document.getElementById(elmnt.id + "header")) {
-        // if present, the header is where you move the DIV from:
-        document.getElementById(elmnt.id + "header").onmousedown = dragMouseDown;
-    } else {
-        // otherwise, move the DIV from anywhere inside the DIV:
-        elmnt.onmousedown = dragMouseDown;
+function createFontTagsPanel() {
+    const panel = document.createElement('div');
+    panel.id = 'font-tags-panel';
+    panel.className = 'font-tags-panel';
+    panel.style.display = 'none';
+    
+    panel.innerHTML = `
+        <div class="font-tags-header">
+            <span>Text Formatting Tags</span>
+            <button class="font-tags-close" onclick="closeFontTagsPanel()">&times;</button>
+        </div>
+        <div class="font-tags-info">
+            <p>Click a tag to insert it. Use <code>[tag]text[/]</code> format.</p>
+            <p class="font-tags-note">⚠️ <strong>Admin Setup Required:</strong> These tags only work if Chat Filters are configured. <a href="#" onclick="showFilterInstructions(); return false;">View setup instructions</a></p>
+        </div>
+        <div class="font-tags-section">
+            <h4>Colors</h4>
+            <div class="font-tags-grid">
+                <button class="font-tag-btn" style="color: white; background: #333;" onclick="insertFontTag('[white]')">[white]</button>
+                <button class="font-tag-btn" style="color: yellow;" onclick="insertFontTag('[yellow]')">[yellow]</button>
+                <button class="font-tag-btn" style="color: orange;" onclick="insertFontTag('[orange]')">[orange]</button>
+                <button class="font-tag-btn" style="color: pink;" onclick="insertFontTag('[pink]')">[pink]</button>
+                <button class="font-tag-btn" style="color: red;" onclick="insertFontTag('[red]')">[red]</button>
+                <button class="font-tag-btn" style="color: lime;" onclick="insertFontTag('[lime]')">[lime]</button>
+                <button class="font-tag-btn" style="color: green;" onclick="insertFontTag('[green]')">[green]</button>
+                <button class="font-tag-btn" style="color: aqua;" onclick="insertFontTag('[aqua]')">[aqua]</button>
+                <button class="font-tag-btn" style="color: #5555ff;" onclick="insertFontTag('[blue]')">[blue]</button>
+                <button class="font-tag-btn" style="color: violet;" onclick="insertFontTag('[violet]')">[violet]</button>
+                <button class="font-tag-btn" style="color: brown;" onclick="insertFontTag('[brown]')">[brown]</button>
+                <button class="font-tag-btn" style="color: silver;" onclick="insertFontTag('[silver]')">[silver]</button>
+            </div>
+        </div>
+        <div class="font-tags-section">
+            <h4>Styles</h4>
+            <div class="font-tags-grid">
+                <button class="font-tag-btn" style="font-weight: bold;" onclick="insertFontTag('[b]')">[b] Bold</button>
+                <button class="font-tag-btn" style="font-style: italic;" onclick="insertFontTag('[i]')">[i] Italic</button>
+                <button class="font-tag-btn" style="text-decoration: underline;" onclick="insertFontTag('[u]')">[u] Underline</button>
+                <button class="font-tag-btn" style="text-decoration: line-through;" onclick="insertFontTag('[s]')">[s] Strike</button>
+                <button class="font-tag-btn" onclick="insertFontTag('[sp]')">[sp] Spoiler</button>
+                <button class="font-tag-btn" onclick="insertFontTag('[/]')">[/] Close Tag</button>
+            </div>
+        </div>
+        <div class="font-tags-section">
+            <h4>Example</h4>
+            <code class="font-tags-example">[red]Hello [b]World[/][/]</code>
+        </div>
+    `;
+    
+    document.body.appendChild(panel);
+}
+
+function openFontTagsPanel() {
+    let panel = document.getElementById('font-tags-panel');
+    if (!panel) {
+        createFontTagsPanel();
+        panel = document.getElementById('font-tags-panel');
     }
+    panel.style.display = 'flex';
+}
 
-    function dragMouseDown(e) {
-        e = e || window.event;
-        e.preventDefault();
-        // get the mouse cursor position at startup:
-        pos3 = e.clientX;
-        pos4 = e.clientY;
-        document.onmouseup = closeDragElement;
-        // call a function whenever the cursor moves:
-        document.onmousemove = elementDrag;
-    }
-
-    function elementDrag(e) {
-        e = e || window.event;
-        e.preventDefault();
-        // calculate the new cursor position:
-        pos1 = pos3 - e.clientX;
-        pos2 = pos4 - e.clientY;
-        pos3 = e.clientX;
-        pos4 = e.clientY;
-        // set the element's new position:
-        elmnt.style.top = (elmnt.offsetTop - pos2) + "px";
-        elmnt.style.left = (elmnt.offsetLeft - pos1) + "px";
-    }
-
-    function closeDragElement() {
-        // stop moving when mouse button is released:
-        document.onmouseup = null;
-        document.onmousemove = null;
-        localStorage.epFlTop = document.querySelector('#emotewrap').style.top.substring(0, document.querySelector('#emotewrap').style.top.length - 2);
-        localStorage.epFlLeft = document.querySelector('#emotewrap').style.left.substring(0, document.querySelector('#emotewrap').style.left.length - 2);
+function closeFontTagsPanel() {
+    const panel = document.getElementById('font-tags-panel');
+    if (panel) {
+        panel.style.display = 'none';
     }
 }
+
+function insertFontTag(tag) {
+    const chatline = document.getElementById('chatline');
+    const start = chatline.selectionStart;
+    const end = chatline.selectionEnd;
+    const text = chatline.value;
+    
+    if (start !== end) {
+        // Text is selected - wrap it with tags
+        const selectedText = text.substring(start, end);
+        const closeTag = '[/]';
+        chatline.value = text.substring(0, start) + tag + selectedText + closeTag + text.substring(end);
+    } else {
+        // No selection - just insert the tag
+        chatline.value = text.substring(0, start) + tag + text.substring(end);
+    }
+    
+    chatline.focus();
+}
+
+function showFilterInstructions() {
+    closeFontTagsPanel();
+    
+    const modal = document.createElement('div');
+    modal.id = 'filter-instructions-modal';
+    modal.className = 'filter-instructions-modal';
+    modal.innerHTML = `
+        <div class="filter-instructions-content">
+            <div class="filter-instructions-header">
+                <h2>Chat Filters Setup</h2>
+                <button onclick="closeFilterInstructions()">&times;</button>
+            </div>
+            <div class="filter-instructions-body">
+                <p>To enable text formatting visible to <strong>all users</strong>, a channel admin must set up Chat Filters:</p>
+                <ol>
+                    <li>Go to <strong>Channel Settings</strong> → <strong>Edit</strong> → <strong>Chat Filters</strong></li>
+                    <li>Add the following filters (one at a time):</li>
+                </ol>
+                <div class="filter-list">
+                    <table>
+                        <tr><th>Name</th><th>Regex</th><th>Flags</th><th>Replacement</th></tr>
+                        <tr><td>red</td><td>\\[red\\]([^\\[]+)\\[/\\]</td><td>g</td><td>&lt;span style="color:red"&gt;$1&lt;/span&gt;</td></tr>
+                        <tr><td>blue</td><td>\\[blue\\]([^\\[]+)\\[/\\]</td><td>g</td><td>&lt;span style="color:#5555ff"&gt;$1&lt;/span&gt;</td></tr>
+                        <tr><td>green</td><td>\\[green\\]([^\\[]+)\\[/\\]</td><td>g</td><td>&lt;span style="color:green"&gt;$1&lt;/span&gt;</td></tr>
+                        <tr><td>yellow</td><td>\\[yellow\\]([^\\[]+)\\[/\\]</td><td>g</td><td>&lt;span style="color:yellow"&gt;$1&lt;/span&gt;</td></tr>
+                        <tr><td>orange</td><td>\\[orange\\]([^\\[]+)\\[/\\]</td><td>g</td><td>&lt;span style="color:orange"&gt;$1&lt;/span&gt;</td></tr>
+                        <tr><td>pink</td><td>\\[pink\\]([^\\[]+)\\[/\\]</td><td>g</td><td>&lt;span style="color:pink"&gt;$1&lt;/span&gt;</td></tr>
+                        <tr><td>lime</td><td>\\[lime\\]([^\\[]+)\\[/\\]</td><td>g</td><td>&lt;span style="color:lime"&gt;$1&lt;/span&gt;</td></tr>
+                        <tr><td>aqua</td><td>\\[aqua\\]([^\\[]+)\\[/\\]</td><td>g</td><td>&lt;span style="color:aqua"&gt;$1&lt;/span&gt;</td></tr>
+                        <tr><td>violet</td><td>\\[violet\\]([^\\[]+)\\[/\\]</td><td>g</td><td>&lt;span style="color:violet"&gt;$1&lt;/span&gt;</td></tr>
+                        <tr><td>white</td><td>\\[white\\]([^\\[]+)\\[/\\]</td><td>g</td><td>&lt;span style="color:white"&gt;$1&lt;/span&gt;</td></tr>
+                        <tr><td>silver</td><td>\\[silver\\]([^\\[]+)\\[/\\]</td><td>g</td><td>&lt;span style="color:silver"&gt;$1&lt;/span&gt;</td></tr>
+                        <tr><td>brown</td><td>\\[brown\\]([^\\[]+)\\[/\\]</td><td>g</td><td>&lt;span style="color:brown"&gt;$1&lt;/span&gt;</td></tr>
+                        <tr><td>bold</td><td>\\[b\\]([^\\[]+)\\[/\\]</td><td>g</td><td>&lt;strong&gt;$1&lt;/strong&gt;</td></tr>
+                        <tr><td>italic</td><td>\\[i\\]([^\\[]+)\\[/\\]</td><td>g</td><td>&lt;em&gt;$1&lt;/em&gt;</td></tr>
+                        <tr><td>underline</td><td>\\[u\\]([^\\[]+)\\[/\\]</td><td>g</td><td>&lt;u&gt;$1&lt;/u&gt;</td></tr>
+                        <tr><td>strike</td><td>\\[s\\]([^\\[]+)\\[/\\]</td><td>g</td><td>&lt;s&gt;$1&lt;/s&gt;</td></tr>
+                        <tr><td>spoiler</td><td>\\[sp\\]([^\\[]+)\\[/\\]</td><td>g</td><td>&lt;span class="spoiler"&gt;$1&lt;/span&gt;</td></tr>
+                    </table>
+                </div>
+                <p class="filter-note">After adding these filters, users can type <code>[red]Hello[/]</code> to display red text visible to everyone!</p>
+            </div>
+        </div>
+    `;
+    
+    document.body.appendChild(modal);
+    modal.style.display = 'flex';
+}
+
+function closeFilterInstructions() {
+    const modal = document.getElementById('filter-instructions-modal');
+    if (modal) {
+        modal.remove();
+    }
+}
+
+/* ========== AUTOCOMPLETE FOR EMOTES ========== */
+
+var autocompleteArr = [];
+
+function emotesPanel() {
+    autocompleteArr = [];
+    
+    len = CHANNEL.emotes.length;
+    if (len < 1) {
+        console.log('No emotes found, reloading in 1 second')
+        setTimeout(function() { emotesPanel() }, 1000);
+    } else {
+        for (i in CHANNEL.emotes) {
+            autocompleteArr.push({"name": CHANNEL.emotes[i].name, "image": CHANNEL.emotes[i].image});
+        }
+        autocompleteArr.sort((a, b) => a.name.localeCompare(b.name));
+        
+        if (!window.matchMedia("(max-width: 768px)").matches) {
+            autocomplete(document.getElementById("chatline"), autocompleteArr);
+        }
+    }
+}
+emotesPanel();
 
 /* Autocomplete function for emotes */
 function autocomplete(inp, arr) {
     var currentFocus;
     var currentInputVal = '';
     var matchedlength = 0;
+    
     inp.addEventListener("input", function(e) {
         var a, b, i, val = this.value;
-
         closeAllLists();
         
-        if (!val) { return false;}
+        if (!val) { return false; }
         currentFocus = -1;
 
         a = document.createElement("DIV");
@@ -481,14 +706,12 @@ function autocomplete(inp, arr) {
         this.parentNode.appendChild(a);
         $("#autocomplete-list").insertBefore(document.querySelectorAll('form')[1]);
 
-        // FIXME: Regex lookbehinds aren't supported on Safari, might have to find alternative
-        // Regex searches for / character preceded by a space, matching all succeeding characters unless it is a whitespace.
         var matched = document.getElementById("chatline").value.match(/(?<!\S)\/\S*$/gim)?.toString();
         var matchedNoSlash = matched?.substring(1, matched.length);
         currentInputVal = document.getElementById("chatline").value;
 
         for (i = 0; i < arr.length; i++) {
-            if (arr[i].name.substr(0, matched?.length)?.toUpperCase() == matched?.toUpperCase()) { // Handle direct match
+            if (arr[i].name.substr(0, matched?.length)?.toUpperCase() == matched?.toUpperCase()) {
                 matchedlength = matched.length;
                 b = document.createElement("DIV");
                 b.innerHTML = "<strong>" + arr[i].name.substr(0, matched?.length) + "</strong>";
@@ -500,7 +723,7 @@ function autocomplete(inp, arr) {
                     closeAllLists();
                 });
                 a.appendChild(b);
-            } else if (arr[i].name.substring(1, arr[i].name.length).indexOf(matchedNoSlash) > -1) { // Handle match in string
+            } else if (arr[i].name.substring(1, arr[i].name.length).indexOf(matchedNoSlash) > -1) {
                 var indexInArr = arr[i].name.indexOf(matchedNoSlash);
                 b = document.createElement("DIV");
                 b.innerHTML = "<strong>/</strong>";
@@ -526,18 +749,19 @@ function autocomplete(inp, arr) {
             e.preventDefault();
             currentFocus++;
             addActive(x);
-
-            document.querySelector('.autocomplete-active').scrollIntoViewIfNeeded(false);
-            $("#chatline").val(currentInputVal.substring(0, (currentInputVal.length - currentInputVal.match(/(?<!\S)\/\S*$/gim).toString().length)) + document.getElementsByClassName('autocomplete-active')[0].querySelector('input').getAttribute('value'));
+            document.querySelector('.autocomplete-active')?.scrollIntoViewIfNeeded(false);
+            if (document.getElementsByClassName('autocomplete-active')[0]) {
+                $("#chatline").val(currentInputVal.substring(0, (currentInputVal.length - currentInputVal.match(/(?<!\S)\/\S*$/gim).toString().length)) + document.getElementsByClassName('autocomplete-active')[0].querySelector('input').getAttribute('value'));
+            }
         } else if (e.keyCode == 38) {
             e.preventDefault();
             currentFocus--;
             addActive(x);
-
-            document.querySelector('.autocomplete-active').scrollIntoViewIfNeeded(false);
-            $("#chatline").val(currentInputVal.substring(0, (currentInputVal.length - currentInputVal.match(/(?<!\S)\/\S*$/gim).toString().length)) + document.getElementsByClassName('autocomplete-active')[0].querySelector('input').getAttribute('value'));
+            document.querySelector('.autocomplete-active')?.scrollIntoViewIfNeeded(false);
+            if (document.getElementsByClassName('autocomplete-active')[0]) {
+                $("#chatline").val(currentInputVal.substring(0, (currentInputVal.length - currentInputVal.match(/(?<!\S)\/\S*$/gim).toString().length)) + document.getElementsByClassName('autocomplete-active')[0].querySelector('input').getAttribute('value'));
+            }
         } else if (e.keyCode == 13 || e.keyCode == 9) {
-            // stoppropagation doesnt really work here to stop enter from sending message
             closeAllLists();
         }
     });
@@ -560,7 +784,7 @@ function autocomplete(inp, arr) {
         var x = document.getElementsByClassName("autocomplete-items");
         for (var i = 0; i < x.length; i++) {
             if (elmnt != x[i] && elmnt != inp) {
-            x[i].parentNode.removeChild(x[i]);
+                x[i].parentNode.removeChild(x[i]);
             }
         }
     }
@@ -570,8 +794,10 @@ function autocomplete(inp, arr) {
     });
 }
 
-/* Reply feature */
-const LOAD_IN_DELAY = 10 //Delay to allow message to come in before modifying it
+/* ========== REPLY FEATURE ========== */
+
+const LOAD_IN_DELAY = 10;
+
 socket.on("chatMsg", (message) => {
     const messages = getAllMessages()
     const incomingMessageId = generateHash(message.username, message.msg, getTimeString(message.time))
@@ -582,7 +808,7 @@ socket.on("chatMsg", (message) => {
             .replace(/&gt;/g, '>')
             .replace(/&quot;/g, '"')
             .replace(/&#39;/g, "'")
-            .replace(/&amp;/g, '&') //Bandaid fix for chat sanitizer
+            .replace(/&amp;/g, '&')
         const replyingTo = messages.filter((item) => item.pseudoId == replyId)
         const replyIdScroll = replyId.replace(/[<>"'&]/g, (match) => {
             switch (match) {
@@ -591,11 +817,11 @@ socket.on("chatMsg", (message) => {
                 case '"': return '&quot;'
                 case "'": return '&#39;'
                 case '&': return '&amp;'
-            default: return match
+                default: return match
             }
         })
 
-        if (!replyingTo[0]?.message) { //If chat is cleared and no message found, not working
+        if (!replyingTo[0]?.message) {
             setTimeout(() => {
                 $(element).children().last().html(processReplyMessage(message.msg))
             }, LOAD_IN_DELAY)
@@ -617,23 +843,21 @@ socket.on("chatMsg", (message) => {
             
             setTimeout(() => $('#messagebuffer').animate({scrollTop: $('#messagebuffer').height() + 100000}, 'fast'), LOAD_IN_DELAY * 2)
         }
-        // insert reply button at reply messages
         $(element).find('.timestamp').after('<button onclick="replyToButton(event)" title="Reply" class="reply-button"><i class="reply-icon"></i></button>')
     } else if (message.username != '[server]') {
-        // insert reply button at any incoming message
         $(element).find('.timestamp').after('<button onclick="replyToButton(event)" title="Reply" class="reply-button"><i class="reply-icon"></i></button>')
     }
 })
 
 function processReplyMessage(text) {
     let processedText = text
-    if (/(?<!\S)\/\S*/gim.exec(text)) { //message contains emote
+    if (/(?<!\S)\/\S*/gim.exec(text)) {
         processedText = text.replace(/(?<!\b)\/(\w+)/g, (match, emoteName) => {
-            const emoteUrl = autocompleteArr.filter(emote => emote.name == `/${emoteName}`)[0] || ""; // get the replacement from the dictionary or use an empty string if not found
+            const emoteUrl = autocompleteArr.filter(emote => emote.name == `/${emoteName}`)[0] || "";
             return `<img class="channel-emote" src="${emoteUrl}" title="/${emoteName}">`
         })
     }
-    return processedText.replace(/\[r\](.+?)\[\/r\]/, '').trim() //remove reply tags
+    return processedText.replace(/\[r\](.+?)\[\/r\]/, '').trim()
 }
 
 function scrollToReply(replyPseudoId) {
@@ -653,42 +877,7 @@ function getTimeString(unix) {
     return timeString
 }
 
-/* document.addEventListener("contextmenu", (e) => {
-    const target = e.target
-    if (
-        (target.className.includes('chat-msg-') || target.parentNode.className.includes('chat-msg-') || target.parentNode.parentNode.className.includes('chat-msg-')) 
-        && !target.className.includes('server') && !target.className.includes('reply') && getSelectionText().length == 0
-    ) {
-        e.preventDefault()
-        let message
-        let username
-        let pseudoId 
-        if (target.tagName == 'SPAN' && !target.className.includes('timestamp')) {
-            //Clicked on message text itself, retrieve message text here
-            message = target.innerHTML //Message
-            username = target.parentNode.className.split('-')[2].split(' ')[0] //Username
-            pseudoId = generateHash(username, message, $(target).siblings('.timestamp').text()) //Message Pseudo ID
-        } else if (target.className.includes('timestamp')) {
-            //Clicked on timestamp
-            message = $(target).siblings().length > 1 ? $(target).siblings().last().html() : $(target).siblings().html()
-            username = target.parentNode.className.split('-')[2].split(' ')[0]
-            pseudoId = generateHash(username, message, target.innerHTML) 
-        } else {
-            //Clicked on message text parent
-            message = $(target).find('span:not(.timestamp)').length > 1 ? $(target).find('span:not(.timestamp)').last().html() : $(target).find('span:not(.timestamp)').html()
-            username = target.className.split('-')[2].split(' ')[0]
-            pseudoId = generateHash(username, message, $(target).find('span.timestamp').text())
-        }
-
-        const chatlineVal = $('#chatline').val().replace(/(?:.*?\[\/r\]\s+)/, '')
-        if (sanitizeMessageForPseudoID(message) != '')
-            $('#chatline').val(`[r]${pseudoId.trim()}[/r] ${chatlineVal}`).focus()
-    }
-}) */
-
 function sanitizeMessageForPseudoID(message1) { 
-    //This will generate generic <img for this portion of the id if the message begins with an emote
-    //Could be fixed if the emote name is used, or a more robust id is used
     return message1.match(/(?:.*?\[\/r\]\s+)(.+)/) 
         ? message1.match(/(?:.*?\[\/r\]\s+)(.+)/)[1].split(' ')[0].substring(0, 12)
         : message1.split(' ')[0].substring(0, 12)
@@ -738,7 +927,7 @@ function replyToButton(e) {
 
 $(document).ready(() => {
     const messages = getAllMessages()
-    $('div#messagebuffer').children().each((i, element) => { //TODO: cycle through getAllMessages instead
+    $('div#messagebuffer').children().each((i, element) => {
         if (!$(element).attr('class')?.includes('chat-msg-') || $(element).attr('class')?.includes('server')) return
         const message = $(element).find('span:not(.timestamp)').length > 1 ? $(element).find('span:not(.timestamp)').last().html() : $(element).find('span:not(.timestamp)').html()
         if (/\[r\](.+?)\[\/r\]/g.exec(message)) {
@@ -746,7 +935,7 @@ $(document).ready(() => {
                 .replace(/&gt;/g, '>')
                 .replace(/&quot;/g, '"')
                 .replace(/&#39;/g, "'")
-                .replace(/&amp;/g, '&') //Bandage fix for chat sanitizer
+                .replace(/&amp;/g, '&')
             const replyingTo = messages.filter((item) => item.pseudoId == replyId)
             const replyIdScroll = replyId.replace(/[<>"'&]/g, (match) => {
                 switch (match) {
@@ -759,7 +948,7 @@ $(document).ready(() => {
                 }
             })
 
-            if (!replyingTo[0]?.message) { //If chat is cleared and no message found, not working
+            if (!replyingTo[0]?.message) {
                 $(element).children().last().html(processReplyMessage(message))
             } else {
                 if ($(element).find('.username').length != 0) {
@@ -778,17 +967,13 @@ $(document).ready(() => {
                 setTimeout(() => $('#messagebuffer').animate({scrollTop: $('#messagebuffer').height() + 100000}, 'fast'), LOAD_IN_DELAY * 2)
             }
         }
-        //add reply button to all chat messages
         if ($(element).attr('class')?.includes('chat-msg-')) {
             $(element).find('.timestamp').after('<button onclick="replyToButton(event)" title="Reply" class="reply-button"><i class="reply-icon"></i></button>')
         }
     })
 })
 
-//  Formatted version of a popular md5 implementation
-//  Original copyright (c) Paul Johnston & Greg Holt.
-//  The function itself is now 42 lines long.
-
+/* MD5 Hash Function */
 function md5(inputString) {
     var hc="0123456789abcdef";
     function rh(n) {var j,s="";for(j=0;j<=3;j++) s+=hc.charAt((n>>(j*8+4))&0x0F)+hc.charAt((n>>(j*8))&0x0F);return s;}
@@ -831,279 +1016,3 @@ function md5(inputString) {
     }
     return rh(a)+rh(b)+rh(c)+rh(d);
 }
-
-/* ========== TEXT STYLES MANAGER ========== */
-class TextStyleManager {
-        constructor() {
-                    this.defaultStyles = {
-                                    fontFamily: 'Arial',
-                                    textColor: '#FFFFFF',
-                                    nameColor: '#FFD700',
-                                    fontSize: 'normal',
-                                    effects: {
-                                                        bold: false,
-                                                        italic: false,
-                                                        underline: false,
-                                                        strikethrough: false,
-                                                        glow: false,
-                                                        shadow: false
-                                    },
-                                    glowColor: '#00FF00',
-                                    shadowColor: '#000000'
-                    };
-
-                    this.fontOptions = {
-                                    'Arial': 'Arial, sans-serif',
-                                    'Verdana': 'Verdana, sans-serif',
-                                    'Times New Roman': '"Times New Roman", serif',
-                                    'Georgia': 'Georgia, serif',
-                                    'Courier New': '"Courier New", monospace',
-                                    'Comic Sans': '"Comic Sans MS", cursive',
-                                    'Impact': 'Impact, sans-serif',
-                                    'Trebuchet MS': '"Trebuchet MS", sans-serif',
-                                    'Ubuntu': 'Ubuntu, sans-serif',
-                                    'Quicksand': 'Quicksand, sans-serif'
-                    };
-
-                    this.styles = this.loadStyles();
-                    this.initializeUI();
-        }
-
-        loadStyles() {
-                    const saved = localStorage.getItem('cytube_text_styles');
-                    return saved ? { ...this.defaultStyles, ...JSON.parse(saved) } : { ...this.defaultStyles };
-        }
-
-        saveStyles() {
-                    localStorage.setItem('cytube_text_styles', JSON.stringify(this.styles));
-                    this.applyStylesToMessages();
-        }
-
-        initializeUI() {
-                    const stylesPanelBtn = $('<button id="text-styles-btn" class="btn btn-sm btn-default" title="Text Styles">✨</button>')
-                        .insertAfter("#emotes-btn")
-                        .on("click", () => this.openStylesPanel());
-
-                    this.createStylesModal();
-        }
-
-        createStylesModal() {
-                    const modal = `
-                                <div id="text-styles-modal" class="text-styles-modal">
-                                                <div class="text-styles-modal-content">
-                                                                    <div class="text-styles-modal-header">
-                                                                                            <h2>Text Styles</h2>
-                                                                                                                    <button class="text-styles-modal-close" onclick="textStyleManager.closeStylesPanel()">&times;</button>
-                                                                                                                                        </div>
-                                                                                                                                                            
-                                                                                                                                                                                <div class="text-styles-modal-body">
-                                                                                                                                                                                                        <div class="style-control-group">
-                                                                                                                                                                                                                                    <label for="font-select">Font:</label>
-                                                                                                                                                                                                                                                                <select id="font-select" class="style-input">
-                                                                                                                                                                                                                                                                                                ${Object.keys(this.fontOptions).map(font => 
-                                                                                                                                                                                                                                                                                                                                        `<option value="${font}" ${this.styles.fontFamily === font ? 'selected' : ''}>${font}</option>`
-                                                                                                                                                                                                                                                                                                                                                                    ).join('')}
-                                                                                                                                                                                                                                                                                                                                                                                                </select>
-                                                                                                                                                                                                                                                                                                                                                                                                                        </div>
-                                                                                                                                                                                                                                                                                                                                                                                                                        
-                                                                                                                                                                                                                                                                                                                                                                                                                                                <div class="style-control-group">
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                            <label for="text-color">Text Color:</label>
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        <div class="color-picker-group">
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        <input type="color" id="text-color" class="style-input color-input" value="${this.styles.textColor}">
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        <span id="text-color-preview" class="color-preview" style="background-color: ${this.styles.textColor}"></span>
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    </div>
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            </div>
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    <div class="style-control-group">
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                <label for="name-color">Name Color:</label>
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            <div class="color-picker-group">
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            <input type="color" id="name-color" class="style-input color-input" value="${this.styles.nameColor}">
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            <span id="name-color-preview" class="color-preview" style="background-color: ${this.styles.nameColor}"></span>
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        </div>
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                </div>
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        <div class="style-control-group">
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    <label for="font-size">Font Size:</label>
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                <select id="font-size" class="style-input">
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                <option value="small" ${this.styles.fontSize === 'small' ? 'selected' : ''}>Small</option>
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                <option value="normal" ${this.styles.fontSize === 'normal' ? 'selected' : ''}>Normal</option>
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                <option value="large" ${this.styles.fontSize === 'large' ? 'selected' : ''}>Large</option>
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            </select>
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    </div>
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            <div class="style-control-group">
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        <label>Effects:</label>
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    <div class="effects-grid">
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    <label class="effect-checkbox"><input type="checkbox" value="bold" ${this.styles.effects.bold ? 'checked' : ''} class="effect-input"><span>Bold</span></label>
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    <label class="effect-checkbox"><input type="checkbox" value="italic" ${this.styles.effects.italic ? 'checked' : ''} class="effect-input"><span>Italic</span></label>
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    <label class="effect-checkbox"><input type="checkbox" value="underline" ${this.styles.effects.underline ? 'checked' : ''} class="effect-input"><span>Underline</span></label>
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    <label class="effect-checkbox"><input type="checkbox" value="strikethrough" ${this.styles.effects.strikethrough ? 'checked' : ''} class="effect-input"><span>Strikethrough</span></label>
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    <label class="effect-checkbox"><input type="checkbox" value="glow" ${this.styles.effects.glow ? 'checked' : ''} class="effect-input"><span>Glow</span></label>
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    <label class="effect-checkbox"><input type="checkbox" value="shadow" ${this.styles.effects.shadow ? 'checked' : ''} class="effect-input"><span>Shadow</span></label>
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                </div>
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        </div>
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                <div class="style-control-group" id="glow-color-group" style="display: ${this.styles.effects.glow ? 'block' : 'none'};">
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            <label for="glow-color">Glow Color:</label>
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        <div class="color-picker-group">
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        <input type="color" id="glow-color" class="style-input color-input" value="${this.styles.glowColor}">
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        <span id="glow-color-preview" class="color-preview" style="background-color: ${this.styles.glowColor}"></span>
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    </div>
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            </div>
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    <div class="style-control-group" id="shadow-color-group" style="display: ${this.styles.effects.shadow ? 'block' : 'none'};">
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                <label for="shadow-color">Shadow Color:</label>
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            <div class="color-picker-group">
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            <input type="color" id="shadow-color" class="style-input color-input" value="${this.styles.shadowColor}">
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            <span id="shadow-color-preview" class="color-preview" style="background-color: ${this.styles.shadowColor}"></span>
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        </div>
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                </div>
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        <div class="style-preview-group">
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    <label>Preview:</label>
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                <div id="text-style-preview" class="text-style-preview">
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                Your message preview
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            </div>
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    </div>
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            <div class="style-modal-buttons">
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        <button id="save-styles-btn" class="btn btn-primary btn-sm">Save Styles</button>
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    <button id="reset-styles-btn" class="btn btn-default btn-sm">Reset to Default</button>
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            </div>
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                </div>
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                </div>
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            </div>
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    `;
-
-                    $('body').append(modal);
-                    this.attachEventListeners();
-        }
-
-        attachEventListeners() {
-                    const self = this;
-
-                    $('#font-select').on('change', function() {
-                                    self.styles.fontFamily = $(this).val();
-                                    self.updatePreview();
-                    });
-
-                    $('#text-color').on('change', function() {
-                                    self.styles.textColor = $(this).val();
-                                    $('#text-color-preview').css('background-color', self.styles.textColor);
-                                    self.updatePreview();
-                    });
-
-                    $('#name-color').on('change', function() {
-                                    self.styles.nameColor = $(this).val();
-                                    $('#name-color-preview').css('background-color', self.styles.nameColor);
-                                    self.updatePreview();
-                    });
-
-                    $('#font-size').on('change', function() {
-                                    self.styles.fontSize = $(this).val();
-                                    self.updatePreview();
-                    });
-
-                    $('.effect-input').on('change', function() {
-                                    const effect = $(this).val();
-                                    self.styles.effects[effect] = $(this).is(':checked');
-
-                                    if (effect === 'glow') {
-                                                        $('#glow-color-group').toggle(self.styles.effects.glow);
-                                    }
-                                    if (effect === 'shadow') {
-                                                        $('#shadow-color-group').toggle(self.styles.effects.shadow);
-                                    }
-
-                                    self.updatePreview();
-                    });
-
-                    $('#glow-color').on('change', function() {
-                                    self.styles.glowColor = $(this).val();
-                                    $('#glow-color-preview').css('background-color', self.styles.glowColor);
-                                    self.updatePreview();
-                    });
-
-                    $('#shadow-color').on('change', function() {
-                                    self.styles.shadowColor = $(this).val();
-                                    $('#shadow-color-preview').css('background-color', self.styles.shadowColor);
-                                    self.updatePreview();
-                    });
-
-                    $('#save-styles-btn').on('click', () => {
-                                    self.saveStyles();
-                                    self.closeStylesPanel();
-                    });
-
-                    $('#reset-styles-btn').on('click', () => {
-                                    if (confirm('Reset all styles to default?')) {
-                                                        self.styles = { ...self.defaultStyles };
-                                                        self.saveStyles();
-                                                        self.closeStylesPanel();
-                                                        location.reload();
-                                    }
-                    });
-        }
-
-        updatePreview() {
-                    const preview = $('#text-style-preview');
-                    const css = this.generateCSS(this.styles, false);
-                    preview.attr('style', css).text('Your message preview');
-        }
-
-        generateCSS(styles, isName = false) {
-                    let css = '';
-                    const fontFamily = this.fontOptions[styles.fontFamily] || 'Arial, sans-serif';
-                    const color = isName ? styles.nameColor : styles.textColor;
-                    const fontSize = styles.fontSize === 'small' ? '0.9em' : (styles.fontSize === 'large' ? '1.1em' : '1em');
-
-                    css += `font-family: ${fontFamily}; color: ${color}; font-size: ${fontSize};`;
-
-                    let textShadow = [];
-                    if (styles.effects.glow) {
-                                    textShadow.push(`0 0 10px ${styles.glowColor}`);
-                    }
-                    if (styles.effects.shadow) {
-                                    textShadow.push(`2px 2px 4px ${styles.shadowColor}`);
-                    }
-                    if (textShadow.length) {
-                                    css += `text-shadow: ${textShadow.join(', ')};`;
-                    }
-
-                    if (styles.effects.bold) css += 'font-weight: bold;';
-                    if (styles.effects.italic) css += 'font-style: italic;';
-                    if (styles.effects.underline) css += 'text-decoration-line: underline;';
-                    if (styles.effects.strikethrough) css += 'text-decoration-line: line-through;';
-
-                    return css;
-        }
-
-        applyStylesToMessages() {
-                    const username = CLIENT.name;
-                    $(`.chat-msg-${username}`).each((i, element) => {
-                                    const $elem = $(element);
-                                    const $username = $elem.find('span.username');
-                                    const $message = $elem.find('span:not(.timestamp):not(.username)');
-
-                                    if ($username.length) {
-                                                        $username.attr('style', this.generateCSS(this.styles, true));
-                                    }
-                                    if ($message.length) {
-                                                        $message.attr('style', this.generateCSS(this.styles, false));
-                                    }
-                    });
-        }
-
-        openStylesPanel() {
-                    $('#text-styles-modal').css('display', 'flex');
-        }
-
-        closeStylesPanel() {
-                    $('#text-styles-modal').css('display', 'none');
-        }
-}
-
-let textStyleManager;
-$(document).ready(function() {
-        textStyleManager = new TextStyleManager();
-});
