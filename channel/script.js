@@ -988,7 +988,7 @@ function buildStyleTags(msg) {
     if (textStyleSettings.underline) { open += '[u]'; close = '[/]' + close; }
     if (textStyleSettings.strikethrough) { open += '[s]'; close = '[/]' + close; }
     
-    return { open: open, close: close, full: open ? open + msg + close : msg };
+    return open ? open + msg + close : msg;
 }
 
 function applyStyleToMessage() {
@@ -999,7 +999,7 @@ function applyStyleToMessage() {
     if (msg.startsWith('/')) return;
     // Skip empty
     if (!msg.trim()) return;
-    // Skip if already has tags (including new ones)
+    // Skip if already has tags
     if (msg.match(/^\[(?:red|blue|green|yellow|orange|pink|lime|aqua|violet|white|silver|brown|b|i|u|s|rainbow|fire|ocean|sunset|neon|forest|gold|ice|glow-\w+|shake|pulse|bounce|wave|flicker|spin)\]/)) return;
     
     // Check if any style is active
@@ -1008,93 +1008,17 @@ function applyStyleToMessage() {
                    textStyleSettings.glow || textStyleSettings.animation;
     if (!hasStyle) return;
     
-    // Get list of emote names from channel
-    var emoteNames = [];
+    // Skip if message contains any emotes (emotes won't render if wrapped in tags)
     if (typeof CHANNEL !== 'undefined' && CHANNEL.emotes && CHANNEL.emotes.length > 0) {
-        emoteNames = CHANNEL.emotes.map(function(e) { return e.name; });
-    }
-    
-    // If no emotes defined, just wrap the whole thing
-    if (emoteNames.length === 0) {
-        c.value = buildStyleTags(msg).full;
-        return;
-    }
-    
-    // Check if message contains any emotes
-    var containsEmote = false;
-    for (var i = 0; i < emoteNames.length; i++) {
-        if (msg.indexOf(emoteNames[i]) !== -1) {
-            containsEmote = true;
-            break;
-        }
-    }
-    
-    if (!containsEmote) {
-        // No emotes, wrap entire message
-        c.value = buildStyleTags(msg).full;
-        return;
-    }
-    
-    // Build a regex to find all emotes in the message
-    // Escape special regex characters in emote names
-    var escapedEmotes = emoteNames.map(function(name) {
-        return name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    });
-    // Sort by length descending to match longer emotes first
-    escapedEmotes.sort(function(a, b) { return b.length - a.length; });
-    var emoteRegex = new RegExp('(' + escapedEmotes.join('|') + ')', 'g');
-    
-    // Split message by emotes, keeping the emotes in the result
-    var parts = msg.split(emoteRegex);
-    var tags = buildStyleTags('');
-    
-    // Process each part: wrap non-emote text with style, leave emotes alone
-    var resultParts = [];
-    var hasTextParts = false;
-    var hasEmoteParts = false;
-    
-    for (var i = 0; i < parts.length; i++) {
-        var part = parts[i];
-        if (!part) continue;
-        
-        // Check if this part is an emote
-        if (emoteNames.indexOf(part) !== -1) {
-            hasEmoteParts = true;
-            resultParts.push({type: 'emote', value: part});
-        } else if (part.trim()) {
-            hasTextParts = true;
-            resultParts.push({type: 'text', value: part.trim()});
-        }
-    }
-    
-    // If we have both emotes and text, we need to be careful
-    // CyTube processes emotes on the raw message before filters
-    // So emotes inside or adjacent to our tags won't work
-    
-    // Strategy: Combine all text parts into one styled block, put emotes at the end
-    if (hasEmoteParts && hasTextParts) {
-        var textContent = [];
-        var emoteContent = [];
-        
-        for (var i = 0; i < resultParts.length; i++) {
-            if (resultParts[i].type === 'text') {
-                textContent.push(resultParts[i].value);
-            } else {
-                emoteContent.push(resultParts[i].value);
+        for (var i = 0; i < CHANNEL.emotes.length; i++) {
+            if (msg.indexOf(CHANNEL.emotes[i].name) !== -1) {
+                return; // Don't apply styling - let emote render normally
             }
         }
-        
-        // Build: [styled text] emote emote emote
-        var styledText = tags.open + textContent.join(' ') + tags.close;
-        var emotes = emoteContent.join(' ');
-        c.value = styledText + ' ' + emotes;
-    } else if (hasEmoteParts) {
-        // Only emotes, no styling needed
-        c.value = msg;
-    } else {
-        // Only text
-        c.value = tags.open + msg.trim() + tags.close;
     }
+    
+    // Apply tags
+    c.value = buildStyleTags(msg);
 }
 
 function initStyleInterceptor() {
