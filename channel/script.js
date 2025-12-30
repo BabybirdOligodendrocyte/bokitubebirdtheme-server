@@ -171,6 +171,20 @@ var textStyleSettings = JSON.parse(localStorage.getItem('textStyleSettings')) ||
     var s = document.createElement('style');
     s.id = 'custom-popup-styles';
     s.textContent = `
+        /* FIX: Button overflow in leftcontrols */
+        #leftcontrols {
+            display: flex !important;
+            flex-wrap: wrap !important;
+            gap: 4px !important;
+            padding: 5px !important;
+            align-items: center !important;
+            justify-content: flex-start !important;
+        }
+        #leftcontrols .btn {
+            flex-shrink: 0 !important;
+            margin: 2px !important;
+        }
+        
         #emote-popup-overlay, #textstyle-popup-overlay, #filter-popup-overlay {
             display: none !important;
             position: fixed !important;
@@ -737,17 +751,49 @@ function buildStyleTags(msg) {
     return open ? open + msg + close : msg;
 }
 
+function applyStyleToMessage() {
+    var c = document.getElementById('chatline');
+    if (!c) return;
+    var msg = c.value;
+    // Skip commands
+    if (msg.startsWith('/')) return;
+    // Skip empty
+    if (!msg.trim()) return;
+    // Skip if already has tags
+    if (msg.match(/^\[(?:red|blue|green|yellow|orange|pink|lime|aqua|violet|white|silver|brown|b|i|u|s)\]/)) return;
+    // Check if any style is active
+    var hasStyle = textStyleSettings.color || textStyleSettings.bold || textStyleSettings.italic || textStyleSettings.underline || textStyleSettings.strikethrough;
+    if (!hasStyle) return;
+    // Apply tags
+    c.value = buildStyleTags(msg);
+}
+
 function initStyleInterceptor() {
+    var chatline = document.getElementById('chatline');
     var form = document.getElementById('formline');
-    if (!form) return;
-    form.addEventListener('submit', function(e) {
-        var c = document.getElementById('chatline');
-        var msg = c.value;
-        if (msg.startsWith('/')) return;
-        if (msg.match(/^\[(?:red|blue|green|yellow|orange|pink|lime|aqua|violet|white|silver|brown|b|i|u|s)\]/)) return;
-        var styled = buildStyleTags(msg);
-        if (styled !== msg) c.value = styled;
+    if (!chatline) return;
+    
+    // Hook into Enter key press
+    chatline.addEventListener('keydown', function(e) {
+        if (e.keyCode === 13 || e.key === 'Enter') {
+            applyStyleToMessage();
+        }
     }, true);
+    
+    // Also hook into form submit as backup
+    if (form) {
+        form.addEventListener('submit', function(e) {
+            applyStyleToMessage();
+        }, true);
+    }
+    
+    // Hook into any send button click
+    var sendBtn = document.querySelector('#formline button[type="submit"], #formline .btn');
+    if (sendBtn) {
+        sendBtn.addEventListener('click', function(e) {
+            applyStyleToMessage();
+        }, true);
+    }
 }
 
 // FILTER INSTRUCTIONS POPUP

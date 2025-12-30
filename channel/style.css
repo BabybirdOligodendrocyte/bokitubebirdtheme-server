@@ -250,10 +250,19 @@ div.embed-responsive * { max-height: calc(100vh - 50px); }
 #leftcontrols {
     background-color: var(--primarycolor);
     display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
     padding: 6px;
     min-height: 42px;
     width: inherit;
     min-width: inherit;
+    align-items: center;
+    justify-content: flex-start;
+}
+
+#leftcontrols .btn {
+    flex-shrink: 0;
+    margin: 2px;
 }
 
 .btn { background-image: none; background-color: var(--tertiarycolor); }
