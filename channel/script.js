@@ -1235,7 +1235,7 @@ function applyStyleToMessage() {
     // Skip empty
     if (!msg.trim()) return;
     // Skip if already has tags
-    if (msg.match(/^\[(?:red|blue|green|yellow|orange|pink|lime|aqua|violet|white|silver|brown|b|i|u|s|rainbow|fire|ocean|sunset|neon|forest|gold|ice|glow-\w+|shake|pulse|bounce|wave|flicker|spin)\]/)) return;
+    if (msg.match(/^\[(?:font-\w+|red|blue|green|yellow|orange|pink|lime|aqua|violet|white|silver|brown|b|i|u|s|rainbow|fire|ocean|sunset|neon|forest|gold|ice|glow-\w+|shake|pulse|bounce|wave|flicker|spin)\]/)) return;
     
     // Skip if message contains URLs (for GIF embedding to work)
     if (msg.match(/https?:\/\//)) return;
@@ -1243,7 +1243,7 @@ function applyStyleToMessage() {
     // Check if any style is active
     var hasStyle = textStyleSettings.color || textStyleSettings.gradient || textStyleSettings.bold || 
                    textStyleSettings.italic || textStyleSettings.underline || textStyleSettings.strikethrough ||
-                   textStyleSettings.glow || textStyleSettings.animation;
+                   textStyleSettings.glow || textStyleSettings.animation || textStyleSettings.font;
     if (!hasStyle) return;
     
     // Skip if message contains any emotes (emotes won't render if wrapped in tags)
