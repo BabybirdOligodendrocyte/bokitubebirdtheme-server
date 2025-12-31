@@ -613,23 +613,30 @@ var usernameStyleSettings = JSON.parse(localStorage.getItem('usernameStyleSettin
         /* Chat message styling - 80% size and new layout */
         #messagebuffer > div {
             font-size: 80% !important;
-            display: flex !important;
-            flex-direction: column !important;
         }
-        #messagebuffer > div > span:first-child {
-            display: flex !important;
-            justify-content: space-between !important;
-            align-items: center !important;
-        }
-        #messagebuffer .timestamp {
+        
+        /* Make timestamp inline with username */
+        #messagebuffer > div > .timestamp {
             font-size: 85% !important;
             opacity: 0.6 !important;
-            margin-left: auto !important;
+            float: right !important;
         }
-        /* Message text takes full width on new line */
-        #messagebuffer > div > span:last-child {
+        
+        /* Styled username on its own line */
+        .styled-username {
             display: block !important;
-            width: 100% !important;
+            font-weight: bold !important;
+        }
+        .styled-username::after {
+            content: '' !important;
+        }
+        
+        /* Hide consecutive styled usernames */
+        .styled-username.hidden-consecutive {
+            display: none !important;
+        }
+        .styled-username.hidden-consecutive + br {
+            display: none !important;
         }
         
         /* Username animations */
