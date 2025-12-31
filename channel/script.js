@@ -615,10 +615,27 @@ var usernameStyleSettings = JSON.parse(localStorage.getItem('usernameStyleSettin
             font-size: 80% !important;
         }
         
-        /* Make timestamp inline with username */
+        /* Timestamp on same line as username, right aligned */
         #messagebuffer > div > .timestamp {
             font-size: 85% !important;
             opacity: 0.6 !important;
+            position: absolute !important;
+            right: 5px !important;
+            top: 0 !important;
+        }
+        
+        /* Message container needs relative positioning */
+        #messagebuffer > div {
+            position: relative !important;
+            padding-right: 80px !important;
+        }
+        
+        /* When username is shown, remove right padding since timestamp is on username line */
+        #messagebuffer > div:has(.styled-username:not(.hidden-consecutive)) {
+            padding-right: 0 !important;
+        }
+        #messagebuffer > div:has(.styled-username:not(.hidden-consecutive)) > .timestamp {
+            position: static !important;
             float: right !important;
         }
         
@@ -637,6 +654,21 @@ var usernameStyleSettings = JSON.parse(localStorage.getItem('usernameStyleSettin
         }
         .styled-username.hidden-consecutive + br {
             display: none !important;
+        }
+        
+        /* Connected users dropdown - scrollable and on screen */
+        #userlist, .userlist, #userlistpane {
+            max-height: 70vh !important;
+            overflow-y: auto !important;
+        }
+        .dropdown-menu {
+            max-height: 80vh !important;
+            overflow-y: auto !important;
+        }
+        #connectedusers, .connectedusers, [id*="userlist"] .dropdown-menu {
+            max-height: 70vh !important;
+            overflow-y: auto !important;
+            overflow-x: hidden !important;
         }
         
         /* Username animations */
