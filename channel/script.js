@@ -651,13 +651,16 @@ var usernameStyleSettings = JSON.parse(localStorage.getItem('usernameStyleSettin
             max-height: 50vh !important;
             overflow-y: auto !important;
             overflow-x: hidden !important;
+            display: flex !important;
             flex-direction: column !important;
+            flex-wrap: nowrap !important;
         }
         
         /* User items stack vertically */
-        .userlist_item {
+        #userlist .userlist_item {
             display: flex !important;
             width: 100% !important;
+            flex-shrink: 0 !important;
         }
         
         /* User dropdown menu - keep on screen */
@@ -1549,7 +1552,27 @@ $(document).ready(function() {
     initStyleInterceptor();
     initUsernameStyleInterceptor();
     updateFontBtnIndicator();
+    
+    // Fix userlist to display vertically
+    fixUserlistLayout();
 });
+
+function fixUserlistLayout() {
+    var userlist = document.getElementById('userlist');
+    if (userlist) {
+        userlist.style.cssText = 'display:flex !important; flex-direction:column !important; flex-wrap:nowrap !important; max-height:50vh !important; overflow-y:auto !important; overflow-x:hidden !important;';
+    }
+    // Also observe for changes in case it gets reset
+    var observer = new MutationObserver(function() {
+        var ul = document.getElementById('userlist');
+        if (ul && !ul.style.flexDirection.includes('column')) {
+            ul.style.cssText = 'display:flex !important; flex-direction:column !important; flex-wrap:nowrap !important; max-height:50vh !important; overflow-y:auto !important; overflow-x:hidden !important;';
+        }
+    });
+    if (userlist) {
+        observer.observe(userlist, { attributes: true, attributeFilter: ['style'] });
+    }
+}
 
 /* ========== AUTOCOMPLETE FOR EMOTES ========== */
 var autocompleteArr = [];
