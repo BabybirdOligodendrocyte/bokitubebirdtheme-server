@@ -1717,7 +1717,7 @@ function fixUserlistLayout() {
         $('#user-options-overlay').removeClass('open');
     }
     
-    function openUserOptionsPanel(username, $userDropdown, $originalUserlistItem) {
+    function openUserOptionsPanel(username, $clonedDropdown) {
         var $panel = $('#user-options-panel');
         var $body = $panel.find('.panel-body');
         
@@ -1725,30 +1725,70 @@ function fixUserlistLayout() {
         $panel.find('#panel-username').text(username);
         
         // Find the ORIGINAL userlist item in #userlist (not our clone)
-        var $origItem = $('#userlist .userlist_item').filter(function() {
-            var name = $(this).find('.userlist_owner').text().trim() || $(this).find('span').last().text().trim();
-            return name === username;
-        }).first();
+        var $origItem = null;
+        $('#userlist .userlist_item').each(function() {
+            var $item = $(this);
+            var name = $item.find('.userlist_owner').text().trim();
+            if (!name) {
+                // Try other span elements
+                $item.find('span').each(function() {
+                    var txt = $(this).text().trim();
+                    if (txt && !$(this).hasClass('glyphicon') && txt.length > 0) {
+                        name = txt;
+                        return false;
+                    }
+                });
+            }
+            if (name === username) {
+                $origItem = $item;
+                return false;
+            }
+        });
         
-        var $origDropdown = $origItem.length ? $origItem.find('.user-dropdown') : $userDropdown;
-        
-        // Clone buttons from user dropdown
         $body.empty();
-        $origDropdown.find('button').each(function() {
+        
+        // Use original item's dropdown if found, otherwise use the cloned one
+        var $dropdown = $origItem ? $origItem.find('.user-dropdown') : $clonedDropdown;
+        
+        if (!$dropdown || $dropdown.length === 0) {
+            $body.append('<div style="color:#888;padding:10px;text-align:center;">No options available</div>');
+            $('#user-options-overlay').addClass('open');
+            $panel.addClass('open');
+            return;
+        }
+        
+        // Get all buttons from the dropdown
+        var $buttons = $dropdown.find('button');
+        
+        if ($buttons.length === 0) {
+            $body.append('<div style="color:#888;padding:10px;text-align:center;">No options available</div>');
+            $('#user-options-overlay').addClass('open');
+            $panel.addClass('open');
+            return;
+        }
+        
+        $buttons.each(function() {
             var $origBtn = $(this);
             var btnText = $origBtn.text().trim();
             
-            // Skip if button is hidden
-            if ($origBtn.css('display') === 'none' || $origBtn.is(':hidden')) return;
+            // Skip if button is hidden or has no text
+            if (!btnText) return;
+            var style = window.getComputedStyle(this);
+            if (style.display === 'none' || style.visibility === 'hidden') return;
             
             var $newBtn = $('<button class="btn">').text(btnText);
             $newBtn.on('click', function() {
-                // Click the ORIGINAL button in the real userlist
-                $origBtn.click();
+                // Click the ORIGINAL button
+                $origBtn[0].click();
                 closeUserOptionsPanel();
             });
             $body.append($newBtn);
         });
+        
+        // If still no buttons after filtering, show message
+        if ($body.children().length === 0) {
+            $body.append('<div style="color:#888;padding:10px;text-align:center;">No options available</div>');
+        }
         
         // Show panel
         $('#user-options-overlay').addClass('open');
