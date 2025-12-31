@@ -380,6 +380,14 @@ var textStyleSettings = JSON.parse(localStorage.getItem('textStyleSettings')) ||
             background: #3a3a44 !important;
             transform: scale(1.08) !important;
         }
+        .emote-item.gif-item {
+            width: 100px !important;
+            height: 100px !important;
+        }
+        .emote-item.gif-item img {
+            max-width: 90px !important;
+            max-height: 90px !important;
+        }
         .emote-item img {
             max-width: 58px !important;
             max-height: 58px !important;
@@ -543,6 +551,14 @@ var textStyleSettings = JSON.parse(localStorage.getItem('textStyleSettings')) ||
     document.head.appendChild(s);
 })();
 
+// TENOR GIF API KEY
+var TENOR_API_KEY = 'AIzaSyD7rP9x4VgpMzVSOPku2Awjh_OARNuJK9o';
+var gifSearchResults = [];
+var currentGifPage = 0;
+var gifsPerPage = 20;
+var lastGifSearch = '';
+var gifNextPos = '';
+
 // EMOTE POPUP
 function createEmotePopup() {
     if (document.getElementById('emote-popup-overlay')) return;
@@ -552,8 +568,8 @@ function createEmotePopup() {
     var p = document.createElement('div');
     p.id = 'emote-popup';
     p.innerHTML = '<div class="popup-header" id="emote-popup-header"><span>Emotes</span><button class="popup-close" onclick="closeEmotePopup()">×</button></div>' +
-        '<div id="emote-popup-tabs"><button class="emote-tab active" data-tab="all" onclick="switchEmoteTab(\'all\')">All Emotes</button><button class="emote-tab" data-tab="fav" onclick="switchEmoteTab(\'fav\')">★ Favorites</button></div>' +
-        '<div id="emote-popup-search"><input type="text" placeholder="Search emotes..." oninput="filterEmotePopup(this.value)"></div>' +
+        '<div id="emote-popup-tabs"><button class="emote-tab active" data-tab="all" onclick="switchEmoteTab(\'all\')">All Emotes</button><button class="emote-tab" data-tab="fav" onclick="switchEmoteTab(\'fav\')">★ Favorites</button><button class="emote-tab" data-tab="gif" onclick="switchEmoteTab(\'gif\')">🔍 GIFs</button></div>' +
+        '<div id="emote-popup-search"><input type="text" placeholder="Search emotes..." oninput="filterEmotePopup(this.value)" onkeydown="handleEmoteSearchKey(event)"></div>' +
         '<div id="emote-popup-body"></div>' +
         '<div id="emote-popup-pagination"><button onclick="emotePrevPage()">◀ Prev</button><span id="emote-popup-pageinfo">Page 1</span><button onclick="emoteNextPage()">Next ▶</button></div>';
     o.appendChild(p);
@@ -586,12 +602,32 @@ function switchEmoteTab(tab) {
     document.querySelectorAll('.emote-tab').forEach(function(t) { t.classList.remove('active'); });
     document.querySelector('.emote-tab[data-tab="' + tab + '"]').classList.add('active');
     currentEmotePage = 0;
-    renderEmotes(tab);
+    currentGifPage = 0;
+    var searchInput = document.querySelector('#emote-popup-search input');
+    if (tab === 'gif') {
+        searchInput.placeholder = 'Search Tenor GIFs... (press Enter)';
+        searchInput.value = lastGifSearch;
+        renderGifTab();
+    } else {
+        searchInput.placeholder = 'Search emotes...';
+        renderEmotes(tab);
+    }
+}
+
+function handleEmoteSearchKey(e) {
+    var tab = document.querySelector('.emote-tab.active').dataset.tab;
+    if (tab === 'gif' && (e.keyCode === 13 || e.key === 'Enter')) {
+        var query = e.target.value.trim();
+        if (query) {
+            searchTenorGifs(query);
+        }
+    }
 }
 
 function filterEmotePopup(s) {
-    currentEmotePage = 0;
     var tab = document.querySelector('.emote-tab.active').dataset.tab;
+    if (tab === 'gif') return; // GIF search uses Enter key
+    currentEmotePage = 0;
     renderEmotes(tab, s);
 }
 
@@ -626,15 +662,129 @@ function renderEmotes(tab, search) {
     btns[1].disabled = currentEmotePage >= total - 1;
 }
 
-function emotePrevPage() { if (currentEmotePage > 0) { currentEmotePage--; renderEmotes(document.querySelector('.emote-tab.active').dataset.tab, document.querySelector('#emote-popup-search input').value); } }
-function emoteNextPage() { currentEmotePage++; renderEmotes(document.querySelector('.emote-tab.active').dataset.tab, document.querySelector('#emote-popup-search input').value); }
+function emotePrevPage() { 
+    var tab = document.querySelector('.emote-tab.active').dataset.tab;
+    if (tab === 'gif') {
+        if (currentGifPage > 0) { currentGifPage--; renderGifResults(); }
+    } else {
+        if (currentEmotePage > 0) { currentEmotePage--; renderEmotes(tab, document.querySelector('#emote-popup-search input').value); }
+    }
+}
+function emoteNextPage() { 
+    var tab = document.querySelector('.emote-tab.active').dataset.tab;
+    if (tab === 'gif') {
+        currentGifPage++; 
+        // If we need more results, fetch next page
+        if ((currentGifPage + 1) * gifsPerPage >= gifSearchResults.length && gifNextPos) {
+            searchTenorGifs(lastGifSearch, true);
+        } else {
+            renderGifResults();
+        }
+    } else {
+        currentEmotePage++; renderEmotes(tab, document.querySelector('#emote-popup-search input').value); 
+    }
+}
 function insertEmote(name) { var c = document.getElementById('chatline'); if (c) { c.value += name + ' '; c.focus(); } }
+function insertGif(url) { 
+    var c = document.getElementById('chatline'); 
+    if (c) { 
+        c.value += url + ' '; 
+        c.focus(); 
+    } 
+    closeEmotePopup();
+}
 function toggleEmoteFav(name, e) {
     e.stopPropagation();
     var i = emoteFavorites.indexOf(name);
     if (i !== -1) emoteFavorites.splice(i, 1); else emoteFavorites.unshift(name);
     localStorage.setItem('emoteFavorites', JSON.stringify(emoteFavorites));
     renderEmotes(document.querySelector('.emote-tab.active').dataset.tab, document.querySelector('#emote-popup-search input').value);
+}
+
+// GIF SEARCH FUNCTIONS
+function renderGifTab() {
+    var body = document.getElementById('emote-popup-body');
+    if (!body) return;
+    if (gifSearchResults.length === 0) {
+        body.innerHTML = '<div style="width:100%;text-align:center;color:#888;padding:40px">' +
+            '<div style="font-size:48px;margin-bottom:15px">🔍</div>' +
+            '<div>Search for GIFs using the search bar above</div>' +
+            '<div style="font-size:12px;margin-top:8px;color:#666">Powered by Tenor</div></div>';
+        document.getElementById('emote-popup-pageinfo').textContent = 'Search GIFs';
+        var btns = document.querySelectorAll('#emote-popup-pagination button');
+        btns[0].disabled = true;
+        btns[1].disabled = true;
+    } else {
+        renderGifResults();
+    }
+}
+
+function searchTenorGifs(query, loadMore) {
+    if (!query.trim()) return;
+    lastGifSearch = query;
+    var body = document.getElementById('emote-popup-body');
+    if (!loadMore) {
+        gifSearchResults = [];
+        currentGifPage = 0;
+        gifNextPos = '';
+        body.innerHTML = '<div style="width:100%;text-align:center;color:#888;padding:40px"><div style="font-size:32px">⏳</div><div>Searching...</div></div>';
+    }
+    
+    var url = 'https://tenor.googleapis.com/v2/search?q=' + encodeURIComponent(query) + 
+              '&key=' + TENOR_API_KEY + 
+              '&limit=30&media_filter=gif,tinygif' +
+              (gifNextPos ? '&pos=' + gifNextPos : '');
+    
+    fetch(url)
+        .then(function(response) { return response.json(); })
+        .then(function(data) {
+            if (data.results) {
+                gifSearchResults = gifSearchResults.concat(data.results);
+                gifNextPos = data.next || '';
+                renderGifResults();
+            } else {
+                body.innerHTML = '<div style="width:100%;text-align:center;color:#888;padding:40px">No GIFs found</div>';
+            }
+        })
+        .catch(function(err) {
+            console.error('Tenor API error:', err);
+            body.innerHTML = '<div style="width:100%;text-align:center;color:#f88;padding:40px">Error searching GIFs. Try again.</div>';
+        });
+}
+
+function renderGifResults() {
+    var body = document.getElementById('emote-popup-body');
+    if (!body) return;
+    
+    var total = Math.ceil(gifSearchResults.length / gifsPerPage) || 1;
+    var start = currentGifPage * gifsPerPage;
+    var page = gifSearchResults.slice(start, start + gifsPerPage);
+    
+    body.innerHTML = '';
+    if (page.length === 0) {
+        body.innerHTML = '<div style="width:100%;text-align:center;color:#888;padding:40px">No GIFs found</div>';
+    } else {
+        page.forEach(function(gif) {
+            var d = document.createElement('div');
+            d.className = 'emote-item gif-item';
+            d.style.width = '100px';
+            d.style.height = '100px';
+            // Get the smallest GIF format for preview
+            var previewUrl = gif.media_formats.tinygif ? gif.media_formats.tinygif.url : 
+                            (gif.media_formats.gif ? gif.media_formats.gif.url : '');
+            var fullUrl = gif.media_formats.gif ? gif.media_formats.gif.url : previewUrl;
+            d.innerHTML = '<img src="' + previewUrl + '" title="Click to insert" style="max-width:90px;max-height:90px;object-fit:contain;">';
+            d.onclick = function() { insertGif(fullUrl); };
+            body.appendChild(d);
+        });
+    }
+    
+    // Update pagination
+    var hasMore = gifNextPos || (currentGifPage < total - 1);
+    document.getElementById('emote-popup-pageinfo').textContent = 'Page ' + (currentGifPage + 1) + (gifNextPos ? '+' : ' of ' + total);
+    var btns = document.querySelectorAll('#emote-popup-pagination button');
+    btns[0].disabled = currentGifPage === 0;
+    btns[1].disabled = !hasMore && currentGifPage >= total - 1;
 }
 
 function makeDraggable(el, handle) {
