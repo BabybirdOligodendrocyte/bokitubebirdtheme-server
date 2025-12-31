@@ -1590,9 +1590,8 @@ function fixUserlistLayout() {
         #userlist-dropdown .userlist_item.userlist_mod,
         #userlist-dropdown .userlist_item.userlist_admin {
             display: flex !important;
-            flex-direction: column !important;
             flex-shrink: 0;
-            padding: 4px 8px;
+            padding: 6px 10px;
             background: #2a2a2a;
             border-radius: 3px;
             width: 100%;
@@ -1602,37 +1601,9 @@ function fixUserlistLayout() {
         #userlist-dropdown .userlist_item:hover {
             background: #444;
         }
-        /* User info row */
-        #userlist-dropdown .userlist_item > span {
-            display: flex;
-            align-items: center;
-            gap: 5px;
-        }
-        /* User options dropdown */
+        /* Hide the inline user-dropdown since we'll use floating panel */
         #userlist-dropdown .user-dropdown {
-            display: none;
-            flex-direction: column;
-            gap: 4px;
-            margin-top: 8px;
-            padding-top: 8px;
-            border-top: 1px solid #444;
-        }
-        #userlist-dropdown .user-dropdown.user-dropdown-open {
-            display: flex !important;
-        }
-        #userlist-dropdown .user-dropdown .btn {
-            padding: 6px 10px;
-            font-size: 12px;
-            text-align: left;
-        }
-        #userlist-dropdown .btn-group-vertical {
-            display: flex;
-            flex-direction: column;
-            gap: 2px;
-        }
-        /* Style different user types */
-        #userlist-dropdown .userlist_afk .userlist_owner {
-            opacity: 0.6;
+            display: none !important;
         }
         #chatheader {
             position: relative;
@@ -1642,10 +1613,133 @@ function fixUserlistLayout() {
         #userlist {
             display: none !important;
         }
+        
+        /* Floating user options panel */
+        #user-options-panel {
+            display: none;
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: #1e1e24;
+            border: 1px solid #444;
+            border-radius: 8px;
+            padding: 0;
+            z-index: 999999;
+            min-width: 200px;
+            max-width: 90vw;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.7);
+        }
+        #user-options-panel.open {
+            display: block;
+        }
+        #user-options-panel .panel-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 15px;
+            background: #2a2a30;
+            border-bottom: 1px solid #444;
+            border-radius: 8px 8px 0 0;
+            cursor: move;
+        }
+        #user-options-panel .panel-header span {
+            font-weight: bold;
+            color: #fff;
+        }
+        #user-options-panel .panel-close {
+            background: none;
+            border: none;
+            color: #888;
+            font-size: 20px;
+            cursor: pointer;
+            padding: 0 5px;
+        }
+        #user-options-panel .panel-close:hover {
+            color: #fff;
+        }
+        #user-options-panel .panel-body {
+            padding: 10px;
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+        #user-options-panel .panel-body .btn {
+            display: block;
+            width: 100%;
+            padding: 8px 12px;
+            text-align: left;
+            background: #333;
+            border: 1px solid #444;
+            color: #ddd;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        #user-options-panel .panel-body .btn:hover {
+            background: #444;
+            color: #fff;
+        }
+        
+        /* Overlay behind panel */
+        #user-options-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.5);
+            z-index: 999998;
+        }
+        #user-options-overlay.open {
+            display: block;
+        }
     `).appendTo('head');
+    
+    // Create overlay and floating panel
+    $('<div id="user-options-overlay">').appendTo('body').on('click', closeUserOptionsPanel);
+    $('<div id="user-options-panel"><div class="panel-header"><span id="panel-username">User</span><button class="panel-close">&times;</button></div><div class="panel-body"></div></div>').appendTo('body');
+    $('#user-options-panel .panel-close').on('click', closeUserOptionsPanel);
     
     // Create our dropdown container
     var $dropdown = $('<div id="userlist-dropdown">').appendTo('#chatheader');
+    
+    function closeUserOptionsPanel() {
+        $('#user-options-panel').removeClass('open');
+        $('#user-options-overlay').removeClass('open');
+    }
+    
+    function openUserOptionsPanel(username, $userDropdown) {
+        var $panel = $('#user-options-panel');
+        var $body = $panel.find('.panel-body');
+        
+        // Set username in header
+        $panel.find('#panel-username').text(username);
+        
+        // Clone buttons from user dropdown
+        $body.empty();
+        $userDropdown.find('button').each(function() {
+            var $origBtn = $(this);
+            var btnText = $origBtn.text().trim();
+            var originalOnclick = $origBtn.attr('onclick');
+            
+            // Skip if button is hidden
+            if ($origBtn.css('display') === 'none') return;
+            
+            var $newBtn = $('<button class="btn">').text(btnText);
+            $newBtn.on('click', function() {
+                if (originalOnclick) {
+                    eval(originalOnclick);
+                }
+                closeUserOptionsPanel();
+            });
+            $body.append($newBtn);
+        });
+        
+        // Show panel
+        $('#user-options-overlay').addClass('open');
+        $panel.addClass('open');
+    }
     
     // Function to update dropdown content
     function updateDropdownContent() {
@@ -1659,35 +1753,12 @@ function fixUserlistLayout() {
         $dropdown.find('.userlist_item').each(function() {
             var $item = $(this);
             var $userDropdown = $item.find('.user-dropdown');
+            var username = $item.find('.userlist_owner').text().trim() || $item.find('span').last().text().trim();
             
-            // Click on user name to toggle their options
+            // Click on user name to open floating panel
             $item.on('click', function(e) {
-                // Don't toggle if clicking on a button inside
-                if ($(e.target).is('button') || $(e.target).closest('button').length) {
-                    return;
-                }
-                
                 e.stopPropagation();
-                
-                // Close other open user dropdowns
-                $dropdown.find('.user-dropdown').not($userDropdown).removeClass('user-dropdown-open');
-                
-                // Toggle this user's dropdown
-                $userDropdown.toggleClass('user-dropdown-open');
-            });
-            
-            // Handle button clicks - trigger original functionality
-            $userDropdown.find('button').each(function() {
-                var $btn = $(this);
-                var originalOnclick = $btn.attr('onclick');
-                
-                $btn.on('click', function(e) {
-                    e.stopPropagation();
-                    // Execute the original onclick if it exists
-                    if (originalOnclick) {
-                        eval(originalOnclick);
-                    }
-                });
+                openUserOptionsPanel(username, $userDropdown);
             });
         });
     }
@@ -1713,7 +1784,6 @@ function fixUserlistLayout() {
     $(document).on('click', function(e) {
         if (!$(e.target).closest('#chatheader').length) {
             $dropdown.removeClass('open');
-            $dropdown.find('.user-dropdown').removeClass('user-dropdown-open');
         }
     });
 }
