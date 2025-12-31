@@ -937,18 +937,26 @@ function createTextStylePopup() {
     
     // Fonts
     var fonts = [
-        {name: 'serif', label: 'Serif', style: 'font-family:serif;'},
-        {name: 'sans', label: 'Sans', style: 'font-family:sans-serif;'},
-        {name: 'mono', label: 'Mono', style: 'font-family:monospace;'},
+        {name: 'comic', label: 'Comic Sans', style: 'font-family:\"Comic Sans MS\",cursive;'},
+        {name: 'impact', label: 'Impact', style: 'font-family:Impact,sans-serif;'},
+        {name: 'papyrus', label: 'Papyrus', style: 'font-family:Papyrus,fantasy;'},
+        {name: 'copperplate', label: 'Copperplate', style: 'font-family:Copperplate,fantasy;'},
+        {name: 'brush', label: 'Brush Script', style: 'font-family:\"Brush Script MT\",cursive;'},
+        {name: 'lucida', label: 'Lucida', style: 'font-family:\"Lucida Handwriting\",cursive;'},
+        {name: 'courier', label: 'Courier', style: 'font-family:\"Courier New\",monospace;'},
+        {name: 'times', label: 'Times', style: 'font-family:\"Times New Roman\",serif;'},
+        {name: 'georgia', label: 'Georgia', style: 'font-family:Georgia,serif;'},
+        {name: 'trebuchet', label: 'Trebuchet', style: 'font-family:\"Trebuchet MS\",sans-serif;'},
+        {name: 'verdana', label: 'Verdana', style: 'font-family:Verdana,sans-serif;'},
+        {name: 'gothic', label: 'Gothic', style: 'font-family:\"Century Gothic\",sans-serif;'},
+        {name: 'garamond', label: 'Garamond', style: 'font-family:Garamond,serif;'},
+        {name: 'palatino', label: 'Palatino', style: 'font-family:\"Palatino Linotype\",serif;'},
+        {name: 'bookman', label: 'Bookman', style: 'font-family:\"Bookman Old Style\",serif;'},
+        {name: 'mono', label: 'Monospace', style: 'font-family:monospace;'},
         {name: 'cursive', label: 'Cursive', style: 'font-family:cursive;'},
         {name: 'fantasy', label: 'Fantasy', style: 'font-family:fantasy;'},
-        {name: 'comic', label: 'Comic', style: 'font-family:\"Comic Sans MS\",cursive;'},
-        {name: 'impact', label: 'Impact', style: 'font-family:Impact,sans-serif;'},
-        {name: 'georgia', label: 'Georgia', style: 'font-family:Georgia,serif;'},
-        {name: 'times', label: 'Times', style: 'font-family:\"Times New Roman\",serif;'},
-        {name: 'arial', label: 'Arial', style: 'font-family:Arial,sans-serif;'},
-        {name: 'courier', label: 'Courier', style: 'font-family:\"Courier New\",monospace;'},
-        {name: 'trebuchet', label: 'Trebuchet', style: 'font-family:\"Trebuchet MS\",sans-serif;'}
+        {name: 'system', label: 'System UI', style: 'font-family:system-ui;'},
+        {name: 'serif', label: 'Serif', style: 'font-family:serif;'}
     ];
     var fontbtns = fonts.map(function(f) {
         var act = textStyleSettings.font === f.name ? ' active' : '';
@@ -1099,18 +1107,26 @@ function updateStylePreview() {
     // Font
     if (textStyleSettings.font) {
         var fontStyles = {
-            'serif': 'font-family:serif',
-            'sans': 'font-family:sans-serif',
+            'comic': 'font-family:"Comic Sans MS",cursive',
+            'impact': 'font-family:Impact,sans-serif',
+            'papyrus': 'font-family:Papyrus,fantasy',
+            'copperplate': 'font-family:Copperplate,fantasy',
+            'brush': 'font-family:"Brush Script MT",cursive',
+            'lucida': 'font-family:"Lucida Handwriting",cursive',
+            'courier': 'font-family:"Courier New",monospace',
+            'times': 'font-family:"Times New Roman",serif',
+            'georgia': 'font-family:Georgia,serif',
+            'trebuchet': 'font-family:"Trebuchet MS",sans-serif',
+            'verdana': 'font-family:Verdana,sans-serif',
+            'gothic': 'font-family:"Century Gothic",sans-serif',
+            'garamond': 'font-family:Garamond,serif',
+            'palatino': 'font-family:"Palatino Linotype",serif',
+            'bookman': 'font-family:"Bookman Old Style",serif',
             'mono': 'font-family:monospace',
             'cursive': 'font-family:cursive',
             'fantasy': 'font-family:fantasy',
-            'comic': 'font-family:"Comic Sans MS",cursive',
-            'impact': 'font-family:Impact,sans-serif',
-            'georgia': 'font-family:Georgia,serif',
-            'times': 'font-family:"Times New Roman",serif',
-            'arial': 'font-family:Arial,sans-serif',
-            'courier': 'font-family:"Courier New",monospace',
-            'trebuchet': 'font-family:"Trebuchet MS",sans-serif'
+            'system': 'font-family:system-ui',
+            'serif': 'font-family:serif'
         };
         if (fontStyles[textStyleSettings.font]) s.push(fontStyles[textStyleSettings.font]);
     }
@@ -1188,13 +1204,7 @@ function buildStyleTags(msg) {
     if (!msg.trim()) return msg;
     var open = '', close = '';
     
-    // Font (outermost)
-    if (textStyleSettings.font) { 
-        open += '[font-' + textStyleSettings.font + ']'; 
-        close = '[/]' + close; 
-    }
-    
-    // Gradient
+    // Gradient (outermost)
     if (textStyleSettings.gradient) { 
         open += '[' + textStyleSettings.gradient + ']'; 
         close = '[/]' + close; 
@@ -1214,6 +1224,12 @@ function buildStyleTags(msg) {
     // Animation
     if (textStyleSettings.animation) { 
         open += '[' + textStyleSettings.animation + ']'; 
+        close = '[/]' + close; 
+    }
+    
+    // Font (inside color/glow/animation so it applies to the text)
+    if (textStyleSettings.font) { 
+        open += '[font-' + textStyleSettings.font + ']'; 
         close = '[/]' + close; 
     }
     
