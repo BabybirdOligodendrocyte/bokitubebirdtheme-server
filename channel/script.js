@@ -625,10 +625,6 @@ var usernameStyleSettings = JSON.parse(localStorage.getItem('usernameStyleSettin
         /* Styled username */
         .styled-username {
             font-weight: bold !important;
-            display: inline !important;
-        }
-        .styled-username::after {
-            content: ': ' !important;
         }
         
         /* Hide raw tags that haven't been processed by filters */
@@ -644,9 +640,9 @@ var usernameStyleSettings = JSON.parse(localStorage.getItem('usernameStyleSettin
             display: none !important;
         }
         
-        /* Show styled username once processed and not consecutive */
+        /* Show styled username once processed and not consecutive - wrap pfp and username on one line, message below */
         #messagebuffer > div.chat-msg-processed.has-visible-username .styled-username {
-            display: inline !important;
+            display: block !important;
         }
         #messagebuffer > div.chat-msg-processed.has-visible-username .chat-profile-pic {
             display: inline !important;
@@ -658,7 +654,7 @@ var usernameStyleSettings = JSON.parse(localStorage.getItem('usernameStyleSettin
             display: none !important;
         }
         
-        /* Chat profile picture */
+        /* Chat profile picture - inline with username */
         .chat-profile-pic {
             width: 24px !important;
             height: 24px !important;
@@ -688,8 +684,7 @@ var usernameStyleSettings = JSON.parse(localStorage.getItem('usernameStyleSettin
         }
         
         /* When styled username is present, hide original username elements via CSS */
-        .chat-msg-with-styled-name .username,
-        .chat-msg-with-styled-name .username + * {
+        .chat-msg-with-styled-name > .username {
             display: none !important;
         }
         
@@ -712,20 +707,6 @@ var usernameStyleSettings = JSON.parse(localStorage.getItem('usernameStyleSettin
         
         /* When message has hidden username - timestamp hidden, full width message */
         #messagebuffer > div.has-hidden-username > .timestamp {
-            display: none !important;
-        }
-        
-        /* Styled username on its own line */
-        .styled-username {
-            display: block !important;
-            font-weight: bold !important;
-        }
-        .styled-username::after {
-            content: '' !important;
-        }
-        
-        /* Hide consecutive styled usernames */
-        .styled-username.hidden-consecutive {
             display: none !important;
         }
         
@@ -2349,6 +2330,23 @@ function processStyledUsername(msgElement) {
     
     // Mark as processed immediately
     msgElement.classList.add('chat-msg-processed');
+    
+    // First, convert [pfp]...[/pfp] tags to images (handles both plain URLs and linked URLs)
+    var html = msgElement.innerHTML;
+    
+    // Match [pfp] with a link inside: [pfp]<a href="url">text</a>[/pfp]
+    html = html.replace(/\[pfp\]<a[^>]*href="([^"]+)"[^>]*>[^<]*<\/a>\[\/pfp\]/gi, function(match, url) {
+        return '<img class="chat-profile-pic" src="' + url + '" onerror="this.style.display=\'none\'">';
+    });
+    
+    // Match [pfp] with plain URL: [pfp]https://...[/pfp]
+    html = html.replace(/\[pfp\](https?:\/\/[^\[]+)\[\/pfp\]/gi, function(match, url) {
+        return '<img class="chat-profile-pic" src="' + url + '" onerror="this.style.display=\'none\'">';
+    });
+    
+    if (html !== msgElement.innerHTML) {
+        msgElement.innerHTML = html;
+    }
     
     // Find the styled username span
     var styledUsername = msgElement.querySelector('.styled-username');
