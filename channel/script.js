@@ -212,12 +212,14 @@ var textStyleSettings = JSON.parse(localStorage.getItem('textStyleSettings')) ||
             justify-content: center !important;
         }
         #emote-popup, #textstyle-popup, #filter-popup {
-            position: relative !important;
+            position: fixed !important;
+            top: 50% !important;
+            left: 50% !important;
+            transform: translate(-50%, -50%) !important;
             background: #1e1e24 !important;
             border: 2px solid #555 !important;
             border-radius: 12px !important;
             box-shadow: 0 20px 60px rgba(0,0,0,0.9) !important;
-            margin: 20px !important;
         }
         #emote-popup {
             width: 460px !important;
@@ -788,16 +790,41 @@ function renderGifResults() {
 }
 
 function makeDraggable(el, handle) {
-    var ox = 0, oy = 0, sx = 0, sy = 0;
     handle.onmousedown = function(e) {
+        if (e.target.tagName === 'BUTTON') return;
         e.preventDefault();
-        sx = e.clientX; sy = e.clientY;
-        document.onmouseup = function() { document.onmouseup = null; document.onmousemove = null; };
+        
+        // Get current position
+        var rect = el.getBoundingClientRect();
+        
+        // Calculate mouse offset within element
+        var offsetX = e.clientX - rect.left;
+        var offsetY = e.clientY - rect.top;
+        
+        // Get current styles to preserve them
+        var computedStyle = window.getComputedStyle(el);
+        var width = computedStyle.width;
+        var maxWidth = computedStyle.maxWidth;
+        var height = computedStyle.height;
+        var maxHeight = computedStyle.maxHeight;
+        
+        // Build base style string
+        var baseStyle = 'position:fixed !important; margin:0 !important; transform:none !important;' +
+            'width:' + width + '; max-width:' + maxWidth + '; height:' + height + '; max-height:' + maxHeight + ';' +
+            'display:flex; flex-direction:column; background:#1e1e24; border:2px solid #555; border-radius:12px; box-shadow:0 20px 60px rgba(0,0,0,0.9);';
+        
+        // Set initial position
+        el.style.cssText = baseStyle + 'top:' + rect.top + 'px !important; left:' + rect.left + 'px !important;';
+        
         document.onmousemove = function(e) {
-            ox = sx - e.clientX; oy = sy - e.clientY; sx = e.clientX; sy = e.clientY;
-            el.style.top = (el.offsetTop - oy) + 'px';
-            el.style.left = (el.offsetLeft - ox) + 'px';
-            el.style.transform = 'none';
+            var newLeft = e.clientX - offsetX;
+            var newTop = e.clientY - offsetY;
+            el.style.cssText = baseStyle + 'top:' + newTop + 'px !important; left:' + newLeft + 'px !important;';
+        };
+        
+        document.onmouseup = function() {
+            document.onmousemove = null;
+            document.onmouseup = null;
         };
     };
 }
