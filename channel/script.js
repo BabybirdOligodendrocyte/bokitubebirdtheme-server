@@ -1561,11 +1561,7 @@ function fixUserlistLayout() {
     var chatheader = document.getElementById('chatheader');
     var userlist = document.getElementById('userlist');
     
-    console.log('chatheader:', chatheader);
-    console.log('userlist:', userlist);
-    
     if (!chatheader || !userlist) {
-        console.log('Elements not found, retrying...');
         setTimeout(fixUserlistLayout, 1000);
         return;
     }
@@ -1575,75 +1571,75 @@ function fixUserlistLayout() {
     style.id = 'userlist-dropdown-style';
     style.textContent = `
         #userlist {
-            display: none;
-            flex-direction: column;
-            flex-wrap: nowrap;
-            max-height: 50vh;
-            height: auto;
-            overflow-y: auto;
-            overflow-x: hidden;
-            background: #1a1a1a;
-            padding: 5px;
-            gap: 2px;
-            position: absolute;
-            top: 100%;
-            left: 0;
-            right: 0;
-            z-index: 1000;
-            border: 1px solid #333;
-            border-radius: 4px;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.5);
-        }
-        #userlist.userlist-open {
-            display: flex !important;
+            flex-direction: column !important;
+            flex-wrap: nowrap !important;
+            max-height: 50vh !important;
+            height: auto !important;
+            overflow-y: auto !important;
+            overflow-x: hidden !important;
+            background: #1a1a1a !important;
+            padding: 5px !important;
+            gap: 2px !important;
+            position: absolute !important;
+            top: 100% !important;
+            left: 0 !important;
+            right: 0 !important;
+            z-index: 1000 !important;
+            border: 1px solid #333 !important;
+            border-radius: 4px !important;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.5) !important;
         }
         #userlist .userlist_item {
             display: flex !important;
-            flex-shrink: 0;
-            padding: 4px 8px;
-            background: #2a2a2a;
-            border-radius: 3px;
-            width: 100%;
-            box-sizing: border-box;
+            flex-shrink: 0 !important;
+            padding: 4px 8px !important;
+            background: #2a2a2a !important;
+            border-radius: 3px !important;
+            width: 100% !important;
+            box-sizing: border-box !important;
         }
         #userlist .userlist_item:hover {
-            background: #444;
+            background: #444 !important;
         }
         #chatheader {
-            position: relative;
-            cursor: pointer;
+            position: relative !important;
+            cursor: pointer !important;
         }
     `;
     document.head.appendChild(style);
+    
+    // Function to toggle userlist
+    function toggleUserlist() {
+        if (userlist.style.display === 'none' || userlist.style.display === '') {
+            userlist.style.display = 'flex';
+        } else {
+            userlist.style.display = 'none';
+        }
+    }
+    
+    // Initially hide it
+    userlist.style.display = 'none';
     
     // Remove any existing click handlers by cloning
     var newChatheader = chatheader.cloneNode(true);
     chatheader.parentNode.replaceChild(newChatheader, chatheader);
     chatheader = newChatheader;
     
-    // Get userlist again after DOM change
-    userlist = document.getElementById('userlist');
-    
     // Add click handler
     chatheader.addEventListener('click', function(e) {
         e.preventDefault();
         e.stopPropagation();
-        console.log('Chatheader clicked');
-        if (userlist.classList.contains('userlist-open')) {
-            userlist.classList.remove('userlist-open');
-        } else {
-            userlist.classList.add('userlist-open');
-        }
+        toggleUserlist();
     });
     
     // Close when clicking outside
     document.addEventListener('click', function(e) {
-        if (!chatheader.contains(e.target) && !userlist.contains(e.target)) {
-            userlist.classList.remove('userlist-open');
+        var ch = document.getElementById('chatheader');
+        var ul = document.getElementById('userlist');
+        if (ch && ul && !ch.contains(e.target) && !ul.contains(e.target)) {
+            ul.style.display = 'none';
         }
     });
-    
-    console.log('Userlist dropdown initialized');
 }
 
 /* ========== AUTOCOMPLETE FOR EMOTES ========== */
