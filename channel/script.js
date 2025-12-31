@@ -599,6 +599,14 @@ var usernameStyleSettings = JSON.parse(localStorage.getItem('usernameStyleSettin
             content: ': ' !important;
         }
         
+        /* Hide styled username from niconico overlay */
+        #nnd-container .styled-username,
+        .nnd-message .styled-username,
+        [class*="nnd"] .styled-username,
+        .danmaku .styled-username {
+            display: none !important;
+        }
+        
         /* Hide consecutive styled usernames */
         .styled-username.hidden-consecutive {
             display: none !important;
@@ -2306,3 +2314,31 @@ if (msgBuffer) {
 socket.on('chatMsg', function(data) {
     formatChatMsg(data, $("#messagebuffer > div").last());
 });
+
+// Hook into niconico script to strip username tags from scrolling messages
+(function() {
+    // Wait for NND script to load
+    var checkNND = setInterval(function() {
+        if (window.nnd && window.nnd._fn && window.nnd._fn.addScrollingMessage) {
+            clearInterval(checkNND);
+            
+            // Store original function
+            var originalAddScrollingMessage = window.nnd._fn.addScrollingMessage;
+            
+            // Override with our version that strips username tags
+            window.nnd._fn.addScrollingMessage = function(message, extraClass) {
+                if (typeof message === 'string') {
+                    // Remove [uname]...[/uname] tags and their contents
+                    message = message.replace(/\[uname\].*?\[\/uname\]\s*/gs, '');
+                }
+                // Call original function with cleaned message
+                return originalAddScrollingMessage.call(this, message, extraClass);
+            };
+            
+            console.log('NND username filter hook installed');
+        }
+    }, 500);
+    
+    // Stop checking after 30 seconds
+    setTimeout(function() { clearInterval(checkNND); }, 30000);
+})();
