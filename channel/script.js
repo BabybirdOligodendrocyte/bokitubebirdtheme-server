@@ -1590,15 +1590,45 @@ function fixUserlistLayout() {
         #userlist-dropdown .userlist_item.userlist_mod,
         #userlist-dropdown .userlist_item.userlist_admin {
             display: flex !important;
+            flex-direction: column !important;
             flex-shrink: 0;
             padding: 4px 8px;
             background: #2a2a2a;
             border-radius: 3px;
             width: 100%;
             box-sizing: border-box;
+            cursor: pointer;
         }
         #userlist-dropdown .userlist_item:hover {
             background: #444;
+        }
+        /* User info row */
+        #userlist-dropdown .userlist_item > span {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+        /* User options dropdown */
+        #userlist-dropdown .user-dropdown {
+            display: none;
+            flex-direction: column;
+            gap: 4px;
+            margin-top: 8px;
+            padding-top: 8px;
+            border-top: 1px solid #444;
+        }
+        #userlist-dropdown .user-dropdown.user-dropdown-open {
+            display: flex !important;
+        }
+        #userlist-dropdown .user-dropdown .btn {
+            padding: 6px 10px;
+            font-size: 12px;
+            text-align: left;
+        }
+        #userlist-dropdown .btn-group-vertical {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
         }
         /* Style different user types */
         #userlist-dropdown .userlist_afk .userlist_owner {
@@ -1624,16 +1654,53 @@ function fixUserlistLayout() {
         // Make sure all items are visible
         $clone.css('display', 'flex');
         $dropdown.empty().append($clone);
+        
+        // Add click handlers to each user item
+        $dropdown.find('.userlist_item').each(function() {
+            var $item = $(this);
+            var $userDropdown = $item.find('.user-dropdown');
+            
+            // Click on user name to toggle their options
+            $item.on('click', function(e) {
+                // Don't toggle if clicking on a button inside
+                if ($(e.target).is('button') || $(e.target).closest('button').length) {
+                    return;
+                }
+                
+                e.stopPropagation();
+                
+                // Close other open user dropdowns
+                $dropdown.find('.user-dropdown').not($userDropdown).removeClass('user-dropdown-open');
+                
+                // Toggle this user's dropdown
+                $userDropdown.toggleClass('user-dropdown-open');
+            });
+            
+            // Handle button clicks - trigger original functionality
+            $userDropdown.find('button').each(function() {
+                var $btn = $(this);
+                var originalOnclick = $btn.attr('onclick');
+                
+                $btn.on('click', function(e) {
+                    e.stopPropagation();
+                    // Execute the original onclick if it exists
+                    if (originalOnclick) {
+                        eval(originalOnclick);
+                    }
+                });
+            });
+        });
     }
     
     // Initial population
     updateDropdownContent();
     
     // Update periodically in case users join/leave
-    setInterval(updateDropdownContent, 3000);
+    setInterval(updateDropdownContent, 5000);
     
-    // Toggle on chatheader click
+    // Toggle on chatheader click (but not on dropdown or user items)
     $('#chatheader').on('click', function(e) {
+        // Only toggle if clicking directly on chatheader area, not on dropdown content
         if (!$(e.target).closest('#userlist-dropdown').length) {
             $dropdown.toggleClass('open');
             if ($dropdown.hasClass('open')) {
@@ -1646,6 +1713,7 @@ function fixUserlistLayout() {
     $(document).on('click', function(e) {
         if (!$(e.target).closest('#chatheader').length) {
             $dropdown.removeClass('open');
+            $dropdown.find('.user-dropdown').removeClass('user-dropdown-open');
         }
     });
 }
