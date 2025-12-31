@@ -1558,62 +1558,94 @@ $(document).ready(function() {
 });
 
 function fixUserlistLayout() {
-    // Add CSS for dropdown userlist
-    $('<style id="userlist-dropdown-style">')
-        .text(`
-            #userlist.userlist-visible {
-                display: flex !important;
-                flex-direction: column !important;
-                flex-wrap: nowrap !important;
-                max-height: 50vh !important;
-                height: auto !important;
-                overflow-y: auto !important;
-                overflow-x: hidden !important;
-                background: #1a1a1a !important;
-                padding: 5px !important;
-                gap: 2px !important;
-                position: absolute !important;
-                top: 100% !important;
-                left: 0 !important;
-                right: 0 !important;
-                z-index: 1000 !important;
-                border: 1px solid #333 !important;
-                border-radius: 4px !important;
-                box-shadow: 0 4px 12px rgba(0,0,0,0.5) !important;
-            }
-            #userlist:not(.userlist-visible) {
-                display: none !important;
-            }
-            #userlist .userlist_item {
-                display: flex !important;
-                flex-shrink: 0 !important;
-                padding: 4px 8px !important;
-                background: #2a2a2a !important;
-                border-radius: 3px !important;
-                width: 100% !important;
-                box-sizing: border-box !important;
-            }
-            #userlist .userlist_item:hover {
-                background: #444 !important;
-            }
-            #chatheader {
-                position: relative !important;
-                cursor: pointer !important;
-            }
-        `)
-        .appendTo('head');
+    // Add CSS for our custom dropdown
+    $('<style id="userlist-dropdown-style">').text(`
+        #userlist-dropdown {
+            display: none;
+            position: absolute;
+            top: 100%;
+            left: 0;
+            right: 0;
+            max-height: 50vh;
+            overflow-y: auto;
+            overflow-x: hidden;
+            background: #1a1a1a;
+            padding: 5px;
+            z-index: 99999;
+            border: 1px solid #333;
+            border-radius: 4px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+            flex-direction: column;
+            gap: 2px;
+        }
+        #userlist-dropdown.open {
+            display: flex;
+        }
+        /* Show ALL user types */
+        #userlist-dropdown .userlist_item,
+        #userlist-dropdown .userlist_item.userlist_afk,
+        #userlist-dropdown .userlist_item.userlist_guest,
+        #userlist-dropdown .userlist_item.userlist_anon,
+        #userlist-dropdown .userlist_item.userlist_owner,
+        #userlist-dropdown .userlist_item.userlist_mod,
+        #userlist-dropdown .userlist_item.userlist_admin {
+            display: flex !important;
+            flex-shrink: 0;
+            padding: 4px 8px;
+            background: #2a2a2a;
+            border-radius: 3px;
+            width: 100%;
+            box-sizing: border-box;
+        }
+        #userlist-dropdown .userlist_item:hover {
+            background: #444;
+        }
+        /* Style different user types */
+        #userlist-dropdown .userlist_afk .userlist_owner {
+            opacity: 0.6;
+        }
+        #chatheader {
+            position: relative;
+            cursor: pointer;
+        }
+        /* Hide original userlist */
+        #userlist {
+            display: none !important;
+        }
+    `).appendTo('head');
     
-    // Use jQuery for click handling
-    $('#chatheader').off('click').on('click', function(e) {
-        e.preventDefault();
-        e.stopPropagation();
-        $('#userlist').toggleClass('userlist-visible');
+    // Create our dropdown container
+    var $dropdown = $('<div id="userlist-dropdown">').appendTo('#chatheader');
+    
+    // Function to update dropdown content
+    function updateDropdownContent() {
+        // Clone ALL children from userlist, including all user types
+        var $clone = $('#userlist').children().clone(true);
+        // Make sure all items are visible
+        $clone.css('display', 'flex');
+        $dropdown.empty().append($clone);
+    }
+    
+    // Initial population
+    updateDropdownContent();
+    
+    // Update periodically in case users join/leave
+    setInterval(updateDropdownContent, 3000);
+    
+    // Toggle on chatheader click
+    $('#chatheader').on('click', function(e) {
+        if (!$(e.target).closest('#userlist-dropdown').length) {
+            $dropdown.toggleClass('open');
+            if ($dropdown.hasClass('open')) {
+                updateDropdownContent();
+            }
+        }
     });
     
     // Close when clicking outside
     $(document).on('click', function(e) {
-        if (!$(e.target).closest('#chatheader, #userlist').length) {
-            $('#userlist').removeClass('userlist-visible');
+        if (!$(e.target).closest('#chatheader').length) {
+            $dropdown.removeClass('open');
         }
     });
 }
