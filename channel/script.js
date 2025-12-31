@@ -1558,40 +1558,77 @@ $(document).ready(function() {
 });
 
 function fixUserlistLayout() {
-    // Add CSS to make userlist wrap and be fully visible
+    // Add CSS for dropdown userlist
     var style = document.createElement('style');
     style.textContent = `
         #userlist {
-            display: flex !important;
-            flex-wrap: wrap !important;
-            max-height: none !important;
+            display: none !important;
+            flex-direction: column !important;
+            flex-wrap: nowrap !important;
+            max-height: 50vh !important;
             height: auto !important;
-            overflow: visible !important;
+            overflow-y: auto !important;
+            overflow-x: hidden !important;
             background: #1a1a1a !important;
             padding: 5px !important;
-            gap: 5px !important;
+            gap: 2px !important;
+            position: absolute !important;
+            top: 100% !important;
+            left: 0 !important;
+            right: 0 !important;
+            z-index: 1000 !important;
+            border: 1px solid #333 !important;
+            border-radius: 4px !important;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.5) !important;
+        }
+        #userlist.userlist-open {
+            display: flex !important;
         }
         #userlist .userlist_item {
+            display: flex !important;
             flex-shrink: 0 !important;
-            padding: 2px 6px !important;
+            padding: 4px 8px !important;
             background: #2a2a2a !important;
             border-radius: 3px !important;
+            width: 100% !important;
+            box-sizing: border-box !important;
         }
         #userlist .userlist_item:hover {
             background: #444 !important;
         }
-        /* Make rightcontent not cut off userlist */
-        #rightcontent {
-            overflow: visible !important;
+        /* Show ALL user items including afk, guests, anonymous */
+        #userlist .userlist_item,
+        #userlist .userlist_item.userlist_afk,
+        #userlist .userlist_item.userlist_guest,
+        #userlist .userlist_item.userlist_anon {
+            display: flex !important;
         }
-        /* Chatheader area */
+        /* Chatheader needs relative positioning for dropdown */
         #chatheader {
-            flex-wrap: wrap !important;
-            height: auto !important;
-            min-height: auto !important;
+            position: relative !important;
+            cursor: pointer !important;
         }
     `;
     document.head.appendChild(style);
+    
+    // Set up click toggle on chatheader
+    var chatheader = document.getElementById('chatheader');
+    var userlist = document.getElementById('userlist');
+    
+    if (chatheader && userlist) {
+        chatheader.addEventListener('click', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            userlist.classList.toggle('userlist-open');
+        });
+        
+        // Close when clicking outside
+        document.addEventListener('click', function(e) {
+            if (!chatheader.contains(e.target) && !userlist.contains(e.target)) {
+                userlist.classList.remove('userlist-open');
+            }
+        });
+    }
 }
 
 /* ========== AUTOCOMPLETE FOR EMOTES ========== */
