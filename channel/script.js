@@ -625,23 +625,37 @@ var usernameStyleSettings = JSON.parse(localStorage.getItem('usernameStyleSettin
         /* Styled username */
         .styled-username {
             font-weight: bold !important;
+            display: inline !important;
         }
         .styled-username::after {
             content: ': ' !important;
         }
         
+        /* Hide raw tags that haven't been processed by filters */
+        #messagebuffer > div {
+            /* Hide any raw bbcode-style tags */
+        }
+        
         /* Hide styled username until message is processed (prevents flash) */
-        #messagebuffer > div:not(.chat-msg-with-styled-name) .styled-username {
-            visibility: hidden !important;
-            height: 0 !important;
-            overflow: hidden !important;
+        #messagebuffer > div:not(.chat-msg-processed) .styled-username {
+            display: none !important;
+        }
+        #messagebuffer > div:not(.chat-msg-processed) .chat-profile-pic {
+            display: none !important;
         }
         
         /* Show styled username once processed and not consecutive */
-        #messagebuffer > div.has-visible-username .styled-username {
-            visibility: visible !important;
-            height: auto !important;
-            overflow: visible !important;
+        #messagebuffer > div.chat-msg-processed.has-visible-username .styled-username {
+            display: inline !important;
+        }
+        #messagebuffer > div.chat-msg-processed.has-visible-username .chat-profile-pic {
+            display: inline !important;
+        }
+        
+        /* Hide on consecutive messages */
+        #messagebuffer > div.chat-msg-processed.has-hidden-username .styled-username,
+        #messagebuffer > div.chat-msg-processed.has-hidden-username .chat-profile-pic {
+            display: none !important;
         }
         
         /* Chat profile picture */
@@ -654,16 +668,6 @@ var usernameStyleSettings = JSON.parse(localStorage.getItem('usernameStyleSettin
             margin-right: 4px !important;
         }
         
-        /* Hide profile pic until processed */
-        #messagebuffer > div:not(.chat-msg-with-styled-name) .chat-profile-pic {
-            display: none !important;
-        }
-        
-        /* Hide profile pic on consecutive messages */
-        #messagebuffer > div.has-hidden-username .chat-profile-pic {
-            display: none !important;
-        }
-        
         /* Hide styled username and profile pic from niconico overlay */
         #nnd-container .styled-username,
         .nnd-message .styled-username,
@@ -673,7 +677,8 @@ var usernameStyleSettings = JSON.parse(localStorage.getItem('usernameStyleSettin
         .nnd-message .chat-profile-pic,
         [class*="nnd"] .chat-profile-pic,
         .danmaku .chat-profile-pic,
-        .videoText .chat-profile-pic {
+        .videoText .chat-profile-pic,
+        .videoText .styled-username {
             display: none !important;
         }
         
@@ -2342,6 +2347,9 @@ function applyUsernameTagsToMessage() {
 function processStyledUsername(msgElement) {
     if (!msgElement) return;
     
+    // Mark as processed immediately
+    msgElement.classList.add('chat-msg-processed');
+    
     // Find the styled username span
     var styledUsername = msgElement.querySelector('.styled-username');
     if (!styledUsername) return;
@@ -2386,6 +2394,9 @@ function processStyledUsername(msgElement) {
         msgElement.classList.add('has-hidden-username');
         var timestamp = msgElement.querySelector('.timestamp');
         if (timestamp) timestamp.style.display = 'none';
+        // Also hide profile pic on consecutive
+        var profilePic = msgElement.querySelector('.chat-profile-pic');
+        if (profilePic) profilePic.style.display = 'none';
     } else {
         // First message from this user - show username, timestamp floats right
         msgElement.classList.add('has-visible-username');
@@ -2648,18 +2659,18 @@ var gifObserver = new MutationObserver(function(mutations) {
     mutations.forEach(function(mutation) {
         mutation.addedNodes.forEach(function(node) {
             if (node.nodeType === 1 && node.classList && node.classList.contains('chat-msg-')) {
-                // Small delay to let CyTube finish processing the message
+                // Process immediately for styling, small delay for GIFs
+                processStyledUsername(node);
                 setTimeout(function() { 
                     embedGifsInMessage(node); 
-                    processStyledUsername(node);
-                }, 50);
+                }, 10);
             }
             // Also check if it's a div directly added to messagebuffer
             if (node.nodeType === 1 && node.tagName === 'DIV' && node.parentElement && node.parentElement.id === 'messagebuffer') {
+                processStyledUsername(node);
                 setTimeout(function() { 
                     embedGifsInMessage(node); 
-                    processStyledUsername(node);
-                }, 50);
+                }, 10);
             }
         });
     });
