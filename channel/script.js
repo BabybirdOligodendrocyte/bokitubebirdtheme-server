@@ -1152,6 +1152,9 @@ function applyStyleToMessage() {
     // Skip if already has tags
     if (msg.match(/^\[(?:red|blue|green|yellow|orange|pink|lime|aqua|violet|white|silver|brown|b|i|u|s|rainbow|fire|ocean|sunset|neon|forest|gold|ice|glow-\w+|shake|pulse|bounce|wave|flicker|spin)\]/)) return;
     
+    // Skip if message contains URLs (for GIF embedding to work)
+    if (msg.match(/https?:\/\//)) return;
+    
     // Check if any style is active
     var hasStyle = textStyleSettings.color || textStyleSettings.gradient || textStyleSettings.bold || 
                    textStyleSettings.italic || textStyleSettings.underline || textStyleSettings.strikethrough ||
@@ -1163,13 +1166,11 @@ function applyStyleToMessage() {
         for (var i = 0; i < CHANNEL.emotes.length; i++) {
             var emoteName = CHANNEL.emotes[i].name;
             if (msg.indexOf(emoteName) !== -1) {
-                console.log('[TextStyle] Emote detected: "' + emoteName + '" in message: "' + msg + '" - skipping styling');
                 return; // Don't apply styling - let emote render normally
             }
         }
     }
     
-    console.log('[TextStyle] No emotes found, applying styling to: "' + msg + '"');
     // Apply tags
     c.value = buildStyleTags(msg);
 }
