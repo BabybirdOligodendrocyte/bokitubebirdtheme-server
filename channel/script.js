@@ -594,10 +594,21 @@ var usernameStyleSettings = JSON.parse(localStorage.getItem('usernameStyleSettin
         /* Styled username */
         .styled-username {
             font-weight: bold !important;
-            margin-right: 4px !important;
         }
         .styled-username::after {
-            content: ':' !important;
+            content: ': ' !important;
+        }
+        
+        /* Hide consecutive styled usernames */
+        .styled-username.hidden-consecutive {
+            display: none !important;
+        }
+        
+        /* When styled username is present, hide original username elements via CSS */
+        .chat-msg-with-styled-name .username,
+        .chat-msg-with-styled-name .username + * {
+            display: none !important;
+        }
             margin-left: 1px !important;
         }
         
@@ -1694,25 +1705,42 @@ function applyUsernameTagsToMessage() {
 function processStyledUsername(msgElement) {
     if (!msgElement) return;
     
-    // Look for [uname] styled content and hide original username
-    var msgText = msgElement.querySelector('span:last-child');
-    if (!msgText) return;
+    // Find the styled username span
+    var styledUsername = msgElement.querySelector('.styled-username');
+    if (!styledUsername) return;
     
-    var html = msgText.innerHTML;
+    // Add class to message element so CSS can hide original username
+    msgElement.classList.add('chat-msg-with-styled-name');
     
-    // Check if message contains styled username marker
-    // The filter will have converted [uname]...[/uname] to <span class="styled-username">...</span>
-    if (html.includes('class="styled-username"')) {
-        // Hide the original CyTube username
-        var originalUsername = msgElement.querySelector('.username');
-        if (originalUsername) {
-            originalUsername.style.display = 'none';
+    // Get the styled username text (without the colon from ::after)
+    var styledName = styledUsername.textContent.trim();
+    
+    // Check previous messages for consecutive posts from same user
+    var prevMsg = msgElement.previousElementSibling;
+    while (prevMsg) {
+        // Skip non-chat messages (like server messages)
+        if (!prevMsg.querySelector('.username') && !prevMsg.querySelector('.styled-username')) {
+            prevMsg = prevMsg.previousElementSibling;
+            continue;
         }
-        // Also hide the colon after username
-        var userlistOwner = msgElement.querySelector('.userlist_owner');
-        if (userlistOwner) {
-            userlistOwner.style.display = 'none';
+        
+        // Check if previous message has styled username
+        var prevStyledUsername = prevMsg.querySelector('.styled-username');
+        if (prevStyledUsername) {
+            var prevName = prevStyledUsername.textContent.trim();
+            if (prevName === styledName) {
+                // Same user, hide username on current message
+                styledUsername.classList.add('hidden-consecutive');
+            }
+        } else {
+            // Check regular username
+            var prevUsernameSpan = prevMsg.querySelector('.username');
+            if (prevUsernameSpan && prevUsernameSpan.textContent.trim() === styledName) {
+                // Same user
+                styledUsername.classList.add('hidden-consecutive');
+            }
         }
+        break; // Only check immediate previous message
     }
 }
 
