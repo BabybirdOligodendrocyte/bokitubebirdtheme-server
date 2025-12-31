@@ -630,6 +630,20 @@ var usernameStyleSettings = JSON.parse(localStorage.getItem('usernameStyleSettin
             content: ': ' !important;
         }
         
+        /* Hide styled username until message is processed (prevents flash) */
+        #messagebuffer > div:not(.chat-msg-with-styled-name) .styled-username {
+            visibility: hidden !important;
+            height: 0 !important;
+            overflow: hidden !important;
+        }
+        
+        /* Show styled username once processed and not consecutive */
+        #messagebuffer > div.has-visible-username .styled-username {
+            visibility: visible !important;
+            height: auto !important;
+            overflow: visible !important;
+        }
+        
         /* Chat profile picture */
         .chat-profile-pic {
             width: 24px !important;
@@ -638,6 +652,16 @@ var usernameStyleSettings = JSON.parse(localStorage.getItem('usernameStyleSettin
             border-radius: 4px !important;
             vertical-align: middle !important;
             margin-right: 4px !important;
+        }
+        
+        /* Hide profile pic until processed */
+        #messagebuffer > div:not(.chat-msg-with-styled-name) .chat-profile-pic {
+            display: none !important;
+        }
+        
+        /* Hide profile pic on consecutive messages */
+        #messagebuffer > div.has-hidden-username .chat-profile-pic {
+            display: none !important;
         }
         
         /* Hide styled username and profile pic from niconico overlay */
@@ -2295,7 +2319,7 @@ function applyUsernameTagsToMessage() {
     // Skip empty
     if (!msg.trim()) return;
     // Skip if already has username tag
-    if (msg.startsWith('[uname]')) return;
+    if (msg.startsWith('[uname]') || msg.startsWith('[pfp]')) return;
     
     var openTags = buildUsernameOpenTags();
     var closeTags = buildUsernameCloseTags();
@@ -2303,7 +2327,7 @@ function applyUsernameTagsToMessage() {
     // Use display name if set, otherwise use actual username
     var displayName = usernameStyleSettings.displayName || myName;
     
-    // Build profile pic tag if set
+    // Build profile pic tag if set (outside uname so filter can process it)
     var profilePicTag = '';
     if (usernameStyleSettings.profilePic) {
         profilePicTag = '[pfp]' + usernameStyleSettings.profilePic + '[/pfp]';
@@ -2311,7 +2335,7 @@ function applyUsernameTagsToMessage() {
     
     // Only add if there are actual styles or profile pic
     if (openTags || profilePicTag) {
-        c.value = '[uname]' + profilePicTag + openTags + displayName + closeTags + '[/uname] ' + msg;
+        c.value = profilePicTag + '[uname]' + openTags + displayName + closeTags + '[/uname] ' + msg;
     }
 }
 
@@ -2669,26 +2693,18 @@ socket.on('chatMsg', function(data) {
         // Override with our version that strips username tags and converts GIF URLs
         window.nnd._fn.addScrollingMessage = function(message, extraClass) {
             if (typeof message === 'string') {
-                // Remove [uname]...[/uname] tags and their contents (including styled spans)
-                message = message.replace(/\[uname\][\s\S]*?\[\/uname\]\s*/gi, '');
+                // Remove [pfp]...[/pfp] profile picture tags first
+                message = message.replace(/\[pfp\][^\[]*\[\/pfp\]/gi, '');
                 
-                // Remove [pfp]...[/pfp] profile picture tags
-                message = message.replace(/\[pfp\][\s\S]*?\[\/pfp\]/gi, '');
+                // Remove [uname]...[/uname] tags and their contents
+                message = message.replace(/\[uname\][^\[]*\[\/uname\]\s*/gi, '');
                 
-                // Also remove already-processed styled-username spans
-                message = message.replace(/<span[^>]*class="[^"]*styled-username[^"]*"[^>]*>[\s\S]*?<\/span>\s*/gi, '');
-                
-                // Remove profile pic img tags
-                message = message.replace(/<img[^>]*class="[^"]*chat-profile-pic[^"]*"[^>]*>/gi, '');
+                // Also remove already-processed styled-username spans and profile pics
+                message = message.replace(/<span[^>]*styled-username[^>]*>.*?<\/span>\s*/gi, '');
+                message = message.replace(/<img[^>]*chat-profile-pic[^>]*>/gi, '');
                 
                 // Convert Tenor/Giphy/GIF URLs to img tags for display
-                // Match URLs that are GIFs (including those in anchor tags)
                 message = message.replace(/<a[^>]*href="(https?:\/\/[^"]*(?:tenor\.com|giphy\.com|\.gif)[^"]*)"[^>]*>[^<]*<\/a>/gi, function(match, url) {
-                    return '<img src="' + url + '" alt="GIF">';
-                });
-                
-                // Also convert plain GIF URLs that aren't in anchor tags
-                message = message.replace(/(?<![">])(https?:\/\/(?:media\.tenor\.com|[^\s]*\.gif)[^\s<]*)/gi, function(match, url) {
                     return '<img src="' + url + '" alt="GIF">';
                 });
             }
