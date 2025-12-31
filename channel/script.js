@@ -1011,12 +1011,15 @@ function applyStyleToMessage() {
     // Skip if message contains any emotes (emotes won't render if wrapped in tags)
     if (typeof CHANNEL !== 'undefined' && CHANNEL.emotes && CHANNEL.emotes.length > 0) {
         for (var i = 0; i < CHANNEL.emotes.length; i++) {
-            if (msg.indexOf(CHANNEL.emotes[i].name) !== -1) {
+            var emoteName = CHANNEL.emotes[i].name;
+            if (msg.indexOf(emoteName) !== -1) {
+                console.log('[TextStyle] Emote detected: "' + emoteName + '" in message: "' + msg + '" - skipping styling');
                 return; // Don't apply styling - let emote render normally
             }
         }
     }
     
+    console.log('[TextStyle] No emotes found, applying styling to: "' + msg + '"');
     // Apply tags
     c.value = buildStyleTags(msg);
 }
