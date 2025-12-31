@@ -176,12 +176,17 @@ var textStyleSettings = JSON.parse(localStorage.getItem('textStyleSettings')) ||
 
 // Username style settings
 var usernameStyleSettings = JSON.parse(localStorage.getItem('usernameStyleSettings')) || {
+    enabled: false,
     color: null,
     gradient: null,
     glow: null,
     animation: null,
     font: null,
-    bold: false
+    bold: false,
+    customColor: null,
+    customGlow: null,
+    displayName: null,
+    profilePic: null
 };
 
 // Inject popup CSS with !important to override any conflicts
@@ -621,15 +626,55 @@ var usernameStyleSettings = JSON.parse(localStorage.getItem('usernameStyleSettin
         .styled-username {
             font-weight: bold !important;
         }
-        .styled-username::after {
-            content: ': ' !important;
+        
+        /* Hide raw tags that haven't been processed by filters */
+        #messagebuffer > div {
+            /* Hide any raw bbcode-style tags */
         }
         
-        /* Hide styled username from niconico overlay */
+        /* Hide styled username until message is processed (prevents flash) */
+        #messagebuffer > div:not(.chat-msg-processed) .styled-username {
+            display: none !important;
+        }
+        #messagebuffer > div:not(.chat-msg-processed) .chat-profile-pic {
+            display: none !important;
+        }
+        
+        /* Show styled username once processed and not consecutive - wrap pfp and username on one line, message below */
+        #messagebuffer > div.chat-msg-processed.has-visible-username .styled-username {
+            display: block !important;
+        }
+        #messagebuffer > div.chat-msg-processed.has-visible-username .chat-profile-pic {
+            display: inline !important;
+        }
+        
+        /* Hide on consecutive messages */
+        #messagebuffer > div.chat-msg-processed.has-hidden-username .styled-username,
+        #messagebuffer > div.chat-msg-processed.has-hidden-username .chat-profile-pic {
+            display: none !important;
+        }
+        
+        /* Chat profile picture - inline with username */
+        .chat-profile-pic {
+            width: 24px !important;
+            height: 24px !important;
+            object-fit: cover !important;
+            border-radius: 4px !important;
+            vertical-align: middle !important;
+            margin-right: 4px !important;
+        }
+        
+        /* Hide styled username and profile pic from niconico overlay */
         #nnd-container .styled-username,
         .nnd-message .styled-username,
         [class*="nnd"] .styled-username,
-        .danmaku .styled-username {
+        .danmaku .styled-username,
+        #nnd-container .chat-profile-pic,
+        .nnd-message .chat-profile-pic,
+        [class*="nnd"] .chat-profile-pic,
+        .danmaku .chat-profile-pic,
+        .videoText .chat-profile-pic,
+        .videoText .styled-username {
             display: none !important;
         }
         
@@ -639,8 +684,7 @@ var usernameStyleSettings = JSON.parse(localStorage.getItem('usernameStyleSettin
         }
         
         /* When styled username is present, hide original username elements via CSS */
-        .chat-msg-with-styled-name .username,
-        .chat-msg-with-styled-name .username + * {
+        .chat-msg-with-styled-name > .username {
             display: none !important;
         }
         
@@ -663,20 +707,6 @@ var usernameStyleSettings = JSON.parse(localStorage.getItem('usernameStyleSettin
         
         /* When message has hidden username - timestamp hidden, full width message */
         #messagebuffer > div.has-hidden-username > .timestamp {
-            display: none !important;
-        }
-        
-        /* Styled username on its own line */
-        .styled-username {
-            display: block !important;
-            font-weight: bold !important;
-        }
-        .styled-username::after {
-            content: '' !important;
-        }
-        
-        /* Hide consecutive styled usernames */
-        .styled-username.hidden-consecutive {
             display: none !important;
         }
         
@@ -1042,7 +1072,7 @@ document.addEventListener('click', function(e) {
     if (dd && btn && !dd.contains(e.target) && e.target !== btn && !btn.contains(e.target)) closeFavoritesDropdown();
 });
 
-// TEXT STYLE POPUP (with tabs for Message and Username)
+// TEXT STYLE POPUP (with tabs for Message, Username, and Profile)
 var currentStyleTab = 'message';
 
 function createTextStylePopup() {
@@ -1054,7 +1084,7 @@ function createTextStylePopup() {
     var p = document.createElement('div');
     p.id = 'textstyle-popup';
     p.innerHTML = '<div class="popup-header" id="textstyle-popup-header"><span>✨ Style Settings</span><button class="popup-close" onclick="closeTextStylePopup()">×</button></div>' +
-        '<div id="textstyle-tabs"><button class="style-tab active" data-tab="message" onclick="switchStyleTab(\'message\')">💬 Message</button><button class="style-tab" data-tab="username" onclick="switchStyleTab(\'username\')">👤 Username</button></div>' +
+        '<div id="textstyle-tabs"><button class="style-tab active" data-tab="message" onclick="switchStyleTab(\'message\')">💬 Message</button><button class="style-tab" data-tab="username" onclick="switchStyleTab(\'username\')">👤 Username</button><button class="style-tab" data-tab="profile" onclick="switchStyleTab(\'profile\')">🖼️ Profile</button></div>' +
         '<div id="textstyle-tab-content"></div>';
     o.appendChild(p);
     document.body.appendChild(o);
@@ -1137,7 +1167,7 @@ function renderStyleTabContent(tab) {
         
         updateStylePreview();
         
-    } else {
+    } else if (tab === 'username') {
         // USERNAME STYLE TAB
         var settings = usernameStyleSettings;
         
@@ -1167,9 +1197,12 @@ function renderStyleTabContent(tab) {
             return '<button class="textstyle-btn uname-font-btn' + act + '" data-font="' + f + '" style="' + fontStyles[f] + '" onclick="selectUsernameFont(\'' + f + '\')">' + fontLabels[f] + '</button>';
         }).join('');
         
+        var displayNameVal = settings.displayName || '';
+        
         container.innerHTML = '<div class="textstyle-info"><p style="margin:0">Style your username! Others with this theme will see it.</p></div>' +
             '<div class="textstyle-popup-scroll">' +
             '<div class="textstyle-section"><h4>Enable Username Styling</h4><button id="username-style-toggle" class="textstyle-btn' + (settings.enabled ? ' active' : '') + '" onclick="toggleUsernameStyleEnabled()" style="width:100%">' + (settings.enabled ? '✓ Enabled' : '✗ Disabled') + '</button></div>' +
+            '<div class="textstyle-section"><h4>📝 Display Name</h4><div class="custom-color-row" style="margin-top:0"><input type="text" id="display-name-input" value="' + displayNameVal.replace(/"/g, '&quot;') + '" placeholder="Leave empty to use your actual name" style="flex:1;padding:8px;background:#252530;border:1px solid #444;border-radius:4px;color:#fff;font-size:14px;"><button class="textstyle-btn" onclick="saveDisplayName()" style="padding:8px 16px">Save</button>' + (displayNameVal ? '<button class="textstyle-btn" onclick="clearDisplayName()" style="padding:8px 10px;background:#633">✕</button>' : '') + '</div><p style="margin:8px 0 0;font-size:11px;color:#888">This name will be shown instead of your actual username</p></div>' +
             '<div class="textstyle-section"><h4>Solid Colors</h4><div class="textstyle-grid">' + cbtns + '</div>' +
             '<div class="custom-color-row"><label>Custom: </label><input type="color" id="uname-custom-color-picker" value="#' + (settings.customColor || 'ffffff') + '" onchange="selectUsernameCustomColor(this.value)"><button class="textstyle-btn' + (settings.customColor ? ' active' : '') + '" id="uname-custom-color-btn" onclick="applyUsernameCustomColor()" style="' + (settings.customColor ? 'background:#' + settings.customColor + ';' : '') + 'color:#fff;text-shadow:0 0 2px #000">Use Custom</button>' + (settings.customColor ? '<button class="textstyle-btn" onclick="clearUsernameCustomColor()" style="padding:8px 10px;background:#633">✕</button>' : '') + '</div></div>' +
             '<div class="textstyle-section"><h4>🌈 Gradients</h4><div class="textstyle-grid">' + gbtns + '</div></div>' +
@@ -1183,6 +1216,31 @@ function renderStyleTabContent(tab) {
             '<div class="textstyle-section" style="border-top:1px solid #333;"><button onclick="resetUsernameStyle()" style="width:100%;padding:12px;background:#422;border:1px solid #633;border-radius:6px;color:#f88;cursor:pointer;">↺ Reset to Default</button></div>';
         
         updateUsernamePreview();
+        
+    } else if (tab === 'profile') {
+        // PROFILE PICTURE TAB
+        var profilePicUrl = usernameStyleSettings.profilePic || '';
+        
+        container.innerHTML = '<div class="textstyle-info"><p style="margin:0">Set a profile picture that appears next to your messages!</p></div>' +
+            '<div class="textstyle-popup-scroll">' +
+            '<div class="textstyle-section"><h4>🖼️ Profile Picture URL</h4>' +
+            '<input type="text" id="profile-pic-input" value="' + profilePicUrl.replace(/"/g, '&quot;') + '" placeholder="https://example.com/image.png" style="width:100%;padding:10px;background:#252530;border:1px solid #444;border-radius:4px;color:#fff;font-size:14px;margin-bottom:10px;box-sizing:border-box;">' +
+            '<div style="display:flex;gap:8px;"><button class="textstyle-btn" onclick="saveProfilePic()" style="flex:1;padding:10px">💾 Save</button><button class="textstyle-btn" onclick="clearProfilePic()" style="padding:10px 16px;background:#633">✕ Clear</button></div>' +
+            '<p style="margin:10px 0 0;font-size:11px;color:#888">Enter a direct link to an image (PNG, JPG, GIF). Max display size: 24x24px</p></div>' +
+            '<div class="textstyle-section"><h4>Preview</h4>' +
+            '<div id="profile-pic-preview" style="padding:16px;background:#111;border-radius:6px;min-height:60px;display:flex;align-items:center;gap:10px;">' +
+            (profilePicUrl ? '<img src="' + profilePicUrl + '" style="width:24px;height:24px;object-fit:cover;border-radius:4px;" onerror="this.style.display=\'none\'" onload="this.style.display=\'inline\'">' : '<span style="color:#666;font-size:12px">[No image]</span>') +
+            '<span style="font-weight:bold;color:#fff">' + (usernameStyleSettings.displayName || getMyUsername() || 'YourName') + '</span>' +
+            '<span style="color:#aaa">Your message will appear like this</span>' +
+            '</div></div>' +
+            '<div class="textstyle-section"><h4>ℹ️ Tips</h4>' +
+            '<ul style="margin:0;padding-left:20px;color:#888;font-size:12px;line-height:1.8;">' +
+            '<li>Use square images for best results</li>' +
+            '<li>Supported formats: PNG, JPG, GIF, WebP</li>' +
+            '<li>Image will be scaled to 24x24 pixels</li>' +
+            '<li>Use image hosting sites like Imgur, Discord CDN, etc.</li>' +
+            '</ul></div>' +
+            '</div>';
     }
 }
 
@@ -1386,6 +1444,44 @@ function clearUsernameCustomGlow() {
     usernameStyleSettings.customGlow = null;
     saveUsernameStyleSettings();
     renderStyleTabContent('username');
+}
+
+// Display name functions
+function saveDisplayName() {
+    var input = document.getElementById('display-name-input');
+    if (input) {
+        var name = input.value.trim();
+        usernameStyleSettings.displayName = name || null;
+        saveUsernameStyleSettings();
+        renderStyleTabContent('username');
+    }
+}
+
+function clearDisplayName() {
+    usernameStyleSettings.displayName = null;
+    saveUsernameStyleSettings();
+    renderStyleTabContent('username');
+}
+
+// Profile picture functions
+function saveProfilePic() {
+    var input = document.getElementById('profile-pic-input');
+    if (input) {
+        var url = input.value.trim();
+        if (url && !url.match(/^https?:\/\//i)) {
+            alert('Please enter a valid URL starting with http:// or https://');
+            return;
+        }
+        usernameStyleSettings.profilePic = url || null;
+        saveUsernameStyleSettings();
+        renderStyleTabContent('profile');
+    }
+}
+
+function clearProfilePic() {
+    usernameStyleSettings.profilePic = null;
+    saveUsernameStyleSettings();
+    renderStyleTabContent('profile');
 }
 
 function refreshStyleBtns() {
@@ -2134,7 +2230,11 @@ var usernameStyleSettings = JSON.parse(localStorage.getItem('usernameStyleSettin
     glow: null,
     animation: null,
     font: null,
-    bold: false
+    bold: false,
+    customColor: null,
+    customGlow: null,
+    displayName: null,
+    profilePic: null
 };
 
 function getMyUsername() {
@@ -2205,19 +2305,48 @@ function applyUsernameTagsToMessage() {
     // Skip empty
     if (!msg.trim()) return;
     // Skip if already has username tag
-    if (msg.startsWith('[uname]')) return;
+    if (msg.startsWith('[uname]') || msg.startsWith('[pfp]')) return;
     
     var openTags = buildUsernameOpenTags();
     var closeTags = buildUsernameCloseTags();
     
-    // Only add if there are actual styles
-    if (openTags) {
-        c.value = '[uname]' + openTags + myName + closeTags + '[/uname] ' + msg;
+    // Use display name if set, otherwise use actual username
+    var displayName = usernameStyleSettings.displayName || myName;
+    
+    // Build profile pic tag if set (outside uname so filter can process it)
+    var profilePicTag = '';
+    if (usernameStyleSettings.profilePic) {
+        profilePicTag = '[pfp]' + usernameStyleSettings.profilePic + '[/pfp]';
+    }
+    
+    // Only add if there are actual styles or profile pic
+    if (openTags || profilePicTag) {
+        c.value = profilePicTag + '[uname]' + openTags + displayName + closeTags + '[/uname] ' + msg;
     }
 }
 
 function processStyledUsername(msgElement) {
     if (!msgElement) return;
+    
+    // Mark as processed immediately
+    msgElement.classList.add('chat-msg-processed');
+    
+    // First, convert [pfp]...[/pfp] tags to images (handles both plain URLs and linked URLs)
+    var html = msgElement.innerHTML;
+    
+    // Match [pfp] with a link inside: [pfp]<a href="url">text</a>[/pfp]
+    html = html.replace(/\[pfp\]<a[^>]*href="([^"]+)"[^>]*>[^<]*<\/a>\[\/pfp\]/gi, function(match, url) {
+        return '<img class="chat-profile-pic" src="' + url + '" onerror="this.style.display=\'none\'">';
+    });
+    
+    // Match [pfp] with plain URL: [pfp]https://...[/pfp]
+    html = html.replace(/\[pfp\](https?:\/\/[^\[]+)\[\/pfp\]/gi, function(match, url) {
+        return '<img class="chat-profile-pic" src="' + url + '" onerror="this.style.display=\'none\'">';
+    });
+    
+    if (html !== msgElement.innerHTML) {
+        msgElement.innerHTML = html;
+    }
     
     // Find the styled username span
     var styledUsername = msgElement.querySelector('.styled-username');
@@ -2263,6 +2392,9 @@ function processStyledUsername(msgElement) {
         msgElement.classList.add('has-hidden-username');
         var timestamp = msgElement.querySelector('.timestamp');
         if (timestamp) timestamp.style.display = 'none';
+        // Also hide profile pic on consecutive
+        var profilePic = msgElement.querySelector('.chat-profile-pic');
+        if (profilePic) profilePic.style.display = 'none';
     } else {
         // First message from this user - show username, timestamp floats right
         msgElement.classList.add('has-visible-username');
@@ -2347,9 +2479,14 @@ function resetUsernameStyle() {
         glow: null,
         animation: null,
         font: null,
-        bold: false
+        bold: false,
+        customColor: null,
+        customGlow: null,
+        displayName: null,
+        profilePic: null
     };
     saveUsernameStyleSettings();
+    renderStyleTabContent('username');
 }
 
 function refreshUsernameStyleBtns() {
@@ -2381,7 +2518,7 @@ function updateUsernamePreview() {
     var p = document.getElementById('username-preview');
     if (!p) return;
     
-    var myName = getMyUsername() || 'YourName';
+    var myName = usernameStyleSettings.displayName || getMyUsername() || 'YourName';
     var s = [];
     
     // Font
@@ -2411,7 +2548,7 @@ function updateUsernamePreview() {
         if (fontStyles[usernameStyleSettings.font]) s.push(fontStyles[usernameStyleSettings.font]);
     }
     
-    // Color or gradient
+    // Color or gradient or custom color
     if (usernameStyleSettings.gradient) {
         var gradientStyles = {
             'rainbow': 'background:linear-gradient(90deg,#ff0000,#ff7700,#ffff00,#00ff00,#0077ff,#8b00ff);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text',
@@ -2426,9 +2563,11 @@ function updateUsernamePreview() {
         if (gradientStyles[usernameStyleSettings.gradient]) s.push(gradientStyles[usernameStyleSettings.gradient]);
     } else if (usernameStyleSettings.color) {
         s.push('color:' + (usernameStyleSettings.color === 'blue' ? '#55f' : usernameStyleSettings.color));
+    } else if (usernameStyleSettings.customColor) {
+        s.push('color:#' + usernameStyleSettings.customColor);
     }
     
-    // Glow
+    // Glow or custom glow
     if (usernameStyleSettings.glow) {
         var glowStyles = {
             'glow-white': 'text-shadow:0 0 10px #fff,0 0 20px #fff,0 0 30px #fff',
@@ -2440,6 +2579,8 @@ function updateUsernamePreview() {
             'glow-rainbow': 'text-shadow:0 0 5px #f00,0 0 10px #ff0,0 0 15px #0f0,0 0 20px #0ff,0 0 25px #00f,0 0 30px #f0f'
         };
         if (glowStyles[usernameStyleSettings.glow]) s.push(glowStyles[usernameStyleSettings.glow]);
+    } else if (usernameStyleSettings.customGlow) {
+        s.push('text-shadow:0 0 10px #' + usernameStyleSettings.customGlow + ',0 0 20px #' + usernameStyleSettings.customGlow + ',0 0 30px #' + usernameStyleSettings.customGlow);
     }
     
     // Bold
@@ -2448,13 +2589,19 @@ function updateUsernamePreview() {
     // Animation class
     var animClass = usernameStyleSettings.animation ? 'text-' + usernameStyleSettings.animation : '';
     
-    var hasStyle = usernameStyleSettings.color || usernameStyleSettings.gradient || usernameStyleSettings.bold || 
-                   usernameStyleSettings.glow || usernameStyleSettings.animation || usernameStyleSettings.font;
+    var hasStyle = usernameStyleSettings.color || usernameStyleSettings.gradient || usernameStyleSettings.customColor ||
+                   usernameStyleSettings.bold || usernameStyleSettings.glow || usernameStyleSettings.customGlow ||
+                   usernameStyleSettings.animation || usernameStyleSettings.font || usernameStyleSettings.displayName ||
+                   usernameStyleSettings.profilePic;
     
-    p.style.cssText = s.join(';');
-    p.className = animClass;
-    p.textContent = hasStyle ? myName : 'No styling (default)';
-    if (!hasStyle) { p.style.color = '#666'; p.style.fontStyle = 'italic'; }
+    // Build preview HTML with profile pic if set
+    var previewHtml = '';
+    if (usernameStyleSettings.profilePic) {
+        previewHtml += '<img src="' + usernameStyleSettings.profilePic + '" style="width:24px;height:24px;object-fit:cover;border-radius:4px;margin-right:8px;" onerror="this.style.display=\'none\'">';
+    }
+    previewHtml += '<span style="' + s.join(';') + '" class="' + animClass + '">' + myName + '</span>';
+    
+    p.innerHTML = hasStyle ? previewHtml : '<span style="color:#666;font-style:italic">No styling (default)</span>';
 }
 
 // GIF EMBEDDING - Convert GIF links to inline images
@@ -2510,18 +2657,18 @@ var gifObserver = new MutationObserver(function(mutations) {
     mutations.forEach(function(mutation) {
         mutation.addedNodes.forEach(function(node) {
             if (node.nodeType === 1 && node.classList && node.classList.contains('chat-msg-')) {
-                // Small delay to let CyTube finish processing the message
+                // Process immediately for styling, small delay for GIFs
+                processStyledUsername(node);
                 setTimeout(function() { 
                     embedGifsInMessage(node); 
-                    processStyledUsername(node);
-                }, 50);
+                }, 10);
             }
             // Also check if it's a div directly added to messagebuffer
             if (node.nodeType === 1 && node.tagName === 'DIV' && node.parentElement && node.parentElement.id === 'messagebuffer') {
+                processStyledUsername(node);
                 setTimeout(function() { 
                     embedGifsInMessage(node); 
-                    processStyledUsername(node);
-                }, 50);
+                }, 10);
             }
         });
     });
@@ -2555,20 +2702,18 @@ socket.on('chatMsg', function(data) {
         // Override with our version that strips username tags and converts GIF URLs
         window.nnd._fn.addScrollingMessage = function(message, extraClass) {
             if (typeof message === 'string') {
-                // Remove [uname]...[/uname] tags and their contents (including styled spans)
-                message = message.replace(/\[uname\][\s\S]*?\[\/uname\]\s*/gi, '');
+                // Remove [pfp]...[/pfp] profile picture tags first
+                message = message.replace(/\[pfp\][^\[]*\[\/pfp\]/gi, '');
                 
-                // Also remove already-processed styled-username spans
-                message = message.replace(/<span[^>]*class="[^"]*styled-username[^"]*"[^>]*>[\s\S]*?<\/span>\s*/gi, '');
+                // Remove [uname]...[/uname] tags and their contents
+                message = message.replace(/\[uname\][^\[]*\[\/uname\]\s*/gi, '');
+                
+                // Also remove already-processed styled-username spans and profile pics
+                message = message.replace(/<span[^>]*styled-username[^>]*>.*?<\/span>\s*/gi, '');
+                message = message.replace(/<img[^>]*chat-profile-pic[^>]*>/gi, '');
                 
                 // Convert Tenor/Giphy/GIF URLs to img tags for display
-                // Match URLs that are GIFs (including those in anchor tags)
                 message = message.replace(/<a[^>]*href="(https?:\/\/[^"]*(?:tenor\.com|giphy\.com|\.gif)[^"]*)"[^>]*>[^<]*<\/a>/gi, function(match, url) {
-                    return '<img src="' + url + '" alt="GIF">';
-                });
-                
-                // Also convert plain GIF URLs that aren't in anchor tags
-                message = message.replace(/(?<![">])(https?:\/\/(?:media\.tenor\.com|[^\s]*\.gif)[^\s<]*)/gi, function(match, url) {
                     return '<img src="' + url + '" alt="GIF">';
                 });
             }
