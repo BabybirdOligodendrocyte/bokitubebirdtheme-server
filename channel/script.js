@@ -610,19 +610,26 @@ var usernameStyleSettings = JSON.parse(localStorage.getItem('usernameStyleSettin
             display: none !important;
         }
         
-        /* Chat message styling - 80% size and floating timestamp */
+        /* Chat message styling - 80% size and new layout */
         #messagebuffer > div {
-            position: relative !important;
             font-size: 80% !important;
-            padding-right: 70px !important;
+            display: flex !important;
+            flex-direction: column !important;
+        }
+        #messagebuffer > div > span:first-child {
+            display: flex !important;
+            justify-content: space-between !important;
+            align-items: center !important;
         }
         #messagebuffer .timestamp {
-            position: absolute !important;
-            right: 5px !important;
-            top: 50% !important;
-            transform: translateY(-50%) !important;
-            font-size: 75% !important;
+            font-size: 85% !important;
             opacity: 0.6 !important;
+            margin-left: auto !important;
+        }
+        /* Message text takes full width on new line */
+        #messagebuffer > div > span:last-child {
+            display: block !important;
+            width: 100% !important;
         }
         
         /* Username animations */
