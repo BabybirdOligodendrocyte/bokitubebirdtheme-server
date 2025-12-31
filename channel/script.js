@@ -1157,7 +1157,7 @@ function renderStyleTabContent(tab) {
         
         updateStylePreview();
         
-    } else {
+    } else if (tab === 'username') {
         // USERNAME STYLE TAB
         var settings = usernameStyleSettings;
         
