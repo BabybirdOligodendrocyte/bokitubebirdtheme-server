@@ -609,7 +609,20 @@ var usernameStyleSettings = JSON.parse(localStorage.getItem('usernameStyleSettin
         .chat-msg-with-styled-name .username + * {
             display: none !important;
         }
-            margin-left: 1px !important;
+        
+        /* Chat message styling - 80% size and floating timestamp */
+        #messagebuffer > div {
+            position: relative !important;
+            font-size: 80% !important;
+            padding-right: 70px !important;
+        }
+        #messagebuffer .timestamp {
+            position: absolute !important;
+            right: 5px !important;
+            top: 50% !important;
+            transform: translateY(-50%) !important;
+            font-size: 75% !important;
+            opacity: 0.6 !important;
         }
         
         /* Username animations */
@@ -1729,8 +1742,10 @@ function processStyledUsername(msgElement) {
         if (prevStyledUsername) {
             var prevName = prevStyledUsername.textContent.trim();
             if (prevName === styledName) {
-                // Same user, hide username on current message
+                // Same user, hide username and timestamp on current message
                 styledUsername.classList.add('hidden-consecutive');
+                var timestamp = msgElement.querySelector('.timestamp');
+                if (timestamp) timestamp.style.display = 'none';
             }
         } else {
             // Check regular username
@@ -1738,6 +1753,8 @@ function processStyledUsername(msgElement) {
             if (prevUsernameSpan && prevUsernameSpan.textContent.trim() === styledName) {
                 // Same user
                 styledUsername.classList.add('hidden-consecutive');
+                var timestamp = msgElement.querySelector('.timestamp');
+                if (timestamp) timestamp.style.display = 'none';
             }
         }
         break; // Only check immediate previous message
