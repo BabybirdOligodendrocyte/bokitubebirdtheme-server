@@ -170,7 +170,8 @@ var textStyleSettings = JSON.parse(localStorage.getItem('textStyleSettings')) ||
     underline: false,
     strikethrough: false,
     glow: null,
-    animation: null
+    animation: null,
+    font: null
 };
 
 // Inject popup CSS with !important to override any conflicts
@@ -907,13 +908,13 @@ function createTextStylePopup() {
     
     // Glow effects
     var glows = [
-        {name: 'glow-white', label: '✦ White', style: 'text-shadow:0 0 10px #fff,0 0 20px #fff,0 0 30px #fff;color:#fff;'},
-        {name: 'glow-red', label: '✦ Red', style: 'text-shadow:0 0 10px #f00,0 0 20px #f00,0 0 30px #f00;color:#ff6666;'},
-        {name: 'glow-blue', label: '✦ Blue', style: 'text-shadow:0 0 10px #00f,0 0 20px #00f,0 0 30px #0ff;color:#66f;'},
-        {name: 'glow-green', label: '✦ Green', style: 'text-shadow:0 0 10px #0f0,0 0 20px #0f0,0 0 30px #0f0;color:#6f6;'},
-        {name: 'glow-gold', label: '✦ Gold', style: 'text-shadow:0 0 10px #ffd700,0 0 20px #ffa500,0 0 30px #ff8c00;color:#ffd700;'},
-        {name: 'glow-pink', label: '✦ Pink', style: 'text-shadow:0 0 10px #ff69b4,0 0 20px #ff1493,0 0 30px #ff69b4;color:#ff69b4;'},
-        {name: 'glow-rainbow', label: '✦ Rainbow', style: 'text-shadow:0 0 5px #f00,0 0 10px #ff0,0 0 15px #0f0,0 0 20px #0ff,0 0 25px #00f,0 0 30px #f0f;color:#fff;'}
+        {name: 'glow-white', label: '✦ White', style: 'text-shadow:0 0 10px #fff,0 0 20px #fff,0 0 30px #fff;'},
+        {name: 'glow-red', label: '✦ Red', style: 'text-shadow:0 0 10px #f00,0 0 20px #f00,0 0 30px #f00;'},
+        {name: 'glow-blue', label: '✦ Blue', style: 'text-shadow:0 0 10px #00f,0 0 20px #00f,0 0 30px #0ff;'},
+        {name: 'glow-green', label: '✦ Green', style: 'text-shadow:0 0 10px #0f0,0 0 20px #0f0,0 0 30px #0f0;'},
+        {name: 'glow-gold', label: '✦ Gold', style: 'text-shadow:0 0 10px #ffd700,0 0 20px #ffa500,0 0 30px #ff8c00;'},
+        {name: 'glow-pink', label: '✦ Pink', style: 'text-shadow:0 0 10px #ff69b4,0 0 20px #ff1493,0 0 30px #ff69b4;'},
+        {name: 'glow-rainbow', label: '✦ Rainbow', style: 'text-shadow:0 0 5px #f00,0 0 10px #ff0,0 0 15px #0f0,0 0 20px #0ff,0 0 25px #00f,0 0 30px #f0f;'}
     ];
     var glowbtns = glows.map(function(g) {
         var act = textStyleSettings.glow === g.name ? ' active' : '';
@@ -934,6 +935,26 @@ function createTextStylePopup() {
         return '<button class="textstyle-btn anim-btn' + act + '" data-anim="' + a.name + '" onclick="selectStyleAnimation(\'' + a.name + '\')">' + a.label + '</button>';
     }).join('');
     
+    // Fonts
+    var fonts = [
+        {name: 'serif', label: 'Serif', style: 'font-family:serif;'},
+        {name: 'sans', label: 'Sans', style: 'font-family:sans-serif;'},
+        {name: 'mono', label: 'Mono', style: 'font-family:monospace;'},
+        {name: 'cursive', label: 'Cursive', style: 'font-family:cursive;'},
+        {name: 'fantasy', label: 'Fantasy', style: 'font-family:fantasy;'},
+        {name: 'comic', label: 'Comic', style: 'font-family:\"Comic Sans MS\",cursive;'},
+        {name: 'impact', label: 'Impact', style: 'font-family:Impact,sans-serif;'},
+        {name: 'georgia', label: 'Georgia', style: 'font-family:Georgia,serif;'},
+        {name: 'times', label: 'Times', style: 'font-family:\"Times New Roman\",serif;'},
+        {name: 'arial', label: 'Arial', style: 'font-family:Arial,sans-serif;'},
+        {name: 'courier', label: 'Courier', style: 'font-family:\"Courier New\",monospace;'},
+        {name: 'trebuchet', label: 'Trebuchet', style: 'font-family:\"Trebuchet MS\",sans-serif;'}
+    ];
+    var fontbtns = fonts.map(function(f) {
+        var act = textStyleSettings.font === f.name ? ' active' : '';
+        return '<button class="textstyle-btn font-btn' + act + '" data-font="' + f.name + '" style="' + f.style + '" onclick="selectStyleFont(\'' + f.name + '\')">' + f.label + '</button>';
+    }).join('');
+    
     var p = document.createElement('div');
     p.id = 'textstyle-popup';
     p.innerHTML = '<div class="popup-header"><span>✨ Text Style Settings</span><button class="popup-close" onclick="closeTextStylePopup()">×</button></div>' +
@@ -943,6 +964,7 @@ function createTextStylePopup() {
         '<div class="textstyle-section"><h4>🌈 Gradients</h4><div class="textstyle-grid">' + gbtns + '</div></div>' +
         '<div class="textstyle-section"><h4>✨ Glow Effects</h4><div class="textstyle-grid">' + glowbtns + '</div></div>' +
         '<div class="textstyle-section"><h4>🎬 Animations</h4><div class="textstyle-grid">' + animbtns + '</div></div>' +
+        '<div class="textstyle-section"><h4>🔤 Fonts</h4><div class="textstyle-grid">' + fontbtns + '</div></div>' +
         '<div class="textstyle-section"><h4>Text Effects</h4><div class="textstyle-grid">' +
         '<button class="textstyle-btn effect-btn' + (textStyleSettings.bold ? ' active' : '') + '" data-effect="bold" style="font-weight:bold" onclick="toggleStyleEffect(\'bold\')">Bold</button>' +
         '<button class="textstyle-btn effect-btn' + (textStyleSettings.italic ? ' active' : '') + '" data-effect="italic" style="font-style:italic" onclick="toggleStyleEffect(\'italic\')">Italic</button>' +
@@ -1007,6 +1029,13 @@ function selectStyleGlow(g) {
     updateStylePreview();
 }
 
+function selectStyleFont(f) {
+    textStyleSettings.font = (textStyleSettings.font === f) ? null : f;
+    saveStyleSettings();
+    refreshStyleBtns();
+    updateStylePreview();
+}
+
 function selectStyleAnimation(a) {
     textStyleSettings.animation = (textStyleSettings.animation === a) ? null : a;
     saveStyleSettings();
@@ -1030,7 +1059,8 @@ function resetTextStyle() {
         underline: false,
         strikethrough: false,
         glow: null,
-        animation: null
+        animation: null,
+        font: null
     };
     saveStyleSettings();
     refreshStyleBtns();
@@ -1050,6 +1080,9 @@ function refreshStyleBtns() {
     document.querySelectorAll('.anim-btn').forEach(function(b) { 
         b.classList.toggle('active', textStyleSettings.animation === b.dataset.anim); 
     });
+    document.querySelectorAll('.font-btn').forEach(function(b) { 
+        b.classList.toggle('active', textStyleSettings.font === b.dataset.font); 
+    });
     document.querySelectorAll('.effect-btn').forEach(function(b) { 
         b.classList.toggle('active', textStyleSettings[b.dataset.effect]); 
     });
@@ -1062,6 +1095,25 @@ function updateStylePreview() {
     
     var s = [];
     var classes = [];
+    
+    // Font
+    if (textStyleSettings.font) {
+        var fontStyles = {
+            'serif': 'font-family:serif',
+            'sans': 'font-family:sans-serif',
+            'mono': 'font-family:monospace',
+            'cursive': 'font-family:cursive',
+            'fantasy': 'font-family:fantasy',
+            'comic': 'font-family:"Comic Sans MS",cursive',
+            'impact': 'font-family:Impact,sans-serif',
+            'georgia': 'font-family:Georgia,serif',
+            'times': 'font-family:"Times New Roman",serif',
+            'arial': 'font-family:Arial,sans-serif',
+            'courier': 'font-family:"Courier New",monospace',
+            'trebuchet': 'font-family:"Trebuchet MS",sans-serif'
+        };
+        if (fontStyles[textStyleSettings.font]) s.push(fontStyles[textStyleSettings.font]);
+    }
     
     // Color or gradient
     if (textStyleSettings.gradient) {
@@ -1109,7 +1161,7 @@ function updateStylePreview() {
     
     var hasStyle = textStyleSettings.color || textStyleSettings.gradient || textStyleSettings.bold || 
                    textStyleSettings.italic || textStyleSettings.underline || textStyleSettings.strikethrough ||
-                   textStyleSettings.glow || textStyleSettings.animation;
+                   textStyleSettings.glow || textStyleSettings.animation || textStyleSettings.font;
     
     p.style.cssText = s.join(';');
     p.className = classes.join(' ');
@@ -1127,7 +1179,7 @@ function updateFontBtnIndicator() {
     if (!btn) return;
     var hasStyle = textStyleSettings.color || textStyleSettings.gradient || textStyleSettings.bold || 
                    textStyleSettings.italic || textStyleSettings.underline || textStyleSettings.strikethrough ||
-                   textStyleSettings.glow || textStyleSettings.animation;
+                   textStyleSettings.glow || textStyleSettings.animation || textStyleSettings.font;
     btn.style.borderColor = hasStyle ? 'gold' : '';
     btn.style.boxShadow = hasStyle ? '0 0 8px rgba(255,215,0,0.5)' : '';
 }
@@ -1136,7 +1188,13 @@ function buildStyleTags(msg) {
     if (!msg.trim()) return msg;
     var open = '', close = '';
     
-    // Gradient (outermost)
+    // Font (outermost)
+    if (textStyleSettings.font) { 
+        open += '[font-' + textStyleSettings.font + ']'; 
+        close = '[/]' + close; 
+    }
+    
+    // Gradient
     if (textStyleSettings.gradient) { 
         open += '[' + textStyleSettings.gradient + ']'; 
         close = '[/]' + close; 
