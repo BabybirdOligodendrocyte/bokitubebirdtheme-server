@@ -1119,10 +1119,10 @@ function renderStyleTabContent(tab) {
         container.innerHTML = '<div class="textstyle-info"><p style="margin:0 0 8px">Style your messages. <strong>Auto-applies</strong> when you send.</p><p style="margin:0;color:#fc0">⚠️ Admin must set up <a href="#" onclick="showFilterPopup();return false;">Chat Filters</a> first.</p></div>' +
             '<div class="textstyle-popup-scroll">' +
             '<div class="textstyle-section"><h4>Solid Colors</h4><div class="textstyle-grid">' + cbtns + '</div>' +
-            '<div class="custom-color-row"><label>Custom: </label><input type="color" id="custom-color-picker" value="' + (settings.customColor || '#ffffff') + '" onchange="selectCustomColor(this.value)"><button class="textstyle-btn' + (settings.customColor ? ' active' : '') + '" id="custom-color-btn" onclick="applyCustomColor()" style="background:' + (settings.customColor || '#888') + ';color:#fff;text-shadow:0 0 2px #000">Use Custom</button></div></div>' +
+            '<div class="custom-color-row"><label>Custom: </label><input type="color" id="custom-color-picker" value="#' + (settings.customColor || 'ffffff') + '" onchange="selectCustomColor(this.value)"><button class="textstyle-btn' + (settings.customColor ? ' active' : '') + '" id="custom-color-btn" onclick="applyCustomColor()" style="' + (settings.customColor ? 'background:#' + settings.customColor + ';' : '') + 'color:#fff;text-shadow:0 0 2px #000">Use Custom</button>' + (settings.customColor ? '<button class="textstyle-btn" onclick="clearCustomColor()" style="padding:8px 10px;background:#633">✕</button>' : '') + '</div></div>' +
             '<div class="textstyle-section"><h4>🌈 Gradients</h4><div class="textstyle-grid">' + gbtns + '</div></div>' +
             '<div class="textstyle-section"><h4>✨ Glow Effects</h4><div class="textstyle-grid">' + glowbtns + '</div>' +
-            '<div class="custom-color-row"><label>Custom Glow: </label><input type="color" id="custom-glow-picker" value="' + (settings.customGlow || '#ffffff') + '" onchange="selectCustomGlow(this.value)"><button class="textstyle-btn' + (settings.customGlow ? ' active' : '') + '" id="custom-glow-btn" onclick="applyCustomGlow()" style="text-shadow:0 0 8px ' + (settings.customGlow || '#888') + '">Use Custom</button></div></div>' +
+            '<div class="custom-color-row"><label>Custom Glow: </label><input type="color" id="custom-glow-picker" value="#' + (settings.customGlow || 'ffffff') + '" onchange="selectCustomGlow(this.value)"><button class="textstyle-btn' + (settings.customGlow ? ' active' : '') + '" id="custom-glow-btn" onclick="applyCustomGlow()" style="text-shadow:0 0 8px #' + (settings.customGlow || '888') + '">Use Custom</button>' + (settings.customGlow ? '<button class="textstyle-btn" onclick="clearCustomGlow()" style="padding:8px 10px;background:#633">✕</button>' : '') + '</div></div>' +
             '<div class="textstyle-section"><h4>🎬 Animations</h4><div class="textstyle-grid">' + animbtns + '</div></div>' +
             '<div class="textstyle-section"><h4>🔤 Fonts</h4><div class="textstyle-grid">' + fontbtns + '</div></div>' +
             '<div class="textstyle-section"><h4>Text Effects</h4><div class="textstyle-grid">' +
@@ -1171,10 +1171,10 @@ function renderStyleTabContent(tab) {
             '<div class="textstyle-popup-scroll">' +
             '<div class="textstyle-section"><h4>Enable Username Styling</h4><button id="username-style-toggle" class="textstyle-btn' + (settings.enabled ? ' active' : '') + '" onclick="toggleUsernameStyleEnabled()" style="width:100%">' + (settings.enabled ? '✓ Enabled' : '✗ Disabled') + '</button></div>' +
             '<div class="textstyle-section"><h4>Solid Colors</h4><div class="textstyle-grid">' + cbtns + '</div>' +
-            '<div class="custom-color-row"><label>Custom: </label><input type="color" id="uname-custom-color-picker" value="' + (settings.customColor || '#ffffff') + '" onchange="selectUsernameCustomColor(this.value)"><button class="textstyle-btn' + (settings.customColor ? ' active' : '') + '" id="uname-custom-color-btn" onclick="applyUsernameCustomColor()" style="background:' + (settings.customColor || '#888') + ';color:#fff;text-shadow:0 0 2px #000">Use Custom</button></div></div>' +
+            '<div class="custom-color-row"><label>Custom: </label><input type="color" id="uname-custom-color-picker" value="#' + (settings.customColor || 'ffffff') + '" onchange="selectUsernameCustomColor(this.value)"><button class="textstyle-btn' + (settings.customColor ? ' active' : '') + '" id="uname-custom-color-btn" onclick="applyUsernameCustomColor()" style="' + (settings.customColor ? 'background:#' + settings.customColor + ';' : '') + 'color:#fff;text-shadow:0 0 2px #000">Use Custom</button>' + (settings.customColor ? '<button class="textstyle-btn" onclick="clearUsernameCustomColor()" style="padding:8px 10px;background:#633">✕</button>' : '') + '</div></div>' +
             '<div class="textstyle-section"><h4>🌈 Gradients</h4><div class="textstyle-grid">' + gbtns + '</div></div>' +
             '<div class="textstyle-section"><h4>✨ Glow Effects</h4><div class="textstyle-grid">' + glowbtns + '</div>' +
-            '<div class="custom-color-row"><label>Custom Glow: </label><input type="color" id="uname-custom-glow-picker" value="' + (settings.customGlow || '#ffffff') + '" onchange="selectUsernameCustomGlow(this.value)"><button class="textstyle-btn' + (settings.customGlow ? ' active' : '') + '" id="uname-custom-glow-btn" onclick="applyUsernameCustomGlow()" style="text-shadow:0 0 8px ' + (settings.customGlow || '#888') + '">Use Custom</button></div></div>' +
+            '<div class="custom-color-row"><label>Custom Glow: </label><input type="color" id="uname-custom-glow-picker" value="#' + (settings.customGlow || 'ffffff') + '" onchange="selectUsernameCustomGlow(this.value)"><button class="textstyle-btn' + (settings.customGlow ? ' active' : '') + '" id="uname-custom-glow-btn" onclick="applyUsernameCustomGlow()" style="text-shadow:0 0 8px #' + (settings.customGlow || '888') + '">Use Custom</button>' + (settings.customGlow ? '<button class="textstyle-btn" onclick="clearUsernameCustomGlow()" style="padding:8px 10px;background:#633">✕</button>' : '') + '</div></div>' +
             '<div class="textstyle-section"><h4>🎬 Animations</h4><div class="textstyle-grid">' + animbtns + '</div></div>' +
             '<div class="textstyle-section"><h4>🔤 Fonts</h4><div class="textstyle-grid">' + fontbtns + '</div></div>' +
             '<div class="textstyle-section"><h4>Effects</h4><div class="textstyle-grid"><button id="uname-bold-btn" class="textstyle-btn' + (settings.bold ? ' active' : '') + '" style="font-weight:bold" onclick="toggleUsernameBold()">Bold</button></div></div>' +
@@ -1205,15 +1205,16 @@ function toggleTextStylePopup() {
 }
 
 function selectStyleColor(c) {
-    // Clear gradient if selecting solid color
+    // Clear gradient and custom color if selecting solid color
     if (textStyleSettings.color === c) {
         textStyleSettings.color = null;
     } else {
         textStyleSettings.color = c;
         textStyleSettings.gradient = null; // Can't have both
+        textStyleSettings.customColor = null; // Clear custom too
     }
     saveStyleSettings();
-    refreshStyleBtns();
+    renderStyleTabContent('message');
     updateStylePreview();
 }
 
@@ -1223,37 +1224,43 @@ function selectStyleGradient(g) {
     } else {
         textStyleSettings.gradient = g;
         textStyleSettings.color = null; // Can't have both
+        textStyleSettings.customColor = null; // Clear custom too
     }
     saveStyleSettings();
-    refreshStyleBtns();
+    renderStyleTabContent('message');
     updateStylePreview();
 }
 
 function selectStyleGlow(g) {
-    textStyleSettings.glow = (textStyleSettings.glow === g) ? null : g;
+    if (textStyleSettings.glow === g) {
+        textStyleSettings.glow = null;
+    } else {
+        textStyleSettings.glow = g;
+        textStyleSettings.customGlow = null; // Clear custom too
+    }
     saveStyleSettings();
-    refreshStyleBtns();
+    renderStyleTabContent('message');
     updateStylePreview();
 }
 
 function selectStyleFont(f) {
     textStyleSettings.font = (textStyleSettings.font === f) ? null : f;
     saveStyleSettings();
-    refreshStyleBtns();
+    renderStyleTabContent('message');
     updateStylePreview();
 }
 
 function selectStyleAnimation(a) {
     textStyleSettings.animation = (textStyleSettings.animation === a) ? null : a;
     saveStyleSettings();
-    refreshStyleBtns();
+    renderStyleTabContent('message');
     updateStylePreview();
 }
 
 function toggleStyleEffect(eff) {
     textStyleSettings[eff] = !textStyleSettings[eff];
     saveStyleSettings();
-    refreshStyleBtns();
+    renderStyleTabContent('message');
     updateStylePreview();
 }
 
@@ -1272,7 +1279,7 @@ function resetTextStyle() {
         customGlow: null
     };
     saveStyleSettings();
-    refreshStyleBtns();
+    renderStyleTabContent('message');
     updateStylePreview();
 }
 
@@ -1287,16 +1294,22 @@ function selectCustomColor(hex) {
 function applyCustomColor() {
     var picker = document.getElementById('custom-color-picker');
     if (picker) {
+        // Store hex without the # prefix
         var hex = picker.value.replace('#', '');
         textStyleSettings.color = null;
         textStyleSettings.gradient = null;
         textStyleSettings.customColor = hex;
         saveStyleSettings();
-        refreshStyleBtns();
+        renderStyleTabContent('message');
         updateStylePreview();
-        var btn = document.getElementById('custom-color-btn');
-        if (btn) btn.classList.add('active');
     }
+}
+
+function clearCustomColor() {
+    textStyleSettings.customColor = null;
+    saveStyleSettings();
+    renderStyleTabContent('message');
+    updateStylePreview();
 }
 
 function selectCustomGlow(hex) {
@@ -1313,11 +1326,16 @@ function applyCustomGlow() {
         textStyleSettings.glow = null;
         textStyleSettings.customGlow = hex;
         saveStyleSettings();
-        refreshStyleBtns();
+        renderStyleTabContent('message');
         updateStylePreview();
-        var btn = document.getElementById('custom-glow-btn');
-        if (btn) btn.classList.add('active');
     }
+}
+
+function clearCustomGlow() {
+    textStyleSettings.customGlow = null;
+    saveStyleSettings();
+    renderStyleTabContent('message');
+    updateStylePreview();
 }
 
 // Custom color functions for username styling
@@ -1336,7 +1354,14 @@ function applyUsernameCustomColor() {
         usernameStyleSettings.gradient = null;
         usernameStyleSettings.customColor = hex;
         saveUsernameStyleSettings();
+        renderStyleTabContent('username');
     }
+}
+
+function clearUsernameCustomColor() {
+    usernameStyleSettings.customColor = null;
+    saveUsernameStyleSettings();
+    renderStyleTabContent('username');
 }
 
 function selectUsernameCustomGlow(hex) {
@@ -1353,7 +1378,14 @@ function applyUsernameCustomGlow() {
         usernameStyleSettings.glow = null;
         usernameStyleSettings.customGlow = hex;
         saveUsernameStyleSettings();
+        renderStyleTabContent('username');
     }
+}
+
+function clearUsernameCustomGlow() {
+    usernameStyleSettings.customGlow = null;
+    saveUsernameStyleSettings();
+    renderStyleTabContent('username');
 }
 
 function refreshStyleBtns() {
@@ -1412,7 +1444,7 @@ function updateStylePreview() {
         if (fontStyles[textStyleSettings.font]) s.push(fontStyles[textStyleSettings.font]);
     }
     
-    // Color or gradient
+    // Color or gradient or custom color
     if (textStyleSettings.gradient) {
         var gradientStyles = {
             'rainbow': 'background:linear-gradient(90deg,#ff0000,#ff7700,#ffff00,#00ff00,#0077ff,#8b00ff);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text',
@@ -1427,9 +1459,11 @@ function updateStylePreview() {
         if (gradientStyles[textStyleSettings.gradient]) s.push(gradientStyles[textStyleSettings.gradient]);
     } else if (textStyleSettings.color) {
         s.push('color:' + (textStyleSettings.color === 'blue' ? '#55f' : textStyleSettings.color));
+    } else if (textStyleSettings.customColor) {
+        s.push('color:#' + textStyleSettings.customColor);
     }
     
-    // Glow
+    // Glow or custom glow
     if (textStyleSettings.glow) {
         var glowStyles = {
             'glow-white': 'text-shadow:0 0 10px #fff,0 0 20px #fff,0 0 30px #fff',
@@ -1441,6 +1475,8 @@ function updateStylePreview() {
             'glow-rainbow': 'text-shadow:0 0 5px #f00,0 0 10px #ff0,0 0 15px #0f0,0 0 20px #0ff,0 0 25px #00f,0 0 30px #f0f'
         };
         if (glowStyles[textStyleSettings.glow]) s.push(glowStyles[textStyleSettings.glow]);
+    } else if (textStyleSettings.customGlow) {
+        s.push('text-shadow:0 0 10px #' + textStyleSettings.customGlow + ',0 0 20px #' + textStyleSettings.customGlow + ',0 0 30px #' + textStyleSettings.customGlow);
     }
     
     // Text effects
@@ -2245,8 +2281,10 @@ function selectUsernameColor(c) {
     } else {
         usernameStyleSettings.color = c;
         usernameStyleSettings.gradient = null;
+        usernameStyleSettings.customColor = null;
     }
     saveUsernameStyleSettings();
+    renderStyleTabContent('username');
 }
 
 function selectUsernameGradient(g) {
@@ -2255,33 +2293,45 @@ function selectUsernameGradient(g) {
     } else {
         usernameStyleSettings.gradient = g;
         usernameStyleSettings.color = null;
+        usernameStyleSettings.customColor = null;
     }
     saveUsernameStyleSettings();
+    renderStyleTabContent('username');
 }
 
 function selectUsernameGlow(g) {
-    usernameStyleSettings.glow = (usernameStyleSettings.glow === g) ? null : g;
+    if (usernameStyleSettings.glow === g) {
+        usernameStyleSettings.glow = null;
+    } else {
+        usernameStyleSettings.glow = g;
+        usernameStyleSettings.customGlow = null;
+    }
     saveUsernameStyleSettings();
+    renderStyleTabContent('username');
 }
 
 function selectUsernameAnimation(a) {
     usernameStyleSettings.animation = (usernameStyleSettings.animation === a) ? null : a;
     saveUsernameStyleSettings();
+    renderStyleTabContent('username');
 }
 
 function selectUsernameFont(f) {
     usernameStyleSettings.font = (usernameStyleSettings.font === f) ? null : f;
     saveUsernameStyleSettings();
+    renderStyleTabContent('username');
 }
 
 function toggleUsernameBold() {
     usernameStyleSettings.bold = !usernameStyleSettings.bold;
     saveUsernameStyleSettings();
+    renderStyleTabContent('username');
 }
 
 function toggleUsernameStyleEnabled() {
     usernameStyleSettings.enabled = !usernameStyleSettings.enabled;
     saveUsernameStyleSettings();
+    renderStyleTabContent('username');
     var btn = document.getElementById('username-style-toggle');
     if (btn) {
         btn.textContent = usernameStyleSettings.enabled ? '✓ Enabled' : '✗ Disabled';
