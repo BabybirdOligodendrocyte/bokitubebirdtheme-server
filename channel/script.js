@@ -1553,82 +1553,97 @@ $(document).ready(function() {
     initUsernameStyleInterceptor();
     updateFontBtnIndicator();
     
-    // Fix userlist display
-    fixUserlistLayout();
+    // Fix userlist display - with delay to ensure elements exist
+    setTimeout(fixUserlistLayout, 1000);
 });
 
 function fixUserlistLayout() {
+    var chatheader = document.getElementById('chatheader');
+    var userlist = document.getElementById('userlist');
+    
+    console.log('chatheader:', chatheader);
+    console.log('userlist:', userlist);
+    
+    if (!chatheader || !userlist) {
+        console.log('Elements not found, retrying...');
+        setTimeout(fixUserlistLayout, 1000);
+        return;
+    }
+    
     // Add CSS for dropdown userlist
     var style = document.createElement('style');
+    style.id = 'userlist-dropdown-style';
     style.textContent = `
         #userlist {
-            display: none !important;
-            flex-direction: column !important;
-            flex-wrap: nowrap !important;
-            max-height: 50vh !important;
-            height: auto !important;
-            overflow-y: auto !important;
-            overflow-x: hidden !important;
-            background: #1a1a1a !important;
-            padding: 5px !important;
-            gap: 2px !important;
-            position: absolute !important;
-            top: 100% !important;
-            left: 0 !important;
-            right: 0 !important;
-            z-index: 1000 !important;
-            border: 1px solid #333 !important;
-            border-radius: 4px !important;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.5) !important;
+            display: none;
+            flex-direction: column;
+            flex-wrap: nowrap;
+            max-height: 50vh;
+            height: auto;
+            overflow-y: auto;
+            overflow-x: hidden;
+            background: #1a1a1a;
+            padding: 5px;
+            gap: 2px;
+            position: absolute;
+            top: 100%;
+            left: 0;
+            right: 0;
+            z-index: 1000;
+            border: 1px solid #333;
+            border-radius: 4px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.5);
         }
         #userlist.userlist-open {
             display: flex !important;
         }
         #userlist .userlist_item {
             display: flex !important;
-            flex-shrink: 0 !important;
-            padding: 4px 8px !important;
-            background: #2a2a2a !important;
-            border-radius: 3px !important;
-            width: 100% !important;
-            box-sizing: border-box !important;
+            flex-shrink: 0;
+            padding: 4px 8px;
+            background: #2a2a2a;
+            border-radius: 3px;
+            width: 100%;
+            box-sizing: border-box;
         }
         #userlist .userlist_item:hover {
-            background: #444 !important;
+            background: #444;
         }
-        /* Show ALL user items including afk, guests, anonymous */
-        #userlist .userlist_item,
-        #userlist .userlist_item.userlist_afk,
-        #userlist .userlist_item.userlist_guest,
-        #userlist .userlist_item.userlist_anon {
-            display: flex !important;
-        }
-        /* Chatheader needs relative positioning for dropdown */
         #chatheader {
-            position: relative !important;
-            cursor: pointer !important;
+            position: relative;
+            cursor: pointer;
         }
     `;
     document.head.appendChild(style);
     
-    // Set up click toggle on chatheader
-    var chatheader = document.getElementById('chatheader');
-    var userlist = document.getElementById('userlist');
+    // Remove any existing click handlers by cloning
+    var newChatheader = chatheader.cloneNode(true);
+    chatheader.parentNode.replaceChild(newChatheader, chatheader);
+    chatheader = newChatheader;
     
-    if (chatheader && userlist) {
-        chatheader.addEventListener('click', function(e) {
-            e.preventDefault();
-            e.stopPropagation();
-            userlist.classList.toggle('userlist-open');
-        });
-        
-        // Close when clicking outside
-        document.addEventListener('click', function(e) {
-            if (!chatheader.contains(e.target) && !userlist.contains(e.target)) {
-                userlist.classList.remove('userlist-open');
-            }
-        });
-    }
+    // Get userlist again after DOM change
+    userlist = document.getElementById('userlist');
+    
+    // Add click handler
+    chatheader.addEventListener('click', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        console.log('Chatheader clicked');
+        if (userlist.classList.contains('userlist-open')) {
+            userlist.classList.remove('userlist-open');
+        } else {
+            userlist.classList.add('userlist-open');
+        }
+    });
+    
+    // Close when clicking outside
+    document.addEventListener('click', function(e) {
+        if (!chatheader.contains(e.target) && !userlist.contains(e.target)) {
+            userlist.classList.remove('userlist-open');
+        }
+    });
+    
+    console.log('Userlist dropdown initialized');
 }
 
 /* ========== AUTOCOMPLETE FOR EMOTES ========== */
