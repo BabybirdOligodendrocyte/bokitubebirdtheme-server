@@ -622,64 +622,26 @@ var usernameStyleSettings = JSON.parse(localStorage.getItem('usernameStyleSettin
         #filter-popup-body th { background: #333 !important; }
         #filter-popup-body td { background: #222 !important; font-family: monospace !important; }
         
-        /* Styled username */
+        /* Styled username - block level for message to appear below */
         .styled-username {
             font-weight: bold !important;
-        }
-        
-        /* Hide raw tags that haven't been processed by filters */
-        #messagebuffer > div {
-            /* Hide any raw bbcode-style tags */
-        }
-        
-        /* Hide styled username until message is processed (prevents flash) */
-        #messagebuffer > div:not(.chat-msg-processed) .styled-username {
-            display: none !important;
-        }
-        #messagebuffer > div:not(.chat-msg-processed) .chat-profile-pic {
-            display: none !important;
-        }
-        
-        /* Show styled username once processed and not consecutive - wrap pfp and username on one line, message below */
-        #messagebuffer > div.chat-msg-processed.has-visible-username .styled-username {
             display: block !important;
         }
-        #messagebuffer > div.chat-msg-processed.has-visible-username .chat-profile-pic {
-            display: inline !important;
-        }
-        
-        /* Hide on consecutive messages */
-        #messagebuffer > div.chat-msg-processed.has-hidden-username .styled-username,
-        #messagebuffer > div.chat-msg-processed.has-hidden-username .chat-profile-pic {
-            display: none !important;
-        }
-        
-        /* Chat profile picture - inline with username */
-        .chat-profile-pic {
-            width: 24px !important;
-            height: 24px !important;
-            object-fit: cover !important;
-            border-radius: 4px !important;
-            vertical-align: middle !important;
-            margin-right: 4px !important;
-        }
-        
-        /* Hide styled username and profile pic from niconico overlay */
-        #nnd-container .styled-username,
-        .nnd-message .styled-username,
-        [class*="nnd"] .styled-username,
-        .danmaku .styled-username,
-        #nnd-container .chat-profile-pic,
-        .nnd-message .chat-profile-pic,
-        [class*="nnd"] .chat-profile-pic,
-        .danmaku .chat-profile-pic,
-        .videoText .chat-profile-pic,
-        .videoText .styled-username {
-            display: none !important;
+        .styled-username::after {
+            content: '' !important;
         }
         
         /* Hide consecutive styled usernames */
         .styled-username.hidden-consecutive {
+            display: none !important;
+        }
+        
+        /* Hide styled username from niconico overlay */
+        #nnd-container .styled-username,
+        .nnd-message .styled-username,
+        [class*="nnd"] .styled-username,
+        .danmaku .styled-username,
+        .videoText .styled-username {
             display: none !important;
         }
         
@@ -1072,7 +1034,7 @@ document.addEventListener('click', function(e) {
     if (dd && btn && !dd.contains(e.target) && e.target !== btn && !btn.contains(e.target)) closeFavoritesDropdown();
 });
 
-// TEXT STYLE POPUP (with tabs for Message, Username, and Profile)
+// TEXT STYLE POPUP (with tabs for Message and Username)
 var currentStyleTab = 'message';
 
 function createTextStylePopup() {
@@ -1084,7 +1046,7 @@ function createTextStylePopup() {
     var p = document.createElement('div');
     p.id = 'textstyle-popup';
     p.innerHTML = '<div class="popup-header" id="textstyle-popup-header"><span>✨ Style Settings</span><button class="popup-close" onclick="closeTextStylePopup()">×</button></div>' +
-        '<div id="textstyle-tabs"><button class="style-tab active" data-tab="message" onclick="switchStyleTab(\'message\')">💬 Message</button><button class="style-tab" data-tab="username" onclick="switchStyleTab(\'username\')">👤 Username</button><button class="style-tab" data-tab="profile" onclick="switchStyleTab(\'profile\')">🖼️ Profile</button></div>' +
+        '<div id="textstyle-tabs"><button class="style-tab active" data-tab="message" onclick="switchStyleTab(\'message\')">💬 Message</button><button class="style-tab" data-tab="username" onclick="switchStyleTab(\'username\')">👤 Username</button></div>' +
         '<div id="textstyle-tab-content"></div>';
     o.appendChild(p);
     document.body.appendChild(o);
@@ -2305,48 +2267,19 @@ function applyUsernameTagsToMessage() {
     // Skip empty
     if (!msg.trim()) return;
     // Skip if already has username tag
-    if (msg.startsWith('[uname]') || msg.startsWith('[pfp]')) return;
+    if (msg.startsWith('[uname]')) return;
     
     var openTags = buildUsernameOpenTags();
     var closeTags = buildUsernameCloseTags();
     
-    // Use display name if set, otherwise use actual username
-    var displayName = usernameStyleSettings.displayName || myName;
-    
-    // Build profile pic tag if set (outside uname so filter can process it)
-    var profilePicTag = '';
-    if (usernameStyleSettings.profilePic) {
-        profilePicTag = '[pfp]' + usernameStyleSettings.profilePic + '[/pfp]';
-    }
-    
-    // Only add if there are actual styles or profile pic
-    if (openTags || profilePicTag) {
-        c.value = profilePicTag + '[uname]' + openTags + displayName + closeTags + '[/uname] ' + msg;
+    // Only add if there are actual styles
+    if (openTags) {
+        c.value = '[uname]' + openTags + myName + closeTags + '[/uname] ' + msg;
     }
 }
 
 function processStyledUsername(msgElement) {
     if (!msgElement) return;
-    
-    // Mark as processed immediately
-    msgElement.classList.add('chat-msg-processed');
-    
-    // First, convert [pfp]...[/pfp] tags to images (handles both plain URLs and linked URLs)
-    var html = msgElement.innerHTML;
-    
-    // Match [pfp] with a link inside: [pfp]<a href="url">text</a>[/pfp]
-    html = html.replace(/\[pfp\]<a[^>]*href="([^"]+)"[^>]*>[^<]*<\/a>\[\/pfp\]/gi, function(match, url) {
-        return '<img class="chat-profile-pic" src="' + url + '" onerror="this.style.display=\'none\'">';
-    });
-    
-    // Match [pfp] with plain URL: [pfp]https://...[/pfp]
-    html = html.replace(/\[pfp\](https?:\/\/[^\[]+)\[\/pfp\]/gi, function(match, url) {
-        return '<img class="chat-profile-pic" src="' + url + '" onerror="this.style.display=\'none\'">';
-    });
-    
-    if (html !== msgElement.innerHTML) {
-        msgElement.innerHTML = html;
-    }
     
     // Find the styled username span
     var styledUsername = msgElement.querySelector('.styled-username');
@@ -2355,7 +2288,7 @@ function processStyledUsername(msgElement) {
     // Add class to message element so CSS can hide original username
     msgElement.classList.add('chat-msg-with-styled-name');
     
-    // Get the styled username text (without the colon from ::after)
+    // Get the styled username text
     var styledName = styledUsername.textContent.trim();
     
     // Check previous messages for consecutive posts from same user
@@ -2392,9 +2325,6 @@ function processStyledUsername(msgElement) {
         msgElement.classList.add('has-hidden-username');
         var timestamp = msgElement.querySelector('.timestamp');
         if (timestamp) timestamp.style.display = 'none';
-        // Also hide profile pic on consecutive
-        var profilePic = msgElement.querySelector('.chat-profile-pic');
-        if (profilePic) profilePic.style.display = 'none';
     } else {
         // First message from this user - show username, timestamp floats right
         msgElement.classList.add('has-visible-username');
