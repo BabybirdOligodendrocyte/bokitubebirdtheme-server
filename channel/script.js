@@ -1553,25 +1553,40 @@ $(document).ready(function() {
     initUsernameStyleInterceptor();
     updateFontBtnIndicator();
     
-    // Fix userlist to display vertically
+    // Fix userlist to display vertically and be collapsible
     fixUserlistLayout();
 });
 
 function fixUserlistLayout() {
     var userlist = document.getElementById('userlist');
+    var chatheader = document.getElementById('chatheader');
+    
     if (userlist) {
-        userlist.style.cssText = 'display:flex !important; flex-direction:column !important; flex-wrap:nowrap !important; max-height:50vh !important; overflow-y:auto !important; overflow-x:hidden !important;';
+        // Initially hide the userlist, show on click
+        userlist.style.cssText = 'display:none !important; flex-direction:column !important; flex-wrap:nowrap !important; max-height:50vh !important; overflow-y:auto !important; overflow-x:hidden !important; position:absolute !important; background:#1a1a1a !important; z-index:1000 !important; width:100% !important; border:1px solid #333 !important; border-radius:4px !important; padding:5px !important; top:100% !important; left:0 !important;';
     }
-    // Also observe for changes in case it gets reset
-    var observer = new MutationObserver(function() {
-        var ul = document.getElementById('userlist');
-        if (ul && !ul.style.flexDirection.includes('column')) {
-            ul.style.cssText = 'display:flex !important; flex-direction:column !important; flex-wrap:nowrap !important; max-height:50vh !important; overflow-y:auto !important; overflow-x:hidden !important;';
+    
+    if (chatheader) {
+        chatheader.style.position = 'relative';
+        
+        // Toggle userlist on click
+        chatheader.addEventListener('click', function(e) {
+            if (userlist) {
+                if (userlist.style.display === 'none') {
+                    userlist.style.display = 'flex';
+                } else {
+                    userlist.style.display = 'none';
+                }
+            }
+        });
+    }
+    
+    // Close userlist when clicking outside
+    document.addEventListener('click', function(e) {
+        if (userlist && chatheader && !chatheader.contains(e.target) && !userlist.contains(e.target)) {
+            userlist.style.display = 'none';
         }
     });
-    if (userlist) {
-        observer.observe(userlist, { attributes: true, attributeFilter: ['style'] });
-    }
 }
 
 /* ========== AUTOCOMPLETE FOR EMOTES ========== */
