@@ -1554,90 +1554,66 @@ $(document).ready(function() {
     updateFontBtnIndicator();
     
     // Fix userlist display - with delay to ensure elements exist
-    setTimeout(fixUserlistLayout, 1000);
+    setTimeout(fixUserlistLayout, 1500);
 });
 
 function fixUserlistLayout() {
-    var chatheader = document.getElementById('chatheader');
-    var userlist = document.getElementById('userlist');
-    
-    if (!chatheader || !userlist) {
-        setTimeout(fixUserlistLayout, 1000);
-        return;
-    }
-    
     // Add CSS for dropdown userlist
-    var style = document.createElement('style');
-    style.id = 'userlist-dropdown-style';
-    style.textContent = `
-        #userlist {
-            flex-direction: column !important;
-            flex-wrap: nowrap !important;
-            max-height: 50vh !important;
-            height: auto !important;
-            overflow-y: auto !important;
-            overflow-x: hidden !important;
-            background: #1a1a1a !important;
-            padding: 5px !important;
-            gap: 2px !important;
-            position: absolute !important;
-            top: 100% !important;
-            left: 0 !important;
-            right: 0 !important;
-            z-index: 1000 !important;
-            border: 1px solid #333 !important;
-            border-radius: 4px !important;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.5) !important;
-        }
-        #userlist .userlist_item {
-            display: flex !important;
-            flex-shrink: 0 !important;
-            padding: 4px 8px !important;
-            background: #2a2a2a !important;
-            border-radius: 3px !important;
-            width: 100% !important;
-            box-sizing: border-box !important;
-        }
-        #userlist .userlist_item:hover {
-            background: #444 !important;
-        }
-        #chatheader {
-            position: relative !important;
-            cursor: pointer !important;
-        }
-    `;
-    document.head.appendChild(style);
+    $('<style id="userlist-dropdown-style">')
+        .text(`
+            #userlist.userlist-visible {
+                display: flex !important;
+                flex-direction: column !important;
+                flex-wrap: nowrap !important;
+                max-height: 50vh !important;
+                height: auto !important;
+                overflow-y: auto !important;
+                overflow-x: hidden !important;
+                background: #1a1a1a !important;
+                padding: 5px !important;
+                gap: 2px !important;
+                position: absolute !important;
+                top: 100% !important;
+                left: 0 !important;
+                right: 0 !important;
+                z-index: 1000 !important;
+                border: 1px solid #333 !important;
+                border-radius: 4px !important;
+                box-shadow: 0 4px 12px rgba(0,0,0,0.5) !important;
+            }
+            #userlist:not(.userlist-visible) {
+                display: none !important;
+            }
+            #userlist .userlist_item {
+                display: flex !important;
+                flex-shrink: 0 !important;
+                padding: 4px 8px !important;
+                background: #2a2a2a !important;
+                border-radius: 3px !important;
+                width: 100% !important;
+                box-sizing: border-box !important;
+            }
+            #userlist .userlist_item:hover {
+                background: #444 !important;
+            }
+            #chatheader {
+                position: relative !important;
+                cursor: pointer !important;
+            }
+        `)
+        .appendTo('head');
     
-    // Function to toggle userlist
-    function toggleUserlist() {
-        if (userlist.style.display === 'none' || userlist.style.display === '') {
-            userlist.style.display = 'flex';
-        } else {
-            userlist.style.display = 'none';
-        }
-    }
-    
-    // Initially hide it
-    userlist.style.display = 'none';
-    
-    // Remove any existing click handlers by cloning
-    var newChatheader = chatheader.cloneNode(true);
-    chatheader.parentNode.replaceChild(newChatheader, chatheader);
-    chatheader = newChatheader;
-    
-    // Add click handler
-    chatheader.addEventListener('click', function(e) {
+    // Use jQuery for click handling
+    $('#chatheader').off('click').on('click', function(e) {
         e.preventDefault();
         e.stopPropagation();
-        toggleUserlist();
+        $('#userlist').toggleClass('userlist-visible');
     });
     
     // Close when clicking outside
-    document.addEventListener('click', function(e) {
-        var ch = document.getElementById('chatheader');
-        var ul = document.getElementById('userlist');
-        if (ch && ul && !ch.contains(e.target) && !ul.contains(e.target)) {
-            ul.style.display = 'none';
+    $(document).on('click', function(e) {
+        if (!$(e.target).closest('#chatheader, #userlist').length) {
+            $('#userlist').removeClass('userlist-visible');
         }
     });
 }
