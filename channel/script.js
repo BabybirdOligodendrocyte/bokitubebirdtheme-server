@@ -1553,40 +1553,44 @@ $(document).ready(function() {
     initUsernameStyleInterceptor();
     updateFontBtnIndicator();
     
-    // Fix userlist to display vertically and be collapsible
+    // Fix userlist to display vertically
     fixUserlistLayout();
 });
 
 function fixUserlistLayout() {
-    var userlist = document.getElementById('userlist');
-    var chatheader = document.getElementById('chatheader');
-    
-    if (userlist) {
-        // Initially hide the userlist, show on click
-        userlist.style.cssText = 'display:none !important; flex-direction:column !important; flex-wrap:nowrap !important; max-height:50vh !important; overflow-y:auto !important; overflow-x:hidden !important; position:absolute !important; background:#1a1a1a !important; z-index:1000 !important; width:100% !important; border:1px solid #333 !important; border-radius:4px !important; padding:5px !important; top:100% !important; left:0 !important;';
-    }
-    
-    if (chatheader) {
-        chatheader.style.position = 'relative';
-        
-        // Toggle userlist on click
-        chatheader.addEventListener('click', function(e) {
-            if (userlist) {
-                if (userlist.style.display === 'none') {
-                    userlist.style.display = 'flex';
-                } else {
-                    userlist.style.display = 'none';
-                }
-            }
-        });
-    }
-    
-    // Close userlist when clicking outside
-    document.addEventListener('click', function(e) {
-        if (userlist && chatheader && !chatheader.contains(e.target) && !userlist.contains(e.target)) {
-            userlist.style.display = 'none';
+    // Add CSS to make userlist vertical and scrollable when visible
+    var style = document.createElement('style');
+    style.textContent = `
+        #userlist {
+            flex-direction: column !important;
+            flex-wrap: nowrap !important;
+            max-height: 50vh !important;
+            overflow-y: auto !important;
+            overflow-x: hidden !important;
+            background: #1a1a1a !important;
         }
-    });
+        #userlist .userlist_item {
+            width: 100% !important;
+            flex-shrink: 0 !important;
+            padding: 4px 8px !important;
+        }
+        #userlist .userlist_item:hover {
+            background: #333 !important;
+        }
+    `;
+    document.head.appendChild(style);
+    
+    // Watch for userlist visibility changes and apply styles
+    var checkUserlist = setInterval(function() {
+        var userlist = document.getElementById('userlist');
+        if (userlist) {
+            // Force column layout via JS as well
+            userlist.style.flexDirection = 'column';
+            userlist.style.flexWrap = 'nowrap';
+            userlist.style.maxHeight = '50vh';
+            userlist.style.overflowY = 'auto';
+        }
+    }, 500);
 }
 
 /* ========== AUTOCOMPLETE FOR EMOTES ========== */
