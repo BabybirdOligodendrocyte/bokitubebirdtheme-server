@@ -613,30 +613,23 @@ var usernameStyleSettings = JSON.parse(localStorage.getItem('usernameStyleSettin
         /* Chat message styling - 80% size and new layout */
         #messagebuffer > div {
             font-size: 80% !important;
+            position: relative !important;
         }
         
-        /* Timestamp on same line as username, right aligned */
+        /* Timestamp styling */
         #messagebuffer > div > .timestamp {
             font-size: 85% !important;
             opacity: 0.6 !important;
-            position: absolute !important;
-            right: 5px !important;
-            top: 0 !important;
         }
         
-        /* Message container needs relative positioning */
-        #messagebuffer > div {
-            position: relative !important;
-            padding-right: 80px !important;
-        }
-        
-        /* When username is shown, remove right padding since timestamp is on username line */
-        #messagebuffer > div:has(.styled-username:not(.hidden-consecutive)) {
-            padding-right: 0 !important;
-        }
-        #messagebuffer > div:has(.styled-username:not(.hidden-consecutive)) > .timestamp {
-            position: static !important;
+        /* When message has visible username - timestamp floats right on username line */
+        #messagebuffer > div.has-visible-username > .timestamp {
             float: right !important;
+        }
+        
+        /* When message has hidden username - timestamp hidden, full width message */
+        #messagebuffer > div.has-hidden-username > .timestamp {
+            display: none !important;
         }
         
         /* Styled username on its own line */
@@ -652,23 +645,32 @@ var usernameStyleSettings = JSON.parse(localStorage.getItem('usernameStyleSettin
         .styled-username.hidden-consecutive {
             display: none !important;
         }
-        .styled-username.hidden-consecutive + br {
-            display: none !important;
-        }
         
-        /* Connected users dropdown - scrollable and on screen */
-        #userlist, .userlist, #userlistpane {
-            max-height: 70vh !important;
-            overflow-y: auto !important;
-        }
-        .dropdown-menu {
-            max-height: 80vh !important;
-            overflow-y: auto !important;
-        }
-        #connectedusers, .connectedusers, [id*="userlist"] .dropdown-menu {
-            max-height: 70vh !important;
+        /* Connected users list - vertical and scrollable */
+        #userlist {
+            max-height: 50vh !important;
             overflow-y: auto !important;
             overflow-x: hidden !important;
+            flex-direction: column !important;
+        }
+        
+        /* User items stack vertically */
+        .userlist_item {
+            display: flex !important;
+            width: 100% !important;
+        }
+        
+        /* User dropdown menu - keep on screen */
+        .user-dropdown {
+            max-height: 60vh !important;
+            overflow-y: auto !important;
+            position: absolute !important;
+            z-index: 1000 !important;
+        }
+        
+        /* Chatheader dropdown if it exists */
+        #chatheader {
+            position: relative !important;
         }
         
         /* Username animations */
@@ -1776,6 +1778,8 @@ function processStyledUsername(msgElement) {
     
     // Check previous messages for consecutive posts from same user
     var prevMsg = msgElement.previousElementSibling;
+    var isConsecutive = false;
+    
     while (prevMsg) {
         // Skip non-chat messages (like server messages)
         if (!prevMsg.querySelector('.username') && !prevMsg.querySelector('.styled-username')) {
@@ -1788,22 +1792,27 @@ function processStyledUsername(msgElement) {
         if (prevStyledUsername) {
             var prevName = prevStyledUsername.textContent.trim();
             if (prevName === styledName) {
-                // Same user, hide username and timestamp on current message
-                styledUsername.classList.add('hidden-consecutive');
-                var timestamp = msgElement.querySelector('.timestamp');
-                if (timestamp) timestamp.style.display = 'none';
+                isConsecutive = true;
             }
         } else {
             // Check regular username
             var prevUsernameSpan = prevMsg.querySelector('.username');
             if (prevUsernameSpan && prevUsernameSpan.textContent.trim() === styledName) {
-                // Same user
-                styledUsername.classList.add('hidden-consecutive');
-                var timestamp = msgElement.querySelector('.timestamp');
-                if (timestamp) timestamp.style.display = 'none';
+                isConsecutive = true;
             }
         }
         break; // Only check immediate previous message
+    }
+    
+    if (isConsecutive) {
+        // Same user - hide username and timestamp
+        styledUsername.classList.add('hidden-consecutive');
+        msgElement.classList.add('has-hidden-username');
+        var timestamp = msgElement.querySelector('.timestamp');
+        if (timestamp) timestamp.style.display = 'none';
+    } else {
+        // First message from this user - show username, timestamp floats right
+        msgElement.classList.add('has-visible-username');
     }
 }
 
