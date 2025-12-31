@@ -1553,44 +1553,45 @@ $(document).ready(function() {
     initUsernameStyleInterceptor();
     updateFontBtnIndicator();
     
-    // Fix userlist to display vertically
+    // Fix userlist display
     fixUserlistLayout();
 });
 
 function fixUserlistLayout() {
-    // Add CSS to make userlist vertical and scrollable when visible
+    // Add CSS to make userlist wrap and be fully visible
     var style = document.createElement('style');
     style.textContent = `
         #userlist {
-            flex-direction: column !important;
-            flex-wrap: nowrap !important;
-            max-height: 50vh !important;
-            overflow-y: auto !important;
-            overflow-x: hidden !important;
+            display: flex !important;
+            flex-wrap: wrap !important;
+            max-height: none !important;
+            height: auto !important;
+            overflow: visible !important;
             background: #1a1a1a !important;
+            padding: 5px !important;
+            gap: 5px !important;
         }
         #userlist .userlist_item {
-            width: 100% !important;
             flex-shrink: 0 !important;
-            padding: 4px 8px !important;
+            padding: 2px 6px !important;
+            background: #2a2a2a !important;
+            border-radius: 3px !important;
         }
         #userlist .userlist_item:hover {
-            background: #333 !important;
+            background: #444 !important;
+        }
+        /* Make rightcontent not cut off userlist */
+        #rightcontent {
+            overflow: visible !important;
+        }
+        /* Chatheader area */
+        #chatheader {
+            flex-wrap: wrap !important;
+            height: auto !important;
+            min-height: auto !important;
         }
     `;
     document.head.appendChild(style);
-    
-    // Watch for userlist visibility changes and apply styles
-    var checkUserlist = setInterval(function() {
-        var userlist = document.getElementById('userlist');
-        if (userlist) {
-            // Force column layout via JS as well
-            userlist.style.flexDirection = 'column';
-            userlist.style.flexWrap = 'nowrap';
-            userlist.style.maxHeight = '50vh';
-            userlist.style.overflowY = 'auto';
-        }
-    }, 500);
 }
 
 /* ========== AUTOCOMPLETE FOR EMOTES ========== */
