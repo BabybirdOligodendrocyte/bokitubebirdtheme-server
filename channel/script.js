@@ -2315,30 +2315,67 @@ socket.on('chatMsg', function(data) {
     formatChatMsg(data, $("#messagebuffer > div").last());
 });
 
-// Hook into niconico script to strip username tags from scrolling messages
+// Hook into niconico script to strip username tags and show GIFs in scrolling messages
 (function() {
-    // Wait for NND script to load
-    var checkNND = setInterval(function() {
-        if (window.nnd && window.nnd._fn && window.nnd._fn.addScrollingMessage) {
-            clearInterval(checkNND);
-            
-            // Store original function
-            var originalAddScrollingMessage = window.nnd._fn.addScrollingMessage;
-            
-            // Override with our version that strips username tags
-            window.nnd._fn.addScrollingMessage = function(message, extraClass) {
-                if (typeof message === 'string') {
-                    // Remove [uname]...[/uname] tags and their contents
-                    message = message.replace(/\[uname\].*?\[\/uname\]\s*/gs, '');
-                }
-                // Call original function with cleaned message
-                return originalAddScrollingMessage.call(this, message, extraClass);
-            };
-            
-            console.log('NND username filter hook installed');
+    function installNNDHook() {
+        if (!window.nnd || !window.nnd._fn || !window.nnd._fn.addScrollingMessage) {
+            return false;
         }
-    }, 500);
+        
+        // Check if already hooked
+        if (window.nnd._fn._hookedByBokitube) {
+            return true;
+        }
+        
+        // Store original function
+        var originalAddScrollingMessage = window.nnd._fn.addScrollingMessage;
+        
+        // Override with our version that strips username tags and converts GIF URLs
+        window.nnd._fn.addScrollingMessage = function(message, extraClass) {
+            if (typeof message === 'string') {
+                // Remove [uname]...[/uname] tags and their contents (including styled spans)
+                message = message.replace(/\[uname\][\s\S]*?\[\/uname\]\s*/gi, '');
+                
+                // Also remove already-processed styled-username spans
+                message = message.replace(/<span[^>]*class="[^"]*styled-username[^"]*"[^>]*>[\s\S]*?<\/span>\s*/gi, '');
+                
+                // Convert Tenor/Giphy/GIF URLs to img tags for display
+                // Match URLs that are GIFs (including those in anchor tags)
+                message = message.replace(/<a[^>]*href="(https?:\/\/[^"]*(?:tenor\.com|giphy\.com|\.gif)[^"]*)"[^>]*>[^<]*<\/a>/gi, function(match, url) {
+                    return '<img src="' + url + '" alt="GIF">';
+                });
+                
+                // Also convert plain GIF URLs that aren't in anchor tags
+                message = message.replace(/(?<![">])(https?:\/\/(?:media\.tenor\.com|[^\s]*\.gif)[^\s<]*)/gi, function(match, url) {
+                    return '<img src="' + url + '" alt="GIF">';
+                });
+            }
+            // Call original function with cleaned message
+            return originalAddScrollingMessage.call(this, message, extraClass);
+        };
+        
+        window.nnd._fn._hookedByBokitube = true;
+        console.log('NND username/GIF filter hook installed');
+        return true;
+    }
     
-    // Stop checking after 30 seconds
-    setTimeout(function() { clearInterval(checkNND); }, 30000);
+    // Try to install hook immediately
+    if (!installNNDHook()) {
+        // If NND not loaded yet, keep trying
+        var checkNND = setInterval(function() {
+            if (installNNDHook()) {
+                clearInterval(checkNND);
+            }
+        }, 200);
+        
+        // Stop checking after 30 seconds
+        setTimeout(function() { clearInterval(checkNND); }, 30000);
+    }
+    
+    // Also hook when socket reconnects (NND might reload)
+    if (typeof socket !== 'undefined') {
+        socket.on('connect', function() {
+            setTimeout(installNNDHook, 1000);
+        });
+    }
 })();
