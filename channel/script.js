@@ -1410,7 +1410,7 @@ function embedGifsInMessage(msgElement) {
             var img = document.createElement('img');
             img.src = href;
             img.alt = 'GIF';
-            img.style.cssText = 'max-width:300px;max-height:200px;border-radius:8px;vertical-align:middle;cursor:pointer;';
+            img.style.cssText = 'height:100px;max-width:250px;object-fit:contain;vertical-align:middle;cursor:pointer;';
             img.title = 'Click to open full size';
             img.onclick = function() { window.open(href, '_blank'); };
             

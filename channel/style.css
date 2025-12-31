@@ -230,7 +230,7 @@ div.embed-responsive * { max-height: calc(100vh - 50px); }
     visibility: visible;
 }
 
-.channel-emote { max-width: 80px; max-height: 80px; }
+.channel-emote { height: 80px; max-width: 200px; object-fit: contain; }
 .emote-big { max-width: 120px; max-height: 120px; }
 .emote-big > img { max-width: -webkit-fill-available; max-height: -webkit-fill-available; }
 .nick-highlight { border-radius: 8px; }
