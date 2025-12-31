@@ -1717,28 +1717,34 @@ function fixUserlistLayout() {
         $('#user-options-overlay').removeClass('open');
     }
     
-    function openUserOptionsPanel(username, $userDropdown) {
+    function openUserOptionsPanel(username, $userDropdown, $originalUserlistItem) {
         var $panel = $('#user-options-panel');
         var $body = $panel.find('.panel-body');
         
         // Set username in header
         $panel.find('#panel-username').text(username);
         
+        // Find the ORIGINAL userlist item in #userlist (not our clone)
+        var $origItem = $('#userlist .userlist_item').filter(function() {
+            var name = $(this).find('.userlist_owner').text().trim() || $(this).find('span').last().text().trim();
+            return name === username;
+        }).first();
+        
+        var $origDropdown = $origItem.length ? $origItem.find('.user-dropdown') : $userDropdown;
+        
         // Clone buttons from user dropdown
         $body.empty();
-        $userDropdown.find('button').each(function() {
+        $origDropdown.find('button').each(function() {
             var $origBtn = $(this);
             var btnText = $origBtn.text().trim();
-            var originalOnclick = $origBtn.attr('onclick');
             
             // Skip if button is hidden
-            if ($origBtn.css('display') === 'none') return;
+            if ($origBtn.css('display') === 'none' || $origBtn.is(':hidden')) return;
             
             var $newBtn = $('<button class="btn">').text(btnText);
             $newBtn.on('click', function() {
-                if (originalOnclick) {
-                    eval(originalOnclick);
-                }
+                // Click the ORIGINAL button in the real userlist
+                $origBtn.click();
                 closeUserOptionsPanel();
             });
             $body.append($newBtn);
