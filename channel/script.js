@@ -174,6 +174,16 @@ var textStyleSettings = JSON.parse(localStorage.getItem('textStyleSettings')) ||
     font: null
 };
 
+// Username style settings
+var usernameStyleSettings = JSON.parse(localStorage.getItem('usernameStyleSettings')) || {
+    color: null,
+    gradient: null,
+    glow: null,
+    animation: null,
+    font: null,
+    bold: false
+};
+
 // Inject popup CSS with !important to override any conflicts
 (function() {
     var s = document.createElement('style');
@@ -236,6 +246,36 @@ var textStyleSettings = JSON.parse(localStorage.getItem('textStyleSettings')) ||
             max-height: 85vh !important;
             display: flex !important;
             flex-direction: column !important;
+        }
+        #textstyle-tabs {
+            display: flex !important;
+            background: #252530 !important;
+            padding: 8px !important;
+            gap: 8px !important;
+        }
+        .style-tab {
+            flex: 1 !important;
+            padding: 10px !important;
+            background: #333 !important;
+            border: none !important;
+            color: #999 !important;
+            border-radius: 6px !important;
+            cursor: pointer !important;
+            font-size: 14px !important;
+            transition: all 0.15s !important;
+        }
+        .style-tab:hover {
+            background: #444 !important;
+        }
+        .style-tab.active {
+            background: #555 !important;
+            color: #fff !important;
+        }
+        #textstyle-tab-content {
+            display: flex !important;
+            flex-direction: column !important;
+            flex: 1 !important;
+            overflow: hidden !important;
         }
         .textstyle-popup-scroll {
             flex: 1 !important;
@@ -550,6 +590,24 @@ var textStyleSettings = JSON.parse(localStorage.getItem('textStyleSettings')) ||
         }
         #filter-popup-body th { background: #333 !important; }
         #filter-popup-body td { background: #222 !important; font-family: monospace !important; }
+        
+        /* Styled username */
+        .styled-username {
+            font-weight: bold !important;
+            margin-right: 4px !important;
+        }
+        .styled-username::after {
+            content: ':' !important;
+            margin-left: 1px !important;
+        }
+        
+        /* Username animations */
+        .username-shake { display: inline-block; animation: shake 0.5s ease-in-out infinite; }
+        .username-pulse { display: inline-block; animation: pulse 1s ease-in-out infinite; }
+        .username-bounce { display: inline-block; animation: bounce 0.6s ease infinite; }
+        .username-wave { display: inline-block; animation: wave 2s ease-in-out infinite; }
+        .username-flicker { display: inline-block; animation: flicker 0.3s ease-in-out infinite; }
+        .username-spin { display: inline-block; animation: spin 2s linear infinite; }
     `;
     document.head.appendChild(s);
 })();
@@ -875,116 +933,144 @@ document.addEventListener('click', function(e) {
     if (dd && btn && !dd.contains(e.target) && e.target !== btn && !btn.contains(e.target)) closeFavoritesDropdown();
 });
 
-// TEXT STYLE POPUP
+// TEXT STYLE POPUP (with tabs for Message and Username)
+var currentStyleTab = 'message';
+
 function createTextStylePopup() {
     if (document.getElementById('textstyle-popup-overlay')) return;
     var o = document.createElement('div');
     o.id = 'textstyle-popup-overlay';
     o.onclick = function(e) { if (e.target === o) closeTextStylePopup(); };
     
-    // Basic colors
-    var colors = ['white','yellow','orange','pink','red','lime','green','aqua','blue','violet','brown','silver'];
-    var cbtns = colors.map(function(c) {
-        var act = textStyleSettings.color === c ? ' active' : '';
-        var st = 'color:' + (c === 'blue' ? '#55f' : c) + ';' + (c === 'white' ? 'background:#333;' : '');
-        return '<button class="textstyle-btn color-btn' + act + '" data-color="' + c + '" style="' + st + '" onclick="selectStyleColor(\'' + c + '\')">' + c + '</button>';
-    }).join('');
-    
-    // Gradients
-    var gradients = [
-        {name: 'rainbow', label: 'Rainbow', style: 'background:linear-gradient(90deg,#ff0000,#ff7700,#ffff00,#00ff00,#0077ff,#8b00ff);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;'},
-        {name: 'fire', label: 'Fire', style: 'background:linear-gradient(90deg,#ff0000,#ff5500,#ffaa00,#ffcc00);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;'},
-        {name: 'ocean', label: 'Ocean', style: 'background:linear-gradient(90deg,#00ffff,#0088ff,#0044aa,#002255);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;'},
-        {name: 'sunset', label: 'Sunset', style: 'background:linear-gradient(90deg,#ff6b6b,#ffa500,#ffdb58,#ff6b9d);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;'},
-        {name: 'neon', label: 'Neon', style: 'background:linear-gradient(90deg,#ff00ff,#00ffff,#ff00ff);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;'},
-        {name: 'forest', label: 'Forest', style: 'background:linear-gradient(90deg,#228b22,#32cd32,#90ee90,#006400);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;'},
-        {name: 'gold', label: 'Gold', style: 'background:linear-gradient(90deg,#ffd700,#ffec8b,#daa520,#b8860b);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;'},
-        {name: 'ice', label: 'Ice', style: 'background:linear-gradient(90deg,#e0ffff,#87ceeb,#add8e6,#b0e0e6);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;'}
-    ];
-    var gbtns = gradients.map(function(g) {
-        var act = textStyleSettings.gradient === g.name ? ' active' : '';
-        return '<button class="textstyle-btn gradient-btn' + act + '" data-gradient="' + g.name + '" style="' + g.style + 'font-weight:bold;" onclick="selectStyleGradient(\'' + g.name + '\')">' + g.label + '</button>';
-    }).join('');
-    
-    // Glow effects
-    var glows = [
-        {name: 'glow-white', label: '✦ White', style: 'text-shadow:0 0 10px #fff,0 0 20px #fff,0 0 30px #fff;'},
-        {name: 'glow-red', label: '✦ Red', style: 'text-shadow:0 0 10px #f00,0 0 20px #f00,0 0 30px #f00;'},
-        {name: 'glow-blue', label: '✦ Blue', style: 'text-shadow:0 0 10px #00f,0 0 20px #00f,0 0 30px #0ff;'},
-        {name: 'glow-green', label: '✦ Green', style: 'text-shadow:0 0 10px #0f0,0 0 20px #0f0,0 0 30px #0f0;'},
-        {name: 'glow-gold', label: '✦ Gold', style: 'text-shadow:0 0 10px #ffd700,0 0 20px #ffa500,0 0 30px #ff8c00;'},
-        {name: 'glow-pink', label: '✦ Pink', style: 'text-shadow:0 0 10px #ff69b4,0 0 20px #ff1493,0 0 30px #ff69b4;'},
-        {name: 'glow-rainbow', label: '✦ Rainbow', style: 'text-shadow:0 0 5px #f00,0 0 10px #ff0,0 0 15px #0f0,0 0 20px #0ff,0 0 25px #00f,0 0 30px #f0f;'}
-    ];
-    var glowbtns = glows.map(function(g) {
-        var act = textStyleSettings.glow === g.name ? ' active' : '';
-        return '<button class="textstyle-btn glow-btn' + act + '" data-glow="' + g.name + '" style="' + g.style + '" onclick="selectStyleGlow(\'' + g.name + '\')">' + g.label + '</button>';
-    }).join('');
-    
-    // Animations
-    var animations = [
-        {name: 'shake', label: '〰️ Shake'},
-        {name: 'pulse', label: '💗 Pulse'},
-        {name: 'bounce', label: '⬆️ Bounce'},
-        {name: 'wave', label: '🌊 Wave'},
-        {name: 'flicker', label: '⚡ Flicker'},
-        {name: 'spin', label: '🔄 Spin'}
-    ];
-    var animbtns = animations.map(function(a) {
-        var act = textStyleSettings.animation === a.name ? ' active' : '';
-        return '<button class="textstyle-btn anim-btn' + act + '" data-anim="' + a.name + '" onclick="selectStyleAnimation(\'' + a.name + '\')">' + a.label + '</button>';
-    }).join('');
-    
-    // Fonts
-    var fonts = [
-        {name: 'comic', label: 'Comic Sans', style: 'font-family:\"Comic Sans MS\",cursive;'},
-        {name: 'impact', label: 'Impact', style: 'font-family:Impact,sans-serif;'},
-        {name: 'papyrus', label: 'Papyrus', style: 'font-family:Papyrus,fantasy;'},
-        {name: 'copperplate', label: 'Copperplate', style: 'font-family:Copperplate,fantasy;'},
-        {name: 'brush', label: 'Brush Script', style: 'font-family:\"Brush Script MT\",cursive;'},
-        {name: 'lucida', label: 'Lucida', style: 'font-family:\"Lucida Handwriting\",cursive;'},
-        {name: 'courier', label: 'Courier', style: 'font-family:\"Courier New\",monospace;'},
-        {name: 'times', label: 'Times', style: 'font-family:\"Times New Roman\",serif;'},
-        {name: 'georgia', label: 'Georgia', style: 'font-family:Georgia,serif;'},
-        {name: 'trebuchet', label: 'Trebuchet', style: 'font-family:\"Trebuchet MS\",sans-serif;'},
-        {name: 'verdana', label: 'Verdana', style: 'font-family:Verdana,sans-serif;'},
-        {name: 'gothic', label: 'Gothic', style: 'font-family:\"Century Gothic\",sans-serif;'},
-        {name: 'garamond', label: 'Garamond', style: 'font-family:Garamond,serif;'},
-        {name: 'palatino', label: 'Palatino', style: 'font-family:\"Palatino Linotype\",serif;'},
-        {name: 'bookman', label: 'Bookman', style: 'font-family:\"Bookman Old Style\",serif;'},
-        {name: 'mono', label: 'Monospace', style: 'font-family:monospace;'},
-        {name: 'cursive', label: 'Cursive', style: 'font-family:cursive;'},
-        {name: 'fantasy', label: 'Fantasy', style: 'font-family:fantasy;'},
-        {name: 'system', label: 'System UI', style: 'font-family:system-ui;'},
-        {name: 'serif', label: 'Serif', style: 'font-family:serif;'}
-    ];
-    var fontbtns = fonts.map(function(f) {
-        var act = textStyleSettings.font === f.name ? ' active' : '';
-        return '<button class="textstyle-btn font-btn' + act + '" data-font="' + f.name + '" style="' + f.style + '" onclick="selectStyleFont(\'' + f.name + '\')">' + f.label + '</button>';
-    }).join('');
-    
     var p = document.createElement('div');
     p.id = 'textstyle-popup';
-    p.innerHTML = '<div class="popup-header"><span>✨ Text Style Settings</span><button class="popup-close" onclick="closeTextStylePopup()">×</button></div>' +
-        '<div class="textstyle-info"><p style="margin:0 0 8px">Select styles below. They <strong>auto-apply</strong> to all messages.</p><p style="margin:0;color:#fc0">⚠️ Admin must set up <a href="#" onclick="showFilterPopup();return false;">Chat Filters</a> first.</p></div>' +
-        '<div class="textstyle-popup-scroll">' +
-        '<div class="textstyle-section"><h4>Solid Colors</h4><div class="textstyle-grid">' + cbtns + '</div></div>' +
-        '<div class="textstyle-section"><h4>🌈 Gradients</h4><div class="textstyle-grid">' + gbtns + '</div></div>' +
-        '<div class="textstyle-section"><h4>✨ Glow Effects</h4><div class="textstyle-grid">' + glowbtns + '</div></div>' +
-        '<div class="textstyle-section"><h4>🎬 Animations</h4><div class="textstyle-grid">' + animbtns + '</div></div>' +
-        '<div class="textstyle-section"><h4>🔤 Fonts</h4><div class="textstyle-grid">' + fontbtns + '</div></div>' +
-        '<div class="textstyle-section"><h4>Text Effects</h4><div class="textstyle-grid">' +
-        '<button class="textstyle-btn effect-btn' + (textStyleSettings.bold ? ' active' : '') + '" data-effect="bold" style="font-weight:bold" onclick="toggleStyleEffect(\'bold\')">Bold</button>' +
-        '<button class="textstyle-btn effect-btn' + (textStyleSettings.italic ? ' active' : '') + '" data-effect="italic" style="font-style:italic" onclick="toggleStyleEffect(\'italic\')">Italic</button>' +
-        '<button class="textstyle-btn effect-btn' + (textStyleSettings.underline ? ' active' : '') + '" data-effect="underline" style="text-decoration:underline" onclick="toggleStyleEffect(\'underline\')">Underline</button>' +
-        '<button class="textstyle-btn effect-btn' + (textStyleSettings.strikethrough ? ' active' : '') + '" data-effect="strikethrough" style="text-decoration:line-through" onclick="toggleStyleEffect(\'strikethrough\')">Strike</button>' +
-        '</div></div>' +
-        '<div class="textstyle-section"><h4>Preview</h4><div id="textstyle-preview">Your message will look like this</div></div>' +
-        '</div>' +
-        '<div class="textstyle-section" style="border-top:1px solid #333;"><button id="textstyle-reset" onclick="resetTextStyle()">↺ Reset to Default</button></div>';
+    p.innerHTML = '<div class="popup-header" id="textstyle-popup-header"><span>✨ Style Settings</span><button class="popup-close" onclick="closeTextStylePopup()">×</button></div>' +
+        '<div id="textstyle-tabs"><button class="style-tab active" data-tab="message" onclick="switchStyleTab(\'message\')">💬 Message</button><button class="style-tab" data-tab="username" onclick="switchStyleTab(\'username\')">👤 Username</button></div>' +
+        '<div id="textstyle-tab-content"></div>';
     o.appendChild(p);
     document.body.appendChild(o);
-    updateStylePreview();
+    makeDraggable(p, document.getElementById('textstyle-popup-header'));
+    renderStyleTabContent('message');
+}
+
+function switchStyleTab(tab) {
+    currentStyleTab = tab;
+    document.querySelectorAll('.style-tab').forEach(function(t) { t.classList.remove('active'); });
+    document.querySelector('.style-tab[data-tab="' + tab + '"]').classList.add('active');
+    renderStyleTabContent(tab);
+}
+
+function renderStyleTabContent(tab) {
+    var container = document.getElementById('textstyle-tab-content');
+    if (!container) return;
+    
+    // Shared options
+    var colors = ['white','yellow','orange','pink','red','lime','green','aqua','blue','violet','brown','silver'];
+    var gradients = ['rainbow','fire','ocean','sunset','neon','forest','gold','ice'];
+    var gradientLabels = {rainbow:'Rainbow',fire:'Fire',ocean:'Ocean',sunset:'Sunset',neon:'Neon',forest:'Forest',gold:'Gold',ice:'Ice'};
+    var glows = ['glow-white','glow-red','glow-blue','glow-green','glow-gold','glow-pink','glow-rainbow'];
+    var glowLabels = {'glow-white':'✦ White','glow-red':'✦ Red','glow-blue':'✦ Blue','glow-green':'✦ Green','glow-gold':'✦ Gold','glow-pink':'✦ Pink','glow-rainbow':'✦ Rainbow'};
+    var animations = ['shake','pulse','bounce','wave','flicker','spin'];
+    var animLabels = {shake:'〰️ Shake',pulse:'💗 Pulse',bounce:'⬆️ Bounce',wave:'🌊 Wave',flicker:'⚡ Flicker',spin:'🔄 Spin'};
+    var fonts = ['comic','impact','papyrus','copperplate','brush','lucida','courier','times','georgia','trebuchet','verdana','gothic','garamond','palatino','bookman','mono','cursive','fantasy','system','serif'];
+    var fontLabels = {comic:'Comic',impact:'Impact',papyrus:'Papyrus',copperplate:'Copper',brush:'Brush',lucida:'Lucida',courier:'Courier',times:'Times',georgia:'Georgia',trebuchet:'Trebuchet',verdana:'Verdana',gothic:'Gothic',garamond:'Garamond',palatino:'Palatino',bookman:'Bookman',mono:'Mono',cursive:'Cursive',fantasy:'Fantasy',system:'System',serif:'Serif'};
+    var fontStyles = {comic:'font-family:"Comic Sans MS",cursive',impact:'font-family:Impact,sans-serif',papyrus:'font-family:Papyrus,fantasy',copperplate:'font-family:Copperplate,fantasy',brush:'font-family:"Brush Script MT",cursive',lucida:'font-family:"Lucida Handwriting",cursive',courier:'font-family:"Courier New",monospace',times:'font-family:"Times New Roman",serif',georgia:'font-family:Georgia,serif',trebuchet:'font-family:"Trebuchet MS",sans-serif',verdana:'font-family:Verdana,sans-serif',gothic:'font-family:"Century Gothic",sans-serif',garamond:'font-family:Garamond,serif',palatino:'font-family:"Palatino Linotype",serif',bookman:'font-family:"Bookman Old Style",serif',mono:'font-family:monospace',cursive:'font-family:cursive',fantasy:'font-family:fantasy',system:'font-family:system-ui',serif:'font-family:serif'};
+    
+    if (tab === 'message') {
+        // MESSAGE STYLE TAB
+        var settings = textStyleSettings;
+        var prefix = '';
+        
+        var cbtns = colors.map(function(c) {
+            var act = settings.color === c ? ' active' : '';
+            var st = 'color:' + (c === 'blue' ? '#55f' : c) + ';' + (c === 'white' ? 'background:#333;' : '');
+            return '<button class="textstyle-btn color-btn' + act + '" data-color="' + c + '" style="' + st + '" onclick="selectStyleColor(\'' + c + '\')">' + c + '</button>';
+        }).join('');
+        
+        var gbtns = gradients.map(function(g) {
+            var act = settings.gradient === g ? ' active' : '';
+            return '<button class="textstyle-btn gradient-btn' + act + '" data-gradient="' + g + '" onclick="selectStyleGradient(\'' + g + '\')">' + gradientLabels[g] + '</button>';
+        }).join('');
+        
+        var glowbtns = glows.map(function(g) {
+            var act = settings.glow === g ? ' active' : '';
+            return '<button class="textstyle-btn glow-btn' + act + '" data-glow="' + g + '" onclick="selectStyleGlow(\'' + g + '\')">' + glowLabels[g] + '</button>';
+        }).join('');
+        
+        var animbtns = animations.map(function(a) {
+            var act = settings.animation === a ? ' active' : '';
+            return '<button class="textstyle-btn anim-btn' + act + '" data-anim="' + a + '" onclick="selectStyleAnimation(\'' + a + '\')">' + animLabels[a] + '</button>';
+        }).join('');
+        
+        var fontbtns = fonts.map(function(f) {
+            var act = settings.font === f ? ' active' : '';
+            return '<button class="textstyle-btn font-btn' + act + '" data-font="' + f + '" style="' + fontStyles[f] + '" onclick="selectStyleFont(\'' + f + '\')">' + fontLabels[f] + '</button>';
+        }).join('');
+        
+        container.innerHTML = '<div class="textstyle-info"><p style="margin:0 0 8px">Style your messages. <strong>Auto-applies</strong> when you send.</p><p style="margin:0;color:#fc0">⚠️ Admin must set up <a href="#" onclick="showFilterPopup();return false;">Chat Filters</a> first.</p></div>' +
+            '<div class="textstyle-popup-scroll">' +
+            '<div class="textstyle-section"><h4>Solid Colors</h4><div class="textstyle-grid">' + cbtns + '</div></div>' +
+            '<div class="textstyle-section"><h4>🌈 Gradients</h4><div class="textstyle-grid">' + gbtns + '</div></div>' +
+            '<div class="textstyle-section"><h4>✨ Glow Effects</h4><div class="textstyle-grid">' + glowbtns + '</div></div>' +
+            '<div class="textstyle-section"><h4>🎬 Animations</h4><div class="textstyle-grid">' + animbtns + '</div></div>' +
+            '<div class="textstyle-section"><h4>🔤 Fonts</h4><div class="textstyle-grid">' + fontbtns + '</div></div>' +
+            '<div class="textstyle-section"><h4>Text Effects</h4><div class="textstyle-grid">' +
+            '<button class="textstyle-btn effect-btn' + (settings.bold ? ' active' : '') + '" data-effect="bold" style="font-weight:bold" onclick="toggleStyleEffect(\'bold\')">Bold</button>' +
+            '<button class="textstyle-btn effect-btn' + (settings.italic ? ' active' : '') + '" data-effect="italic" style="font-style:italic" onclick="toggleStyleEffect(\'italic\')">Italic</button>' +
+            '<button class="textstyle-btn effect-btn' + (settings.underline ? ' active' : '') + '" data-effect="underline" style="text-decoration:underline" onclick="toggleStyleEffect(\'underline\')">Underline</button>' +
+            '<button class="textstyle-btn effect-btn' + (settings.strikethrough ? ' active' : '') + '" data-effect="strikethrough" style="text-decoration:line-through" onclick="toggleStyleEffect(\'strikethrough\')">Strike</button>' +
+            '</div></div>' +
+            '<div class="textstyle-section"><h4>Preview</h4><div id="textstyle-preview">Your message will look like this</div></div>' +
+            '</div>' +
+            '<div class="textstyle-section" style="border-top:1px solid #333;"><button id="textstyle-reset" onclick="resetTextStyle()">↺ Reset to Default</button></div>';
+        
+        updateStylePreview();
+        
+    } else {
+        // USERNAME STYLE TAB
+        var settings = usernameStyleSettings;
+        
+        var cbtns = colors.map(function(c) {
+            var act = settings.color === c ? ' active' : '';
+            var st = 'color:' + (c === 'blue' ? '#55f' : c) + ';' + (c === 'white' ? 'background:#333;' : '');
+            return '<button class="textstyle-btn uname-color-btn' + act + '" data-color="' + c + '" style="' + st + '" onclick="selectUsernameColor(\'' + c + '\')">' + c + '</button>';
+        }).join('');
+        
+        var gbtns = gradients.map(function(g) {
+            var act = settings.gradient === g ? ' active' : '';
+            return '<button class="textstyle-btn uname-gradient-btn' + act + '" data-gradient="' + g + '" onclick="selectUsernameGradient(\'' + g + '\')">' + gradientLabels[g] + '</button>';
+        }).join('');
+        
+        var glowbtns = glows.map(function(g) {
+            var act = settings.glow === g ? ' active' : '';
+            return '<button class="textstyle-btn uname-glow-btn' + act + '" data-glow="' + g + '" onclick="selectUsernameGlow(\'' + g + '\')">' + glowLabels[g] + '</button>';
+        }).join('');
+        
+        var animbtns = animations.map(function(a) {
+            var act = settings.animation === a ? ' active' : '';
+            return '<button class="textstyle-btn uname-anim-btn' + act + '" data-anim="' + a + '" onclick="selectUsernameAnimation(\'' + a + '\')">' + animLabels[a] + '</button>';
+        }).join('');
+        
+        var fontbtns = fonts.map(function(f) {
+            var act = settings.font === f ? ' active' : '';
+            return '<button class="textstyle-btn uname-font-btn' + act + '" data-font="' + f + '" style="' + fontStyles[f] + '" onclick="selectUsernameFont(\'' + f + '\')">' + fontLabels[f] + '</button>';
+        }).join('');
+        
+        container.innerHTML = '<div class="textstyle-info"><p style="margin:0">Style your username! Others with this theme will see it.</p></div>' +
+            '<div class="textstyle-popup-scroll">' +
+            '<div class="textstyle-section"><h4>Enable Username Styling</h4><button id="username-style-toggle" class="textstyle-btn' + (settings.enabled ? ' active' : '') + '" onclick="toggleUsernameStyleEnabled()" style="width:100%">' + (settings.enabled ? '✓ Enabled' : '✗ Disabled') + '</button></div>' +
+            '<div class="textstyle-section"><h4>Solid Colors</h4><div class="textstyle-grid">' + cbtns + '</div></div>' +
+            '<div class="textstyle-section"><h4>🌈 Gradients</h4><div class="textstyle-grid">' + gbtns + '</div></div>' +
+            '<div class="textstyle-section"><h4>✨ Glow Effects</h4><div class="textstyle-grid">' + glowbtns + '</div></div>' +
+            '<div class="textstyle-section"><h4>🎬 Animations</h4><div class="textstyle-grid">' + animbtns + '</div></div>' +
+            '<div class="textstyle-section"><h4>🔤 Fonts</h4><div class="textstyle-grid">' + fontbtns + '</div></div>' +
+            '<div class="textstyle-section"><h4>Effects</h4><div class="textstyle-grid"><button id="uname-bold-btn" class="textstyle-btn' + (settings.bold ? ' active' : '') + '" style="font-weight:bold" onclick="toggleUsernameBold()">Bold</button></div></div>' +
+            '<div class="textstyle-section"><h4>Preview</h4><div id="username-preview" style="padding:16px;background:#111;border-radius:6px;text-align:center;min-height:50px;display:flex;align-items:center;justify-content:center;font-size:16px;">YourName</div></div>' +
+            '</div>' +
+            '<div class="textstyle-section" style="border-top:1px solid #333;"><button onclick="resetUsernameStyle()" style="width:100%;padding:12px;background:#422;border:1px solid #633;border-radius:6px;color:#f88;cursor:pointer;">↺ Reset to Default</button></div>';
+        
+        updateUsernamePreview();
+    }
 }
 
 function openTextStylePopup() {
@@ -1304,6 +1390,34 @@ function initStyleInterceptor() {
     }
 }
 
+function initUsernameStyleInterceptor() {
+    var chatline = document.getElementById('chatline');
+    var form = document.getElementById('formline');
+    if (!chatline) return;
+    
+    // Hook into Enter key press - run AFTER text style
+    chatline.addEventListener('keydown', function(e) {
+        if (e.keyCode === 13 || e.key === 'Enter') {
+            applyUsernameTagsToMessage();
+        }
+    }, true);
+    
+    // Also hook into form submit as backup
+    if (form) {
+        form.addEventListener('submit', function(e) {
+            applyUsernameTagsToMessage();
+        }, true);
+    }
+    
+    // Hook into any send button click
+    var sendBtn = document.querySelector('#formline button[type="submit"], #formline .btn');
+    if (sendBtn) {
+        sendBtn.addEventListener('click', function(e) {
+            applyUsernameTagsToMessage();
+        }, true);
+    }
+}
+
 // FILTER INSTRUCTIONS POPUP
 function showFilterPopup() {
     closeTextStylePopup();
@@ -1361,6 +1475,7 @@ $('#newpollbtn').prependTo($("#leftcontrols"));
 
 $(document).ready(function() {
     initStyleInterceptor();
+    initUsernameStyleInterceptor();
     updateFontBtnIndicator();
 });
 
@@ -1490,6 +1605,291 @@ function replyToMsg(target) {
     });
 }
 
+// USERNAME STYLING SYSTEM
+var usernameStyleSettings = JSON.parse(localStorage.getItem('usernameStyleSettings')) || {
+    enabled: false,
+    color: null,
+    gradient: null,
+    glow: null,
+    animation: null,
+    font: null,
+    bold: false
+};
+
+function getMyUsername() {
+    return (typeof CLIENT !== 'undefined' && CLIENT.name) ? CLIENT.name : null;
+}
+
+function buildUsernameOpenTags() {
+    var tags = '';
+    
+    // Font (outermost)
+    if (usernameStyleSettings.font) {
+        tags += '[font-' + usernameStyleSettings.font + ']';
+    }
+    
+    // Gradient or color
+    if (usernameStyleSettings.gradient) {
+        tags += '[' + usernameStyleSettings.gradient + ']';
+    } else if (usernameStyleSettings.color) {
+        tags += '[' + usernameStyleSettings.color + ']';
+    }
+    
+    // Glow
+    if (usernameStyleSettings.glow) {
+        tags += '[' + usernameStyleSettings.glow + ']';
+    }
+    
+    // Animation
+    if (usernameStyleSettings.animation) {
+        tags += '[' + usernameStyleSettings.animation + ']';
+    }
+    
+    // Bold
+    if (usernameStyleSettings.bold) {
+        tags += '[b]';
+    }
+    
+    return tags;
+}
+
+function buildUsernameCloseTags() {
+    var tags = '';
+    
+    if (usernameStyleSettings.bold) tags += '[/]';
+    if (usernameStyleSettings.animation) tags += '[/]';
+    if (usernameStyleSettings.glow) tags += '[/]';
+    if (usernameStyleSettings.gradient || usernameStyleSettings.color) tags += '[/]';
+    if (usernameStyleSettings.font) tags += '[/]';
+    
+    return tags;
+}
+
+function applyUsernameTagsToMessage() {
+    if (!usernameStyleSettings.enabled) return;
+    
+    var myName = getMyUsername();
+    if (!myName) return;
+    
+    var c = document.getElementById('chatline');
+    if (!c) return;
+    var msg = c.value;
+    
+    // Skip commands
+    if (msg.startsWith('/')) return;
+    // Skip empty
+    if (!msg.trim()) return;
+    // Skip if already has username tag
+    if (msg.startsWith('[uname]')) return;
+    
+    var openTags = buildUsernameOpenTags();
+    var closeTags = buildUsernameCloseTags();
+    
+    // Only add if there are actual styles
+    if (openTags) {
+        c.value = '[uname]' + openTags + myName + closeTags + '[/uname] ' + msg;
+    }
+}
+
+function processStyledUsername(msgElement) {
+    if (!msgElement) return;
+    
+    // Look for [uname] styled content and hide original username
+    var msgText = msgElement.querySelector('span:last-child');
+    if (!msgText) return;
+    
+    var html = msgText.innerHTML;
+    
+    // Check if message contains styled username marker
+    // The filter will have converted [uname]...[/uname] to <span class="styled-username">...</span>
+    if (html.includes('class="styled-username"')) {
+        // Hide the original CyTube username
+        var originalUsername = msgElement.querySelector('.username');
+        if (originalUsername) {
+            originalUsername.style.display = 'none';
+        }
+        // Also hide the colon after username
+        var userlistOwner = msgElement.querySelector('.userlist_owner');
+        if (userlistOwner) {
+            userlistOwner.style.display = 'none';
+        }
+    }
+}
+
+function saveUsernameStyleSettings() {
+    localStorage.setItem('usernameStyleSettings', JSON.stringify(usernameStyleSettings));
+    updateUsernamePreview();
+    refreshUsernameStyleBtns();
+}
+
+function selectUsernameColor(c) {
+    if (usernameStyleSettings.color === c) {
+        usernameStyleSettings.color = null;
+    } else {
+        usernameStyleSettings.color = c;
+        usernameStyleSettings.gradient = null;
+    }
+    saveUsernameStyleSettings();
+}
+
+function selectUsernameGradient(g) {
+    if (usernameStyleSettings.gradient === g) {
+        usernameStyleSettings.gradient = null;
+    } else {
+        usernameStyleSettings.gradient = g;
+        usernameStyleSettings.color = null;
+    }
+    saveUsernameStyleSettings();
+}
+
+function selectUsernameGlow(g) {
+    usernameStyleSettings.glow = (usernameStyleSettings.glow === g) ? null : g;
+    saveUsernameStyleSettings();
+}
+
+function selectUsernameAnimation(a) {
+    usernameStyleSettings.animation = (usernameStyleSettings.animation === a) ? null : a;
+    saveUsernameStyleSettings();
+}
+
+function selectUsernameFont(f) {
+    usernameStyleSettings.font = (usernameStyleSettings.font === f) ? null : f;
+    saveUsernameStyleSettings();
+}
+
+function toggleUsernameBold() {
+    usernameStyleSettings.bold = !usernameStyleSettings.bold;
+    saveUsernameStyleSettings();
+}
+
+function toggleUsernameStyleEnabled() {
+    usernameStyleSettings.enabled = !usernameStyleSettings.enabled;
+    saveUsernameStyleSettings();
+    var btn = document.getElementById('username-style-toggle');
+    if (btn) {
+        btn.textContent = usernameStyleSettings.enabled ? '✓ Enabled' : '✗ Disabled';
+        btn.classList.toggle('active', usernameStyleSettings.enabled);
+    }
+}
+
+function resetUsernameStyle() {
+    usernameStyleSettings = {
+        enabled: false,
+        color: null,
+        gradient: null,
+        glow: null,
+        animation: null,
+        font: null,
+        bold: false
+    };
+    saveUsernameStyleSettings();
+}
+
+function refreshUsernameStyleBtns() {
+    document.querySelectorAll('.uname-color-btn').forEach(function(b) { 
+        b.classList.toggle('active', usernameStyleSettings.color === b.dataset.color); 
+    });
+    document.querySelectorAll('.uname-gradient-btn').forEach(function(b) { 
+        b.classList.toggle('active', usernameStyleSettings.gradient === b.dataset.gradient); 
+    });
+    document.querySelectorAll('.uname-glow-btn').forEach(function(b) { 
+        b.classList.toggle('active', usernameStyleSettings.glow === b.dataset.glow); 
+    });
+    document.querySelectorAll('.uname-anim-btn').forEach(function(b) { 
+        b.classList.toggle('active', usernameStyleSettings.animation === b.dataset.anim); 
+    });
+    document.querySelectorAll('.uname-font-btn').forEach(function(b) { 
+        b.classList.toggle('active', usernameStyleSettings.font === b.dataset.font); 
+    });
+    var boldBtn = document.getElementById('uname-bold-btn');
+    if (boldBtn) boldBtn.classList.toggle('active', usernameStyleSettings.bold);
+    var toggleBtn = document.getElementById('username-style-toggle');
+    if (toggleBtn) {
+        toggleBtn.textContent = usernameStyleSettings.enabled ? '✓ Enabled' : '✗ Disabled';
+        toggleBtn.classList.toggle('active', usernameStyleSettings.enabled);
+    }
+}
+
+function updateUsernamePreview() {
+    var p = document.getElementById('username-preview');
+    if (!p) return;
+    
+    var myName = getMyUsername() || 'YourName';
+    var s = [];
+    
+    // Font
+    if (usernameStyleSettings.font) {
+        var fontStyles = {
+            'comic': 'font-family:"Comic Sans MS",cursive',
+            'impact': 'font-family:Impact,sans-serif',
+            'papyrus': 'font-family:Papyrus,fantasy',
+            'copperplate': 'font-family:Copperplate,fantasy',
+            'brush': 'font-family:"Brush Script MT",cursive',
+            'lucida': 'font-family:"Lucida Handwriting",cursive',
+            'courier': 'font-family:"Courier New",monospace',
+            'times': 'font-family:"Times New Roman",serif',
+            'georgia': 'font-family:Georgia,serif',
+            'trebuchet': 'font-family:"Trebuchet MS",sans-serif',
+            'verdana': 'font-family:Verdana,sans-serif',
+            'gothic': 'font-family:"Century Gothic",sans-serif',
+            'garamond': 'font-family:Garamond,serif',
+            'palatino': 'font-family:"Palatino Linotype",serif',
+            'bookman': 'font-family:"Bookman Old Style",serif',
+            'mono': 'font-family:monospace',
+            'cursive': 'font-family:cursive',
+            'fantasy': 'font-family:fantasy',
+            'system': 'font-family:system-ui',
+            'serif': 'font-family:serif'
+        };
+        if (fontStyles[usernameStyleSettings.font]) s.push(fontStyles[usernameStyleSettings.font]);
+    }
+    
+    // Color or gradient
+    if (usernameStyleSettings.gradient) {
+        var gradientStyles = {
+            'rainbow': 'background:linear-gradient(90deg,#ff0000,#ff7700,#ffff00,#00ff00,#0077ff,#8b00ff);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text',
+            'fire': 'background:linear-gradient(90deg,#ff0000,#ff5500,#ffaa00,#ffcc00);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text',
+            'ocean': 'background:linear-gradient(90deg,#00ffff,#0088ff,#0044aa,#002255);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text',
+            'sunset': 'background:linear-gradient(90deg,#ff6b6b,#ffa500,#ffdb58,#ff6b9d);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text',
+            'neon': 'background:linear-gradient(90deg,#ff00ff,#00ffff,#ff00ff);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text',
+            'forest': 'background:linear-gradient(90deg,#228b22,#32cd32,#90ee90,#006400);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text',
+            'gold': 'background:linear-gradient(90deg,#ffd700,#ffec8b,#daa520,#b8860b);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text',
+            'ice': 'background:linear-gradient(90deg,#e0ffff,#87ceeb,#add8e6,#b0e0e6);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text'
+        };
+        if (gradientStyles[usernameStyleSettings.gradient]) s.push(gradientStyles[usernameStyleSettings.gradient]);
+    } else if (usernameStyleSettings.color) {
+        s.push('color:' + (usernameStyleSettings.color === 'blue' ? '#55f' : usernameStyleSettings.color));
+    }
+    
+    // Glow
+    if (usernameStyleSettings.glow) {
+        var glowStyles = {
+            'glow-white': 'text-shadow:0 0 10px #fff,0 0 20px #fff,0 0 30px #fff',
+            'glow-red': 'text-shadow:0 0 10px #f00,0 0 20px #f00,0 0 30px #f00',
+            'glow-blue': 'text-shadow:0 0 10px #00f,0 0 20px #00f,0 0 30px #0ff',
+            'glow-green': 'text-shadow:0 0 10px #0f0,0 0 20px #0f0,0 0 30px #0f0',
+            'glow-gold': 'text-shadow:0 0 10px #ffd700,0 0 20px #ffa500,0 0 30px #ff8c00',
+            'glow-pink': 'text-shadow:0 0 10px #ff69b4,0 0 20px #ff1493,0 0 30px #ff69b4',
+            'glow-rainbow': 'text-shadow:0 0 5px #f00,0 0 10px #ff0,0 0 15px #0f0,0 0 20px #0ff,0 0 25px #00f,0 0 30px #f0f'
+        };
+        if (glowStyles[usernameStyleSettings.glow]) s.push(glowStyles[usernameStyleSettings.glow]);
+    }
+    
+    // Bold
+    if (usernameStyleSettings.bold) s.push('font-weight:bold');
+    
+    // Animation class
+    var animClass = usernameStyleSettings.animation ? 'text-' + usernameStyleSettings.animation : '';
+    
+    var hasStyle = usernameStyleSettings.color || usernameStyleSettings.gradient || usernameStyleSettings.bold || 
+                   usernameStyleSettings.glow || usernameStyleSettings.animation || usernameStyleSettings.font;
+    
+    p.style.cssText = s.join(';');
+    p.className = animClass;
+    p.textContent = hasStyle ? myName : 'No styling (default)';
+    if (!hasStyle) { p.style.color = '#666'; p.style.fontStyle = 'italic'; }
+}
+
 // GIF EMBEDDING - Convert GIF links to inline images
 function embedGifsInMessage(msgElement) {
     if (!msgElement) return;
@@ -1531,6 +1931,7 @@ function embedAllExistingGifs() {
     var messages = document.querySelectorAll('#messagebuffer > div');
     messages.forEach(function(msg) {
         embedGifsInMessage(msg);
+        processStyledUsername(msg);
     });
 }
 
@@ -1543,11 +1944,17 @@ var gifObserver = new MutationObserver(function(mutations) {
         mutation.addedNodes.forEach(function(node) {
             if (node.nodeType === 1 && node.classList && node.classList.contains('chat-msg-')) {
                 // Small delay to let CyTube finish processing the message
-                setTimeout(function() { embedGifsInMessage(node); }, 50);
+                setTimeout(function() { 
+                    embedGifsInMessage(node); 
+                    processStyledUsername(node);
+                }, 50);
             }
             // Also check if it's a div directly added to messagebuffer
             if (node.nodeType === 1 && node.tagName === 'DIV' && node.parentElement && node.parentElement.id === 'messagebuffer') {
-                setTimeout(function() { embedGifsInMessage(node); }, 50);
+                setTimeout(function() { 
+                    embedGifsInMessage(node); 
+                    processStyledUsername(node);
+                }, 50);
             }
         });
     });
