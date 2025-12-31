@@ -1389,6 +1389,75 @@ function replyToMsg(target) {
     });
 }
 
+// GIF EMBEDDING - Convert GIF links to inline images
+function embedGifsInMessage(msgElement) {
+    if (!msgElement) return;
+    
+    // Find all links in the message
+    var links = msgElement.querySelectorAll('a');
+    links.forEach(function(link) {
+        var href = link.getAttribute('href');
+        if (!href) return;
+        
+        // Check if it's a GIF URL (Tenor, Giphy, or any .gif)
+        var isGif = href.match(/\.(gif)$/i) ||
+                    href.match(/media\.tenor\.com/i) ||
+                    href.match(/giphy\.com/i) ||
+                    href.match(/media\d*\.giphy\.com/i);
+        
+        if (isGif) {
+            // Create image element
+            var img = document.createElement('img');
+            img.src = href;
+            img.alt = 'GIF';
+            img.style.cssText = 'max-width:300px;max-height:200px;border-radius:8px;vertical-align:middle;cursor:pointer;';
+            img.title = 'Click to open full size';
+            img.onclick = function() { window.open(href, '_blank'); };
+            
+            // Handle load errors - revert to link if image fails
+            img.onerror = function() {
+                img.replaceWith(link);
+            };
+            
+            // Replace link with image
+            link.replaceWith(img);
+        }
+    });
+}
+
+// Run on all existing messages when script loads
+function embedAllExistingGifs() {
+    var messages = document.querySelectorAll('#messagebuffer > div');
+    messages.forEach(function(msg) {
+        embedGifsInMessage(msg);
+    });
+}
+
+// Run after page loads
+setTimeout(embedAllExistingGifs, 1000);
+
+// Watch for new messages using MutationObserver
+var gifObserver = new MutationObserver(function(mutations) {
+    mutations.forEach(function(mutation) {
+        mutation.addedNodes.forEach(function(node) {
+            if (node.nodeType === 1 && node.classList && node.classList.contains('chat-msg-')) {
+                // Small delay to let CyTube finish processing the message
+                setTimeout(function() { embedGifsInMessage(node); }, 50);
+            }
+            // Also check if it's a div directly added to messagebuffer
+            if (node.nodeType === 1 && node.tagName === 'DIV' && node.parentElement && node.parentElement.id === 'messagebuffer') {
+                setTimeout(function() { embedGifsInMessage(node); }, 50);
+            }
+        });
+    });
+});
+
+// Start observing the message buffer
+var msgBuffer = document.getElementById('messagebuffer');
+if (msgBuffer) {
+    gifObserver.observe(msgBuffer, { childList: true, subtree: true });
+}
+
 socket.on('chatMsg', function(data) {
     formatChatMsg(data, $("#messagebuffer > div").last());
 });
