@@ -2888,27 +2888,84 @@ function setCustomName(mediaKey, customName) {
     }
 }
 
+// Extract media key from a playlist entry element
+function getMediaKeyFromEntry(entryElement) {
+    if (!entryElement) return null;
+    
+    // Find the media link in the entry
+    var mediaLink = entryElement.querySelector('a.qe_title');
+    if (!mediaLink) {
+        mediaLink = entryElement.querySelector('a');
+    }
+    
+    var mediaUrl = mediaLink ? mediaLink.getAttribute('href') : null;
+    var titleEl = entryElement.querySelector('.qe_title');
+    var title = titleEl ? titleEl.textContent : '';
+    
+    // Parse video ID from URL
+    var videoId = null;
+    var mediaType = 'yt';
+    
+    if (mediaUrl) {
+        // YouTube patterns
+        var ytMatch = mediaUrl.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([^&\s\?]+)/);
+        if (ytMatch) {
+            videoId = ytMatch[1];
+            mediaType = 'yt';
+        }
+        
+        // Vimeo pattern
+        var vimeoMatch = mediaUrl.match(/vimeo\.com\/(\d+)/);
+        if (vimeoMatch) {
+            videoId = vimeoMatch[1];
+            mediaType = 'vi';
+        }
+        
+        // Dailymotion pattern
+        var dmMatch = mediaUrl.match(/dailymotion\.com\/video\/([^_\s]+)/);
+        if (dmMatch) {
+            videoId = dmMatch[1];
+            mediaType = 'dm';
+        }
+        
+        // Twitch patterns
+        var twitchMatch = mediaUrl.match(/twitch\.tv\/videos\/(\d+)/);
+        if (twitchMatch) {
+            videoId = twitchMatch[1];
+            mediaType = 'tv';
+        }
+        
+        // SoundCloud
+        if (mediaUrl.includes('soundcloud.com')) {
+            videoId = mediaUrl;
+            mediaType = 'sc';
+        }
+        
+        // Direct file URLs
+        if (mediaUrl.match(/\.(mp4|webm|mp3|ogg)(\?|$)/i)) {
+            videoId = mediaUrl;
+            mediaType = 'fi';
+        }
+    }
+    
+    if (!videoId && title) {
+        // Use title hash as fallback
+        videoId = title.replace(/[^a-zA-Z0-9]/g, '_').substring(0, 50);
+        mediaType = 'custom';
+    }
+    
+    if (videoId) {
+        return mediaType + '_' + videoId;
+    }
+    
+    return null;
+}
+
 // Apply custom name to a single playlist entry element
 function applyCustomNameToEntry(entryElement) {
     if (!entryElement) return;
     
-    var uid = entryElement.getAttribute('data-uid');
-    if (!uid) return;
-    
-    // Find the playlist item data
-    var playlistItem = null;
-    if (typeof CHANNEL !== 'undefined' && CHANNEL.playlist) {
-        for (var i = 0; i < CHANNEL.playlist.length; i++) {
-            if (CHANNEL.playlist[i].uid == uid) {
-                playlistItem = CHANNEL.playlist[i];
-                break;
-            }
-        }
-    }
-    
-    if (!playlistItem) return;
-    
-    var mediaKey = getPlaylistItemKey(playlistItem);
+    var mediaKey = getMediaKeyFromEntry(entryElement);
     if (!mediaKey) return;
     
     var customName = getCustomName(mediaKey);
@@ -3072,90 +3129,94 @@ function openRenamePopup(entryElement) {
     console.log('Popup created');
     
     var uid = entryElement.getAttribute('data-uid');
-    console.log('Looking for playlist item with uid:', uid, 'type:', typeof uid);
-    var playlistItem = null;
+    console.log('Looking for playlist item with uid:', uid);
     
-    // Try CHANNEL.playlist first
-    if (typeof CHANNEL !== 'undefined' && CHANNEL.playlist) {
-        console.log('CHANNEL.playlist has', CHANNEL.playlist.length, 'items');
-        console.log('First few items:', CHANNEL.playlist.slice(0, 3).map(function(p) { return {uid: p.uid, type: typeof p.uid}; }));
-        for (var i = 0; i < CHANNEL.playlist.length; i++) {
-            // Try both string and number comparison
-            if (CHANNEL.playlist[i].uid == uid || String(CHANNEL.playlist[i].uid) === String(uid)) {
-                playlistItem = CHANNEL.playlist[i];
-                console.log('Found via CHANNEL.playlist at index', i);
-                break;
-            }
-        }
-    } else {
-        console.log('CHANNEL:', typeof CHANNEL, 'CHANNEL.playlist:', typeof CHANNEL !== 'undefined' ? CHANNEL.playlist : 'N/A');
+    // Extract media info directly from the DOM element since CHANNEL.playlist doesn't exist
+    var titleEl = entryElement.querySelector('.qe_title');
+    var title = titleEl ? titleEl.textContent : '';
+    
+    // Find the media link in the entry
+    var mediaLink = entryElement.querySelector('a.qe_title');
+    if (!mediaLink) {
+        mediaLink = entryElement.querySelector('a');
     }
     
-    // Fallback: try window.playlist or other global
-    if (!playlistItem && typeof playlist !== 'undefined' && playlist) {
-        console.log('Trying global playlist variable...');
-        for (var i = 0; i < playlist.length; i++) {
-            if (playlist[i].uid == uid || String(playlist[i].uid) === String(uid)) {
-                playlistItem = playlist[i];
-                console.log('Found via global playlist at index', i);
-                break;
-            }
-        }
-    }
+    var mediaUrl = mediaLink ? mediaLink.getAttribute('href') : null;
+    console.log('Extracted from DOM - title:', title, 'mediaUrl:', mediaUrl);
     
-    // Fallback: extract info directly from the DOM element
-    if (!playlistItem) {
-        console.log('Trying to extract from DOM...');
-        var titleEl = entryElement.querySelector('.qe_title');
-        var title = titleEl ? titleEl.textContent : '';
+    // Parse video ID from URL
+    var videoId = null;
+    var mediaType = 'yt'; // default to YouTube
+    
+    if (mediaUrl) {
+        // YouTube patterns
+        var ytMatch = mediaUrl.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([^&\s\?]+)/);
+        if (ytMatch) {
+            videoId = ytMatch[1];
+            mediaType = 'yt';
+        }
         
-        // Try to find media info from the element's links or data attributes
-        var links = entryElement.querySelectorAll('a');
-        var mediaUrl = null;
-        links.forEach(function(link) {
-            var href = link.getAttribute('href');
-            if (href && (href.includes('youtube') || href.includes('youtu.be') || href.includes('vimeo'))) {
-                mediaUrl = href;
-            }
-        });
+        // Vimeo pattern
+        var vimeoMatch = mediaUrl.match(/vimeo\.com\/(\d+)/);
+        if (vimeoMatch) {
+            videoId = vimeoMatch[1];
+            mediaType = 'vi';
+        }
         
-        console.log('DOM extraction - title:', title, 'mediaUrl:', mediaUrl);
+        // Dailymotion pattern
+        var dmMatch = mediaUrl.match(/dailymotion\.com\/video\/([^_\s]+)/);
+        if (dmMatch) {
+            videoId = dmMatch[1];
+            mediaType = 'dm';
+        }
         
-        // Create a synthetic playlist item from DOM data
-        if (title) {
-            // Try to extract video ID from URL
-            var videoId = null;
-            var mediaType = 'yt';
-            if (mediaUrl) {
-                var ytMatch = mediaUrl.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([^&\s]+)/);
-                if (ytMatch) videoId = ytMatch[1];
-            }
-            
-            if (videoId) {
-                playlistItem = {
-                    media: { type: mediaType, id: videoId, title: title },
-                    uid: uid
-                };
-                console.log('Created synthetic playlist item:', playlistItem);
-            }
+        // Twitch patterns
+        var twitchMatch = mediaUrl.match(/twitch\.tv\/videos\/(\d+)/);
+        if (twitchMatch) {
+            videoId = twitchMatch[1];
+            mediaType = 'tv';
+        }
+        
+        // SoundCloud - use URL as ID
+        if (mediaUrl.includes('soundcloud.com')) {
+            videoId = mediaUrl;
+            mediaType = 'sc';
+        }
+        
+        // Direct file URLs
+        if (mediaUrl.match(/\.(mp4|webm|mp3|ogg)(\?|$)/i)) {
+            videoId = mediaUrl;
+            mediaType = 'fi';
         }
     }
     
-    if (!playlistItem) {
-        console.error('Could not find playlist item with uid:', uid);
-        console.log('Available CHANNEL properties:', typeof CHANNEL !== 'undefined' ? Object.keys(CHANNEL) : 'CHANNEL undefined');
-        alert('Could not find playlist item. UID: ' + uid + '\nCheck console for details.');
-        return;
+    console.log('Parsed - mediaType:', mediaType, 'videoId:', videoId);
+    
+    if (!videoId) {
+        // Last resort: use the UID itself as identifier
+        console.log('Could not extract video ID, using title hash as key');
+        videoId = title.replace(/[^a-zA-Z0-9]/g, '_').substring(0, 50);
+        mediaType = 'custom';
     }
     
-    console.log('Found playlist item:', playlistItem);
+    // Create playlist item object
+    var playlistItem = {
+        media: { type: mediaType, id: videoId, title: title },
+        uid: uid
+    };
+    
+    console.log('Created playlist item:', playlistItem);
     
     currentRenameItem = playlistItem;
     currentRenameKey = getPlaylistItemKey(playlistItem);
     console.log('Media key:', currentRenameKey);
     
-    var titleElement = entryElement.querySelector('.qe_title');
-    var originalTitle = titleElement ? (titleElement.getAttribute('data-original-title') || titleElement.textContent) : 'Unknown';
+    // Store original title
+    if (titleEl && !titleEl.getAttribute('data-original-title')) {
+        titleEl.setAttribute('data-original-title', title);
+    }
+    
+    var originalTitle = titleEl ? (titleEl.getAttribute('data-original-title') || title) : 'Unknown';
     var currentCustom = getCustomName(currentRenameKey) || '';
     
     document.getElementById('rename-original-title').textContent = originalTitle;
