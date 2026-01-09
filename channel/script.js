@@ -2602,7 +2602,6 @@ socket.on('chatMsg', function(data) {
     }
 })();
 
-
 /* ========== PLAYLIST RENAME SYSTEM ========== */
 /* Add this code to your script.js file */
 
@@ -2973,19 +2972,33 @@ function addRenameButton(entryElement) {
     if (entryElement.querySelector('.rename-btn')) return; // Already has button
     
     // Only add button if user is moderator or higher
-    if (!canRenamePlaylist()) return;
+    if (!canRenamePlaylist()) {
+        console.log('Rename button not added - user rank:', typeof CLIENT !== 'undefined' ? CLIENT.rank : 'CLIENT undefined');
+        return;
+    }
     
     var btn = document.createElement('button');
     btn.className = 'rename-btn';
     btn.innerHTML = '✏️';
     btn.title = 'Rename this item (Mod only)';
-    btn.onclick = function(e) {
+    
+    // Store reference to entry element
+    btn.setAttribute('data-entry-uid', entryElement.getAttribute('data-uid'));
+    
+    btn.addEventListener('click', function(e) {
         e.stopPropagation();
         e.preventDefault();
-        openRenamePopup(entryElement);
-    };
+        console.log('Rename button clicked for uid:', entryElement.getAttribute('data-uid'));
+        try {
+            openRenamePopup(entryElement);
+        } catch (err) {
+            console.error('Error opening rename popup:', err);
+            alert('Error opening rename popup: ' + err.message);
+        }
+    });
     
     entryElement.appendChild(btn);
+    console.log('Rename button added to entry:', entryElement.getAttribute('data-uid'));
 }
 
 // Add rename buttons to all playlist entries
@@ -3045,33 +3058,101 @@ function createRenamePopup() {
 
 // Open rename popup for a playlist entry
 function openRenamePopup(entryElement) {
+    console.log('openRenamePopup called with:', entryElement);
+    
     // Double-check permission
     if (!canRenamePlaylist()) {
         console.log('Permission denied: Only moderators can rename playlist items');
+        alert('Permission denied: Only moderators can rename playlist items. Your rank: ' + (typeof CLIENT !== 'undefined' ? CLIENT.rank : 'unknown'));
         return;
     }
     
+    console.log('Creating popup...');
     createRenamePopup();
+    console.log('Popup created');
     
     var uid = entryElement.getAttribute('data-uid');
+    console.log('Looking for playlist item with uid:', uid, 'type:', typeof uid);
     var playlistItem = null;
     
+    // Try CHANNEL.playlist first
     if (typeof CHANNEL !== 'undefined' && CHANNEL.playlist) {
+        console.log('CHANNEL.playlist has', CHANNEL.playlist.length, 'items');
+        console.log('First few items:', CHANNEL.playlist.slice(0, 3).map(function(p) { return {uid: p.uid, type: typeof p.uid}; }));
         for (var i = 0; i < CHANNEL.playlist.length; i++) {
-            if (CHANNEL.playlist[i].uid == uid) {
+            // Try both string and number comparison
+            if (CHANNEL.playlist[i].uid == uid || String(CHANNEL.playlist[i].uid) === String(uid)) {
                 playlistItem = CHANNEL.playlist[i];
+                console.log('Found via CHANNEL.playlist at index', i);
+                break;
+            }
+        }
+    } else {
+        console.log('CHANNEL:', typeof CHANNEL, 'CHANNEL.playlist:', typeof CHANNEL !== 'undefined' ? CHANNEL.playlist : 'N/A');
+    }
+    
+    // Fallback: try window.playlist or other global
+    if (!playlistItem && typeof playlist !== 'undefined' && playlist) {
+        console.log('Trying global playlist variable...');
+        for (var i = 0; i < playlist.length; i++) {
+            if (playlist[i].uid == uid || String(playlist[i].uid) === String(uid)) {
+                playlistItem = playlist[i];
+                console.log('Found via global playlist at index', i);
                 break;
             }
         }
     }
     
+    // Fallback: extract info directly from the DOM element
     if (!playlistItem) {
-        console.error('Could not find playlist item');
+        console.log('Trying to extract from DOM...');
+        var titleEl = entryElement.querySelector('.qe_title');
+        var title = titleEl ? titleEl.textContent : '';
+        
+        // Try to find media info from the element's links or data attributes
+        var links = entryElement.querySelectorAll('a');
+        var mediaUrl = null;
+        links.forEach(function(link) {
+            var href = link.getAttribute('href');
+            if (href && (href.includes('youtube') || href.includes('youtu.be') || href.includes('vimeo'))) {
+                mediaUrl = href;
+            }
+        });
+        
+        console.log('DOM extraction - title:', title, 'mediaUrl:', mediaUrl);
+        
+        // Create a synthetic playlist item from DOM data
+        if (title) {
+            // Try to extract video ID from URL
+            var videoId = null;
+            var mediaType = 'yt';
+            if (mediaUrl) {
+                var ytMatch = mediaUrl.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([^&\s]+)/);
+                if (ytMatch) videoId = ytMatch[1];
+            }
+            
+            if (videoId) {
+                playlistItem = {
+                    media: { type: mediaType, id: videoId, title: title },
+                    uid: uid
+                };
+                console.log('Created synthetic playlist item:', playlistItem);
+            }
+        }
+    }
+    
+    if (!playlistItem) {
+        console.error('Could not find playlist item with uid:', uid);
+        console.log('Available CHANNEL properties:', typeof CHANNEL !== 'undefined' ? Object.keys(CHANNEL) : 'CHANNEL undefined');
+        alert('Could not find playlist item. UID: ' + uid + '\nCheck console for details.');
         return;
     }
     
+    console.log('Found playlist item:', playlistItem);
+    
     currentRenameItem = playlistItem;
     currentRenameKey = getPlaylistItemKey(playlistItem);
+    console.log('Media key:', currentRenameKey);
     
     var titleElement = entryElement.querySelector('.qe_title');
     var originalTitle = titleElement ? (titleElement.getAttribute('data-original-title') || titleElement.textContent) : 'Unknown';
@@ -3082,9 +3163,11 @@ function openRenamePopup(entryElement) {
     document.getElementById('rename-status').className = '';
     document.getElementById('rename-status').style.display = 'none';
     
+    console.log('Showing overlay...');
     document.getElementById('rename-popup-overlay').classList.add('visible');
     document.getElementById('rename-input').focus();
     document.getElementById('rename-input').select();
+    console.log('Popup should be visible now');
 }
 
 // Close rename popup
