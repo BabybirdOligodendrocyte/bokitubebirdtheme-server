@@ -3340,3 +3340,219 @@ window.openRenamePopup = openRenamePopup;
 window.closeRenamePopup = closeRenamePopup;
 window.saveRename = saveRename;
 window.resetRename = resetRename;
+
+/* ========== FIX 1: HIDE ALL JOIN/LEAVE MESSAGES ========== */
+(function() {
+    // Intercept socket events for user join/leave
+    if (typeof socket !== 'undefined') {
+        // Override the addUser handler to prevent join messages
+        socket.on('addUser', function(data) {
+            // Do nothing - suppress join message
+            // The user will still appear in userlist, just no chat message
+        });
+        
+        // Override userLeave to prevent leave messages  
+        socket.on('userLeave', function(data) {
+            // Do nothing - suppress leave message
+        });
+    }
+    
+    // Also hide any join/leave messages that slip through or are already in chat
+    // by adding CSS to hide them
+    var hideJoinLeaveCSS = document.createElement('style');
+    hideJoinLeaveCSS.id = 'hide-join-leave-styles';
+    hideJoinLeaveCSS.textContent = `
+        /* Hide join/leave messages */
+        .chat-msg-\\\\\\$server .server-msg-reconnect,
+        .server-msg-reconnect,
+        #messagebuffer div[class*="server"] {
+            /* Keep server messages but hide join/leave specifically */
+        }
+        
+        /* Target join/leave message patterns */
+        #messagebuffer .server-whisper:has(> span:contains("joined")),
+        #messagebuffer .server-whisper:has(> span:contains("disconnected")) {
+            display: none !important;
+        }
+    `;
+    document.head.appendChild(hideJoinLeaveCSS);
+    
+    // MutationObserver to hide join/leave messages as they appear
+    function hideJoinLeaveMessages() {
+        var messages = document.querySelectorAll('#messagebuffer > div');
+        messages.forEach(function(msg) {
+            var text = msg.textContent || '';
+            // Check for common join/leave patterns
+            if (text.match(/connected$|disconnected$|joined$|left$/i) ||
+                text.match(/has (joined|left|connected|disconnected)/i)) {
+                // Check it's a system message, not a user saying these words
+                if (msg.classList.contains('server-whisper') || 
+                    msg.querySelector('.server-whisper') ||
+                    !msg.querySelector('.username')) {
+                    msg.style.display = 'none';
+                }
+            }
+        });
+    }
+    
+    // Run on existing messages
+    setTimeout(hideJoinLeaveMessages, 1000);
+    
+    // Watch for new messages
+    var joinLeaveObserver = new MutationObserver(function(mutations) {
+        mutations.forEach(function(mutation) {
+            mutation.addedNodes.forEach(function(node) {
+                if (node.nodeType === 1) {
+                    var text = node.textContent || '';
+                    if (text.match(/connected$|disconnected$|joined$|left$/i) ||
+                        text.match(/has (joined|left|connected|disconnected)/i)) {
+                        if (node.classList.contains('server-whisper') || 
+                            node.querySelector('.server-whisper') ||
+                            !node.querySelector('.username')) {
+                            node.style.display = 'none';
+                        }
+                    }
+                }
+            });
+        });
+    });
+    
+    var msgBuffer = document.getElementById('messagebuffer');
+    if (msgBuffer) {
+        joinLeaveObserver.observe(msgBuffer, { childList: true });
+    }
+})();
+
+/* ========== FIX 2: VIDEO PLAYER Z-INDEX ========== */
+(function() {
+    var videoZIndexCSS = document.createElement('style');
+    videoZIndexCSS.id = 'video-zindex-fix';
+    videoZIndexCSS.textContent = `
+        /* Ensure video player stays behind chat and controls */
+        #video-container,
+        #videowrap,
+        #ytapiplayer,
+        #videowrap iframe,
+        #videowrap video,
+        #videowrap object,
+        #videowrap embed {
+            position: relative !important;
+            z-index: 1 !important;
+        }
+        
+        /* Ensure chat and controls are above video */
+        #rightcontent {
+            position: relative !important;
+            z-index: 10 !important;
+        }
+        
+        #leftcontrols {
+            position: relative !important;
+            z-index: 20 !important;
+        }
+        
+        /* Fix any absolute positioned video elements */
+        .fluid-width-video-wrapper {
+            z-index: 1 !important;
+        }
+        
+        /* Ensure popups are above everything */
+        #emote-popup-overlay,
+        #textstyle-popup-overlay,
+        #filter-popup-overlay,
+        #rename-popup-overlay {
+            z-index: 999999 !important;
+        }
+    `;
+    document.head.appendChild(videoZIndexCSS);
+})();
+
+/* ========== FIX 3: DYNAMIC BUTTON LAYOUT ========== */
+(function() {
+    var buttonLayoutCSS = document.createElement('style');
+    buttonLayoutCSS.id = 'button-layout-fix';
+    buttonLayoutCSS.textContent = `
+        /* Make leftcontrols fully flexible and responsive */
+        #leftcontrols {
+            display: flex !important;
+            flex-wrap: wrap !important;
+            gap: 4px !important;
+            padding: 6px !important;
+            align-items: center !important;
+            justify-content: flex-start !important;
+            width: 100% !important;
+            box-sizing: border-box !important;
+            min-height: auto !important;
+            max-height: none !important;
+            overflow: visible !important;
+        }
+        
+        /* Buttons should shrink but not disappear */
+        #leftcontrols .btn,
+        #leftcontrols button {
+            flex: 0 1 auto !important;
+            min-width: 32px !important;
+            max-width: 100% !important;
+            margin: 2px !important;
+            padding: 4px 8px !important;
+            font-size: 12px !important;
+            white-space: nowrap !important;
+            overflow: hidden !important;
+            text-overflow: ellipsis !important;
+        }
+        
+        /* Icon-only buttons stay square */
+        #leftcontrols .btn svg,
+        #leftcontrols button svg {
+            width: 16px !important;
+            height: 16px !important;
+            flex-shrink: 0 !important;
+        }
+        
+        /* On smaller screens, buttons can be smaller */
+        @media (max-width: 500px) {
+            #leftcontrols .btn,
+            #leftcontrols button {
+                padding: 3px 6px !important;
+                font-size: 11px !important;
+                min-width: 28px !important;
+            }
+            
+            #leftcontrols .btn svg,
+            #leftcontrols button svg {
+                width: 14px !important;
+                height: 14px !important;
+            }
+        }
+        
+        /* Ensure niconico and other special controls fit */
+        #leftcontrols > *,
+        #leftcontrols select,
+        #leftcontrols input {
+            flex: 0 1 auto !important;
+            min-width: 0 !important;
+            max-width: 100% !important;
+        }
+        
+        /* If there are nested containers, make them flex too */
+        #leftcontrols > div,
+        #leftcontrols > span {
+            display: inline-flex !important;
+            flex-wrap: wrap !important;
+            gap: 4px !important;
+            align-items: center !important;
+        }
+        
+        /* Ensure the parent container doesn't clip */
+        #rightcontent {
+            overflow: visible !important;
+        }
+        
+        /* Form line should not overlap buttons */
+        #formline {
+            position: relative !important;
+            z-index: 5 !important;
+        }
+    `;
+    document.head.appendChild(buttonLayoutCSS);
+})();
