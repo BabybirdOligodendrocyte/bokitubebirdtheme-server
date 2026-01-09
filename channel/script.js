@@ -2892,70 +2892,22 @@ function setCustomName(mediaKey, customName) {
 function getMediaKeyFromEntry(entryElement) {
     if (!entryElement) return null;
     
-    // Find the media link in the entry
+    // Use UID as the primary key - it's unique per playlist item
+    var uid = getEntryUid(entryElement);
+    if (uid) {
+        return 'uid_' + uid;
+    }
+    
+    // Fallback: try to get video URL
     var mediaLink = entryElement.querySelector('a.qe_title');
     if (!mediaLink) {
-        mediaLink = entryElement.querySelector('a');
+        mediaLink = entryElement.querySelector('a[href]');
     }
     
     var mediaUrl = mediaLink ? mediaLink.getAttribute('href') : null;
-    var titleEl = entryElement.querySelector('.qe_title');
-    var title = titleEl ? titleEl.textContent : '';
-    
-    // Parse video ID from URL
-    var videoId = null;
-    var mediaType = 'yt';
     
     if (mediaUrl) {
-        // YouTube patterns
-        var ytMatch = mediaUrl.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([^&\s\?]+)/);
-        if (ytMatch) {
-            videoId = ytMatch[1];
-            mediaType = 'yt';
-        }
-        
-        // Vimeo pattern
-        var vimeoMatch = mediaUrl.match(/vimeo\.com\/(\d+)/);
-        if (vimeoMatch) {
-            videoId = vimeoMatch[1];
-            mediaType = 'vi';
-        }
-        
-        // Dailymotion pattern
-        var dmMatch = mediaUrl.match(/dailymotion\.com\/video\/([^_\s]+)/);
-        if (dmMatch) {
-            videoId = dmMatch[1];
-            mediaType = 'dm';
-        }
-        
-        // Twitch patterns
-        var twitchMatch = mediaUrl.match(/twitch\.tv\/videos\/(\d+)/);
-        if (twitchMatch) {
-            videoId = twitchMatch[1];
-            mediaType = 'tv';
-        }
-        
-        // SoundCloud
-        if (mediaUrl.includes('soundcloud.com')) {
-            videoId = mediaUrl;
-            mediaType = 'sc';
-        }
-        
-        // Direct file URLs
-        if (mediaUrl.match(/\.(mp4|webm|mp3|ogg)(\?|$)/i)) {
-            videoId = mediaUrl;
-            mediaType = 'fi';
-        }
-    }
-    
-    if (!videoId && title) {
-        // Use title hash as fallback
-        videoId = title.replace(/[^a-zA-Z0-9]/g, '_').substring(0, 50);
-        mediaType = 'custom';
-    }
-    
-    if (videoId) {
-        return mediaType + '_' + videoId;
+        return 'url_' + mediaUrl.replace(/[^a-zA-Z0-9]/g, '_').substring(0, 100);
     }
     
     return null;
@@ -3030,7 +2982,6 @@ function addRenameButton(entryElement) {
     
     // Only add button if user is moderator or higher
     if (!canRenamePlaylist()) {
-        console.log('Rename button not added - user rank:', typeof CLIENT !== 'undefined' ? CLIENT.rank : 'CLIENT undefined');
         return;
     }
     
@@ -3039,23 +2990,32 @@ function addRenameButton(entryElement) {
     btn.innerHTML = '✏️';
     btn.title = 'Rename this item (Mod only)';
     
-    // Store reference to entry element
-    btn.setAttribute('data-entry-uid', entryElement.getAttribute('data-uid'));
-    
     btn.addEventListener('click', function(e) {
         e.stopPropagation();
         e.preventDefault();
-        console.log('Rename button clicked for uid:', entryElement.getAttribute('data-uid'));
+        console.log('Rename button clicked');
         try {
             openRenamePopup(entryElement);
         } catch (err) {
             console.error('Error opening rename popup:', err);
-            alert('Error opening rename popup: ' + err.message);
         }
     });
     
     entryElement.appendChild(btn);
-    console.log('Rename button added to entry:', entryElement.getAttribute('data-uid'));
+}
+
+// Extract UID from entry element (can be in data-uid or class name)
+function getEntryUid(entryElement) {
+    // Try data-uid first
+    var uid = entryElement.getAttribute('data-uid');
+    if (uid) return uid;
+    
+    // Try to extract from class name (e.g., "queue_entry pluid-265")
+    var classList = entryElement.className || '';
+    var match = classList.match(/pluid-(\d+)/);
+    if (match) return match[1];
+    
+    return null;
 }
 
 // Add rename buttons to all playlist entries
@@ -3115,101 +3075,55 @@ function createRenamePopup() {
 
 // Open rename popup for a playlist entry
 function openRenamePopup(entryElement) {
-    console.log('openRenamePopup called with:', entryElement);
+    console.log('openRenamePopup called');
     
     // Double-check permission
     if (!canRenamePlaylist()) {
-        console.log('Permission denied: Only moderators can rename playlist items');
-        alert('Permission denied: Only moderators can rename playlist items. Your rank: ' + (typeof CLIENT !== 'undefined' ? CLIENT.rank : 'unknown'));
+        console.log('Permission denied');
         return;
     }
     
-    console.log('Creating popup...');
     createRenamePopup();
-    console.log('Popup created');
     
-    var uid = entryElement.getAttribute('data-uid');
-    console.log('Looking for playlist item with uid:', uid);
-    
-    // Extract media info directly from the DOM element since CHANNEL.playlist doesn't exist
+    // Get the title element
     var titleEl = entryElement.querySelector('.qe_title');
-    var title = titleEl ? titleEl.textContent : '';
+    var title = titleEl ? titleEl.textContent.trim() : '';
+    console.log('Title:', title);
     
-    // Find the media link in the entry
-    var mediaLink = entryElement.querySelector('a.qe_title');
-    if (!mediaLink) {
-        mediaLink = entryElement.querySelector('a');
-    }
+    // Get UID from class or data attribute - this is our PRIMARY key
+    var uid = getEntryUid(entryElement);
+    console.log('UID:', uid);
     
-    var mediaUrl = mediaLink ? mediaLink.getAttribute('href') : null;
-    console.log('Extracted from DOM - title:', title, 'mediaUrl:', mediaUrl);
-    
-    // Parse video ID from URL
-    var videoId = null;
-    var mediaType = 'yt'; // default to YouTube
-    
-    if (mediaUrl) {
-        // YouTube patterns
-        var ytMatch = mediaUrl.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([^&\s\?]+)/);
-        if (ytMatch) {
-            videoId = ytMatch[1];
-            mediaType = 'yt';
+    // The UID is unique per playlist item, so use it as the key
+    // This ensures each item can have its own custom name even if titles are identical
+    if (uid) {
+        currentRenameKey = 'uid_' + uid;
+    } else {
+        // Fallback: try to get video URL for a more persistent key
+        var mediaUrl = null;
+        var titleLink = entryElement.querySelector('a.qe_title');
+        if (titleLink) mediaUrl = titleLink.getAttribute('href');
+        if (!mediaUrl) {
+            var anyLink = entryElement.querySelector('a[href]');
+            if (anyLink) mediaUrl = anyLink.getAttribute('href');
         }
         
-        // Vimeo pattern
-        var vimeoMatch = mediaUrl.match(/vimeo\.com\/(\d+)/);
-        if (vimeoMatch) {
-            videoId = vimeoMatch[1];
-            mediaType = 'vi';
-        }
-        
-        // Dailymotion pattern
-        var dmMatch = mediaUrl.match(/dailymotion\.com\/video\/([^_\s]+)/);
-        if (dmMatch) {
-            videoId = dmMatch[1];
-            mediaType = 'dm';
-        }
-        
-        // Twitch patterns
-        var twitchMatch = mediaUrl.match(/twitch\.tv\/videos\/(\d+)/);
-        if (twitchMatch) {
-            videoId = twitchMatch[1];
-            mediaType = 'tv';
-        }
-        
-        // SoundCloud - use URL as ID
-        if (mediaUrl.includes('soundcloud.com')) {
-            videoId = mediaUrl;
-            mediaType = 'sc';
-        }
-        
-        // Direct file URLs
-        if (mediaUrl.match(/\.(mp4|webm|mp3|ogg)(\?|$)/i)) {
-            videoId = mediaUrl;
-            mediaType = 'fi';
+        if (mediaUrl) {
+            // Use URL as key
+            currentRenameKey = 'url_' + mediaUrl.replace(/[^a-zA-Z0-9]/g, '_').substring(0, 100);
+        } else {
+            // Last resort: use timestamp (won't persist across reloads)
+            currentRenameKey = 'temp_' + Date.now();
         }
     }
     
-    console.log('Parsed - mediaType:', mediaType, 'videoId:', videoId);
+    console.log('Media key:', currentRenameKey);
     
-    if (!videoId) {
-        // Last resort: use the UID itself as identifier
-        console.log('Could not extract video ID, using title hash as key');
-        videoId = title.replace(/[^a-zA-Z0-9]/g, '_').substring(0, 50);
-        mediaType = 'custom';
-    }
-    
-    // Create playlist item object
-    var playlistItem = {
-        media: { type: mediaType, id: videoId, title: title },
+    // Create playlist item object for reference
+    currentRenameItem = {
+        title: title,
         uid: uid
     };
-    
-    console.log('Created playlist item:', playlistItem);
-    
-    currentRenameItem = playlistItem;
-    currentRenameKey = getPlaylistItemKey(playlistItem);
-    console.log('Media key:', currentRenameKey);
     
     // Store original title
     if (titleEl && !titleEl.getAttribute('data-original-title')) {
@@ -3224,11 +3138,10 @@ function openRenamePopup(entryElement) {
     document.getElementById('rename-status').className = '';
     document.getElementById('rename-status').style.display = 'none';
     
-    console.log('Showing overlay...');
     document.getElementById('rename-popup-overlay').classList.add('visible');
     document.getElementById('rename-input').focus();
     document.getElementById('rename-input').select();
-    console.log('Popup should be visible now');
+    console.log('Popup opened');
 }
 
 // Close rename popup
