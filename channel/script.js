@@ -2892,13 +2892,7 @@ function setCustomName(mediaKey, customName) {
 function getMediaKeyFromEntry(entryElement) {
     if (!entryElement) return null;
     
-    // Use UID as the primary key - it's unique per playlist item
-    var uid = getEntryUid(entryElement);
-    if (uid) {
-        return 'uid_' + uid;
-    }
-    
-    // Fallback: try to get video URL
+    // PRIMARY: Use video URL - it's unique and persistent
     var mediaLink = entryElement.querySelector('a.qe_title');
     if (!mediaLink) {
         mediaLink = entryElement.querySelector('a[href]');
@@ -2907,7 +2901,22 @@ function getMediaKeyFromEntry(entryElement) {
     var mediaUrl = mediaLink ? mediaLink.getAttribute('href') : null;
     
     if (mediaUrl) {
-        return 'url_' + mediaUrl.replace(/[^a-zA-Z0-9]/g, '_').substring(0, 100);
+        // Extract just the filename/ID part to keep keys shorter
+        // e.g., "https://pomf2.lain.la/f/h7gfu0h.mp4" -> "h7gfu0h.mp4"
+        var urlParts = mediaUrl.split('/');
+        var filename = urlParts[urlParts.length - 1] || mediaUrl;
+        // Also handle YouTube, etc.
+        var ytMatch = mediaUrl.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([^&\s]+)/);
+        if (ytMatch) {
+            return 'yt_' + ytMatch[1];
+        }
+        return 'url_' + filename.replace(/[^a-zA-Z0-9._-]/g, '_').substring(0, 100);
+    }
+    
+    // FALLBACK: Use UID if no URL (less reliable but better than nothing)
+    var uid = getEntryUid(entryElement);
+    if (uid) {
+        return 'uid_' + uid;
     }
     
     return null;
@@ -3090,31 +3099,35 @@ function openRenamePopup(entryElement) {
     var title = titleEl ? titleEl.textContent.trim() : '';
     console.log('Title:', title);
     
-    // Get UID from class or data attribute - this is our PRIMARY key
+    // Get UID from class or data attribute
     var uid = getEntryUid(entryElement);
     console.log('UID:', uid);
     
-    // The UID is unique per playlist item, so use it as the key
-    // This ensures each item can have its own custom name even if titles are identical
-    if (uid) {
+    // PRIMARY: Use video URL as key - it's unique and persistent across server restarts
+    var mediaLink = entryElement.querySelector('a.qe_title');
+    if (!mediaLink) {
+        mediaLink = entryElement.querySelector('a[href]');
+    }
+    var mediaUrl = mediaLink ? mediaLink.getAttribute('href') : null;
+    console.log('Media URL:', mediaUrl);
+    
+    if (mediaUrl) {
+        // Extract just the filename/ID part
+        var urlParts = mediaUrl.split('/');
+        var filename = urlParts[urlParts.length - 1] || mediaUrl;
+        // Handle YouTube
+        var ytMatch = mediaUrl.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([^&\s]+)/);
+        if (ytMatch) {
+            currentRenameKey = 'yt_' + ytMatch[1];
+        } else {
+            currentRenameKey = 'url_' + filename.replace(/[^a-zA-Z0-9._-]/g, '_').substring(0, 100);
+        }
+    } else if (uid) {
+        // Fallback to UID if no URL
         currentRenameKey = 'uid_' + uid;
     } else {
-        // Fallback: try to get video URL for a more persistent key
-        var mediaUrl = null;
-        var titleLink = entryElement.querySelector('a.qe_title');
-        if (titleLink) mediaUrl = titleLink.getAttribute('href');
-        if (!mediaUrl) {
-            var anyLink = entryElement.querySelector('a[href]');
-            if (anyLink) mediaUrl = anyLink.getAttribute('href');
-        }
-        
-        if (mediaUrl) {
-            // Use URL as key
-            currentRenameKey = 'url_' + mediaUrl.replace(/[^a-zA-Z0-9]/g, '_').substring(0, 100);
-        } else {
-            // Last resort: use timestamp (won't persist across reloads)
-            currentRenameKey = 'temp_' + Date.now();
-        }
+        // Last resort
+        currentRenameKey = 'temp_' + Date.now();
     }
     
     console.log('Media key:', currentRenameKey);
@@ -3122,7 +3135,8 @@ function openRenamePopup(entryElement) {
     // Create playlist item object for reference
     currentRenameItem = {
         title: title,
-        uid: uid
+        uid: uid,
+        url: mediaUrl
     };
     
     // Store original title
