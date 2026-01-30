@@ -2965,3 +2965,371 @@ socket.on('chatMsg', function(data) {
         initPlaylistEnhancements();
     }
 })();
+// ============================================================================
+// PLAYLIST RENAME SYSTEM (URL-based, slider/pagination compatible)
+// ============================================================================
+// Add this section to your script.js
+
+(function() {
+    'use strict';
+    
+    const STORAGE_KEY = 'playlist_custom_names_v2';
+    
+    // Get custom names from storage
+    function getCustomNames() {
+        try {
+            const stored = localStorage.getItem(STORAGE_KEY);
+            return stored ? JSON.parse(stored) : {};
+        } catch (e) {
+            console.error('Error loading custom names:', e);
+            return {};
+        }
+    }
+    
+    // Save custom names to storage
+    function saveCustomNames(names) {
+        try {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(names));
+            console.log('Saved custom names:', Object.keys(names).length + ' entries');
+        } catch (e) {
+            console.error('Error saving custom names:', e);
+        }
+    }
+    
+    // Extract video URL from entry element
+    function getVideoUrlFromEntry(entry) {
+        // Method 1: Check the qe_title link
+        const titleLink = entry.querySelector('a.qe_title');
+        if (titleLink && titleLink.href) {
+            return titleLink.href;
+        }
+        
+        // Method 2: Check data attributes
+        if (entry.dataset && entry.dataset.media) {
+            try {
+                const media = JSON.parse(entry.dataset.media);
+                if (media.id) return media.id;
+            } catch (e) {}
+        }
+        
+        // Method 3: Extract from any link in the entry
+        const anyLink = entry.querySelector('a[href*="http"]');
+        if (anyLink && anyLink.href) {
+            return anyLink.href;
+        }
+        
+        return null;
+    }
+    
+    // Generate stable key from video URL
+    function getMediaKeyFromUrl(url) {
+        if (!url) return null;
+        
+        // For direct file URLs, use filename
+        const filename = url.split('/').pop().split('?')[0];
+        if (filename.match(/\.(mp4|webm|mkv|avi|mov)$/i)) {
+            return 'url_' + filename;
+        }
+        
+        // For YouTube, use video ID
+        const ytMatch = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([a-zA-Z0-9_-]{11})/);
+        if (ytMatch) {
+            return 'yt_' + ytMatch[1];
+        }
+        
+        // For other services, hash the URL
+        return 'url_' + filename;
+    }
+    
+    // Get media key from entry element
+    function getMediaKeyFromEntry(entry) {
+        const url = getVideoUrlFromEntry(entry);
+        return getMediaKeyFromUrl(url);
+    }
+    
+    // Apply custom name to entry
+    function applyCustomNameToEntry(entry) {
+        const customNames = getCustomNames();
+        const mediaKey = getMediaKeyFromEntry(entry);
+        
+        if (!mediaKey) return false;
+        
+        const customName = customNames[mediaKey];
+        if (!customName) return false;
+        
+        const titleElement = entry.querySelector('.qe_title');
+        if (!titleElement) return false;
+        
+        // Store original title if not already stored
+        if (!titleElement.dataset.originalTitle) {
+            titleElement.dataset.originalTitle = titleElement.textContent.trim();
+        }
+        
+        // Apply custom name
+        titleElement.textContent = customName;
+        titleElement.title = 'Custom: ' + customName + '\nOriginal: ' + titleElement.dataset.originalTitle;
+        entry.dataset.hasCustomName = 'true';
+        
+        return true;
+    }
+    
+    // Apply custom names to all visible entries
+    function applyAllCustomNames() {
+        const entries = document.querySelectorAll('.queue_entry');
+        let appliedCount = 0;
+        
+        entries.forEach(entry => {
+            if (applyCustomNameToEntry(entry)) {
+                appliedCount++;
+            }
+        });
+        
+        if (appliedCount > 0) {
+            console.log('Applied ' + appliedCount + ' custom names');
+        }
+    }
+    
+    // Add rename button to entry
+    function addRenameButtonToEntry(entry) {
+        // Don't add if already exists
+        if (entry.querySelector('.rename-btn')) return;
+        
+        const qeButtons = entry.querySelector('.qe_btn');
+        if (!qeButtons) return;
+        
+        const renameBtn = document.createElement('button');
+        renameBtn.className = 'rename-btn qe_btn';
+        renameBtn.innerHTML = '✏️';
+        renameBtn.title = 'Rename this entry';
+        renameBtn.style.cssText = 'margin-left: 4px; padding: 2px 6px; font-size: 12px;';
+        
+        // Insert after the buttons container
+        qeButtons.parentElement.insertBefore(renameBtn, qeButtons.nextSibling);
+    }
+    
+    // Add rename buttons to all entries
+    function addRenameButtons() {
+        const entries = document.querySelectorAll('.queue_entry');
+        entries.forEach(entry => {
+            addRenameButtonToEntry(entry);
+            applyCustomNameToEntry(entry);
+        });
+    }
+    
+    // Open rename popup
+    function openRenamePopup(entry) {
+        const customNames = getCustomNames();
+        const mediaKey = getMediaKeyFromEntry(entry);
+        const videoUrl = getVideoUrlFromEntry(entry);
+        
+        if (!mediaKey) {
+            alert('Could not identify this video. Make sure it has a valid URL.');
+            return;
+        }
+        
+        const titleElement = entry.querySelector('.qe_title');
+        const originalTitle = titleElement.dataset.originalTitle || titleElement.textContent.trim();
+        const currentCustomName = customNames[mediaKey] || '';
+        
+        // Create popup overlay
+        const overlay = document.createElement('div');
+        overlay.style.cssText = `
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.7);
+            z-index: 99999;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        `;
+        
+        const popup = document.createElement('div');
+        popup.style.cssText = `
+            background: #1e1e24;
+            border: 2px solid #444;
+            border-radius: 8px;
+            padding: 20px;
+            min-width: 400px;
+            max-width: 600px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.5);
+        `;
+        
+        popup.innerHTML = `
+            <h3 style="margin: 0 0 15px 0; color: #fff; font-size: 18px;">Rename Playlist Entry</h3>
+            
+            <div style="margin-bottom: 12px;">
+                <div style="font-size: 12px; color: #999; margin-bottom: 8px;">
+                    <strong style="color: #bbb;">Original Title:</strong><br>
+                    <span style="color: #ddd;">${originalTitle}</span>
+                </div>
+            </div>
+            
+            <div style="margin-bottom: 12px;">
+                <div style="font-size: 11px; color: #666; word-break: break-all;">
+                    <strong style="color: #888;">Key:</strong> ${mediaKey}
+                </div>
+            </div>
+            
+            <div style="margin-bottom: 15px;">
+                <label style="display: block; margin-bottom: 6px; color: #ccc; font-weight: bold;">Custom Name:</label>
+                <input type="text" id="rename-input" value="${currentCustomName}" 
+                       placeholder="Enter custom name (leave empty to remove)"
+                       style="width: 100%; padding: 10px; background: #252530; border: 1px solid #444; 
+                              color: #fff; border-radius: 4px; box-sizing: border-box; font-size: 14px;">
+            </div>
+            
+            <div style="display: flex; gap: 10px; justify-content: flex-end;">
+                <button id="rename-cancel" style="padding: 8px 16px; background: #333; color: #ccc; 
+                        border: 1px solid #444; border-radius: 4px; cursor: pointer;">Cancel</button>
+                <button id="rename-reset" style="padding: 8px 16px; background: #a33; color: #fff; 
+                        border: none; border-radius: 4px; cursor: pointer;">Reset</button>
+                <button id="rename-save" style="padding: 8px 16px; background: #3a3; color: #fff; 
+                        border: none; border-radius: 4px; cursor: pointer; font-weight: bold;">Save</button>
+            </div>
+        `;
+        
+        overlay.appendChild(popup);
+        document.body.appendChild(overlay);
+        
+        const input = popup.querySelector('#rename-input');
+        const saveBtn = popup.querySelector('#rename-save');
+        const resetBtn = popup.querySelector('#rename-reset');
+        const cancelBtn = popup.querySelector('#rename-cancel');
+        
+        input.focus();
+        input.select();
+        
+        function close() {
+            document.body.removeChild(overlay);
+        }
+        
+        function save() {
+            const newName = input.value.trim();
+            const names = getCustomNames();
+            
+            if (newName) {
+                names[mediaKey] = newName;
+                console.log('Saved custom name for ' + mediaKey + ': ' + newName);
+            } else {
+                delete names[mediaKey];
+                console.log('Removed custom name for ' + mediaKey);
+            }
+            
+            saveCustomNames(names);
+            applyAllCustomNames();
+            close();
+        }
+        
+        function reset() {
+            if (confirm('Remove the custom name for this entry?')) {
+                const names = getCustomNames();
+                delete names[mediaKey];
+                saveCustomNames(names);
+                applyAllCustomNames();
+                close();
+            }
+        }
+        
+        saveBtn.onclick = save;
+        resetBtn.onclick = reset;
+        cancelBtn.onclick = close;
+        overlay.onclick = function(e) {
+            if (e.target === overlay) close();
+        };
+        
+        input.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') save();
+        });
+        
+        popup.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') close();
+        });
+    }
+    
+    // Handle rename button clicks using event delegation
+    document.addEventListener('click', function(e) {
+        if (e.target.classList.contains('rename-btn') || 
+            e.target.closest('.rename-btn')) {
+            const btn = e.target.classList.contains('rename-btn') ? e.target : e.target.closest('.rename-btn');
+            const entry = btn.closest('.queue_entry');
+            if (entry) {
+                e.preventDefault();
+                e.stopPropagation();
+                openRenamePopup(entry);
+            }
+        }
+    });
+    
+    // Initialize
+    function init() {
+        const queue = document.getElementById('queue');
+        if (!queue) {
+            setTimeout(init, 500);
+            return;
+        }
+        
+        console.log('Initializing playlist rename system...');
+        
+        // Add buttons and apply names initially
+        addRenameButtons();
+        applyAllCustomNames();
+        
+        // Watch for playlist changes (new entries added, pagination, etc.)
+        const observer = new MutationObserver(function(mutations) {
+            let shouldUpdate = false;
+            
+            mutations.forEach(function(mutation) {
+                if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
+                    mutation.addedNodes.forEach(function(node) {
+                        if (node.classList && node.classList.contains('queue_entry')) {
+                            addRenameButtonToEntry(node);
+                            applyCustomNameToEntry(node);
+                            shouldUpdate = true;
+                        }
+                    });
+                }
+            });
+            
+            if (shouldUpdate) {
+                // Small delay to let DOM settle
+                setTimeout(function() {
+                    addRenameButtons();
+                    applyAllCustomNames();
+                }, 100);
+            }
+        });
+        
+        observer.observe(queue, {
+            childList: true,
+            subtree: true
+        });
+        
+        // Also re-apply names periodically (catches slider/pagination changes)
+        setInterval(applyAllCustomNames, 2000);
+        
+        console.log('Playlist rename system initialized! Custom names: ' + Object.keys(getCustomNames()).length);
+    }
+    
+    // Start initialization
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', init);
+    } else {
+        init();
+    }
+    
+    // Export for debugging
+    window.playlistRename = {
+        getCustomNames: getCustomNames,
+        saveCustomNames: saveCustomNames,
+        applyAll: applyAllCustomNames,
+        clearAll: function() {
+            if (confirm('Clear all custom playlist names?')) {
+                localStorage.removeItem(STORAGE_KEY);
+                location.reload();
+            }
+        }
+    };
+})();
