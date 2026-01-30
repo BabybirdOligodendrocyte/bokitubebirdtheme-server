@@ -88,33 +88,7 @@ var jumpBtn = document.createElement("button");
 jumpBtn.innerHTML = "Scroll to current item";
 jumpBtn.setAttribute("id", "jump-btn");
 jumpBtn.setAttribute("class", "btn");
-jumpBtn.onclick = function() {
-    var queue = document.getElementById('queue');
-    if (!queue) return;
-    
-    // Find the currently playing item
-    var currentItem = queue.querySelector('.queue_active');
-    if (currentItem) {
-        // Scroll it into view smoothly and center it
-        currentItem.scrollIntoView({ 
-            behavior: 'smooth', 
-            block: 'center',
-            inline: 'nearest'
-        });
-        
-        // Flash highlight effect
-        var originalBg = currentItem.style.background;
-        currentItem.style.transition = 'background 0.3s';
-        currentItem.style.background = 'rgba(255, 200, 0, 0.3)';
-        
-        setTimeout(function() {
-            currentItem.style.background = originalBg;
-        }, 600);
-    } else {
-        // No current item, scroll to top
-        queue.scrollTo({ top: 0, behavior: 'smooth' });
-    }
-}
+jumpBtn.onclick = function() { window.scrollQueue(); }
 var rightControls = document.getElementById("rightcontrols");
 rightControls.insertBefore(jumpBtn, rightControls.children[1]);
 
@@ -2981,31 +2955,9 @@ function applyCustomNameToEntry(entryElement) {
         indicator.textContent = '✎';
         indicator.title = 'Custom name';
         titleElement.parentNode.insertBefore(indicator, titleElement.nextSibling);
-        
-        // Update "Currently Playing" if this is the active item
-        if (entryElement.classList.contains('queue_active')) {
-            updateCurrentlyPlaying(customName);
-        }
     } else {
         titleElement.textContent = originalTitle;
         titleElement.title = '';
-        
-        // Update "Currently Playing" with original name if this is the active item
-        if (entryElement.classList.contains('queue_active')) {
-            updateCurrentlyPlaying(originalTitle);
-        }
-    }
-}
-
-// Update the "Currently Playing" display with custom name
-function updateCurrentlyPlaying(customName) {
-    var currentTitle = document.getElementById('currenttitle');
-    if (currentTitle && customName) {
-        // Store original if not already stored
-        if (!currentTitle.getAttribute('data-original-title')) {
-            currentTitle.setAttribute('data-original-title', currentTitle.textContent);
-        }
-        currentTitle.textContent = customName;
     }
 }
 
@@ -3321,26 +3273,10 @@ function initPlaylistRenameObserver() {
                     }
                 }
             });
-            
-            // Check if active class changed (new video started)
-            mutation.target.querySelectorAll('.queue_entry').forEach(function(entry) {
-                if (entry.classList.contains('queue_active')) {
-                    var titleEl = entry.querySelector('.qe_title');
-                    if (titleEl) {
-                        var customName = titleEl.textContent;
-                        updateCurrentlyPlaying(customName);
-                    }
-                }
-            });
         });
     });
     
-    observer.observe(queue, { 
-        childList: true,
-        attributes: true,
-        attributeFilter: ['class'],
-        subtree: true
-    });
+    observer.observe(queue, { childList: true });
     
     // Also listen for playlist socket events to refresh names
     if (typeof socket !== 'undefined') {
@@ -3363,16 +3299,6 @@ function initPlaylistRenameObserver() {
                 addAllRenameButtons();
                 applyAllCustomNames();
             }, 200);
-        });
-        
-        // Listen for changeMedia event (when a new video starts)
-        socket.on('changeMedia', function(data) {
-            setTimeout(function() {
-                var activeEntry = queue.querySelector('.queue_active');
-                if (activeEntry) {
-                    applyCustomNameToEntry(activeEntry);
-                }
-            }, 500);
         });
         
         // Listen for rank changes - add/remove buttons accordingly
@@ -3429,164 +3355,135 @@ window.closeRenamePopup = closeRenamePopup;
 window.saveRename = saveRename;
 window.resetRename = resetRename;
 
-/* ========== HIDE JOIN/LEAVE MESSAGES & FIX CHAT ========== */
+/* ========== HIDE JOIN/LEAVE MESSAGES ========== */
 // CyTube adds join/leave messages with specific classes
-// This CSS removes them completely without leaving gaps
+// This CSS hides them completely
 (function() {
-    var chatFixCSS = document.createElement('style');
-    chatFixCSS.id = 'chat-fix-css';
-    chatFixCSS.textContent = `
-        /* Completely remove join/leave messages - no gaps */
-        #messagebuffer .server-whisper,
-        #messagebuffer .chat-shadow {
-            display: none !important;
-            height: 0 !important;
-            margin: 0 !important;
-            padding: 0 !important;
-            line-height: 0 !important;
+    var hideJoinLeaveCSS = document.createElement('style');
+    hideJoinLeaveCSS.id = 'hide-join-leave-css';
+    hideJoinLeaveCSS.textContent = 
+        '#messagebuffer .server-whisper { display: none !important; }' +
+        '#messagebuffer .chat-shadow { display: none !important; }' +
+        /* Remove timestamps */ +
+        '#messagebuffer .timestamp { display: none !important; }' +
+        /* Remove reply buttons */ +
+        '.reply-button { display: none !important; }';
+    document.head.appendChild(hideJoinLeaveCSS);
+})();
+
+/* ========== CUSTOM COLUMN RESIZER ========== */
+(function() {
+    var resizeHandle = null;
+    var isResizing = false;
+    var startX = 0;
+    var startWidth = 0;
+    
+    // CSS for resizer
+    var resizerCSS = document.createElement('style');
+    resizerCSS.id = 'column-resizer-css';
+    resizerCSS.textContent = `
+        /* Only apply flex layout on desktop */
+        @media (min-width: 769px) {
+            #content-wrap {
+                display: flex !important;
+                flex-direction: row !important;
+                width: 100% !important;
+            }
+            
+            #leftcontent {
+                flex-shrink: 0 !important;
+                box-sizing: border-box !important;
+            }
+            
+            #rightcontent {
+                flex: 1 !important;
+                min-width: 0 !important;
+                box-sizing: border-box !important;
+            }
+            
+            #column-resize-handle {
+                width: 6px !important;
+                background: rgba(100, 100, 100, 0.3) !important;
+                cursor: col-resize !important;
+                flex-shrink: 0 !important;
+                transition: background 0.2s !important;
+                position: relative !important;
+                z-index: 1000 !important;
+            }
+            
+            #column-resize-handle:hover {
+                background: rgba(150, 150, 150, 0.6) !important;
+            }
+            
+            #column-resize-handle::before {
+                content: '⋮' !important;
+                position: absolute !important;
+                top: 50% !important;
+                left: 50% !important;
+                transform: translate(-50%, -50%) !important;
+                color: rgba(255, 255, 255, 0.6) !important;
+                font-size: 18px !important;
+                pointer-events: none !important;
+            }
         }
         
-        /* Remove timestamps completely - CyTube uses .timestamp class */
-        #messagebuffer .timestamp,
-        #messagebuffer > div > .timestamp {
-            display: none !important;
-            width: 0 !important;
-            margin: 0 !important;
-            padding: 0 !important;
-            float: none !important;
-        }
-        
-        /* Override any timestamp visibility rules */
-        #messagebuffer > div.has-visible-username > .timestamp,
-        #messagebuffer > div.has-hidden-username > .timestamp {
-            display: none !important;
-        }
-        
-        /* REMOVE REPLY BUTTON - it's broken and takes up space */
-        .reply-button,
-        button.reply-button {
-            display: none !important;
-            width: 0 !important;
-            height: 0 !important;
-            padding: 0 !important;
-            margin: 0 !important;
-        }
-        
-        /* Hide reply icon */
-        .reply-icon {
-            display: none !important;
-        }
-        
-        /* Ensure messages use FULL width */
-        #messagebuffer > div {
-            width: 100% !important;
-            max-width: 100% !important;
-            display: block !important;
-            box-sizing: border-box !important;
-        }
-        
-        /* Make sure message text uses full width */
-        #messagebuffer > div > span,
-        #messagebuffer > div .username + span {
-            display: inline !important;
-            width: auto !important;
-            max-width: 100% !important;
-            word-wrap: break-word !important;
-            overflow-wrap: break-word !important;
-        }
-        
-        /* Remove any flex gaps that might cause spacing */
-        #messagebuffer > div {
-            margin-bottom: 2px !important;
-        }
-        
-        /* Ensure messagebuffer uses full width */
-        #messagebuffer {
-            line-height: normal !important;
-            width: 100% !important;
-            box-sizing: border-box !important;
-        }
-        
-        /* Resizable layout system */
-        #content-wrap {
-            display: flex !important;
-            position: relative !important;
-            width: 100% !important;
-            height: 100% !important;
-        }
-        
-        #leftcontent {
-            flex-shrink: 0 !important;
-            overflow: auto !important;
-            box-sizing: border-box !important;
-        }
-        
-        #rightcontent {
-            flex: 1 !important;
-            overflow: auto !important;
-            box-sizing: border-box !important;
-        }
-        
-        /* Resize handle between columns */
-        #column-resize-handle {
-            width: 8px !important;
-            background: rgba(100, 100, 100, 0.3) !important;
-            cursor: col-resize !important;
-            flex-shrink: 0 !important;
-            position: relative !important;
-            transition: background 0.2s !important;
-            z-index: 100 !important;
-        }
-        
-        #column-resize-handle:hover {
-            background: rgba(150, 150, 150, 0.6) !important;
-        }
-        
-        #column-resize-handle:active {
-            background: rgba(200, 200, 200, 0.8) !important;
-        }
-        
-        /* Visual indicator on handle */
-        #column-resize-handle::before {
-            content: '⋮' !important;
-            position: absolute !important;
-            top: 50% !important;
-            left: 50% !important;
-            transform: translate(-50%, -50%) !important;
-            color: rgba(255, 255, 255, 0.5) !important;
-            font-size: 20px !important;
-            pointer-events: none !important;
+        /* Hide resize handle on mobile */
+        @media (max-width: 768px) {
+            #column-resize-handle {
+                display: none !important;
+            }
         }
     `;
-    document.head.appendChild(chatFixCSS);
+    document.head.appendChild(resizerCSS);
     
-    // Add resize handle and functionality
-    function initResizableColumns() {
+    function initResizer() {
+        // Only initialize on desktop
+        if (window.innerWidth <= 768) {
+            console.log('[Column Resizer] Skipping on mobile');
+            return;
+        }
+        
         var contentWrap = document.getElementById('content-wrap');
         var leftContent = document.getElementById('leftcontent');
         var rightContent = document.getElementById('rightcontent');
         
         if (!contentWrap || !leftContent || !rightContent) {
-            setTimeout(initResizableColumns, 500);
+            console.log('[Column Resizer] Elements not ready, retrying...');
+            setTimeout(initResizer, 500);
+            return;
+        }
+        
+        // Check if rightContent is a sibling (desktop mode)
+        if (rightContent.parentElement !== contentWrap) {
+            console.log('[Column Resizer] Not in desktop layout, skipping');
+            return;
+        }
+        
+        // Don't create multiple handles
+        if (document.getElementById('column-resize-handle')) {
+            console.log('[Column Resizer] Handle already exists');
             return;
         }
         
         // Create resize handle
-        var resizeHandle = document.createElement('div');
+        resizeHandle = document.createElement('div');
         resizeHandle.id = 'column-resize-handle';
-        resizeHandle.title = 'Drag to resize video/chat';
+        resizeHandle.title = 'Drag to resize video/chat columns';
         
         // Insert handle between left and right content
         contentWrap.insertBefore(resizeHandle, rightContent);
         
-        // Load saved width or use default
-        var savedWidth = localStorage.getItem('cytube_video_width') || '88%';
-        leftContent.style.width = savedWidth;
+        // Load saved width or use default 88%
+        var savedWidth = localStorage.getItem('cytube_video_width');
+        if (savedWidth) {
+            leftContent.style.width = savedWidth;
+            console.log('[Column Resizer] Loaded saved width:', savedWidth);
+        } else {
+            leftContent.style.width = '88%';
+            console.log('[Column Resizer] Using default width: 88%');
+        }
         
-        var isResizing = false;
-        var startX = 0;
-        var startWidth = 0;
-        
+        // Mouse down on handle
         resizeHandle.addEventListener('mousedown', function(e) {
             isResizing = true;
             startX = e.clientX;
@@ -3594,8 +3491,10 @@ window.resetRename = resetRename;
             document.body.style.cursor = 'col-resize';
             document.body.style.userSelect = 'none';
             e.preventDefault();
+            console.log('[Column Resizer] Started resizing');
         });
         
+        // Mouse move anywhere
         document.addEventListener('mousemove', function(e) {
             if (!isResizing) return;
             
@@ -3610,6 +3509,7 @@ window.resetRename = resetRename;
             }
         });
         
+        // Mouse up anywhere
         document.addEventListener('mouseup', function() {
             if (isResizing) {
                 isResizing = false;
@@ -3619,200 +3519,239 @@ window.resetRename = resetRename;
                 // Save the width
                 var containerWidth = contentWrap.offsetWidth;
                 var percentWidth = (leftContent.offsetWidth / containerWidth) * 100;
-                localStorage.setItem('cytube_video_width', percentWidth + '%');
+                var savedValue = percentWidth.toFixed(1) + '%';
+                localStorage.setItem('cytube_video_width', savedValue);
                 
-                console.log('[Column Resize] Saved width: ' + percentWidth.toFixed(1) + '%');
+                console.log('[Column Resizer] Saved width:', savedValue);
             }
         });
         
-        console.log('[Column Resize] Draggable resize handle initialized');
+        console.log('[Column Resizer] ✓ Initialized successfully');
     }
     
-    // Initialize after a delay to ensure DOM is ready
-    setTimeout(initResizableColumns, 1000);
-    `;
-    document.head.appendChild(chatFixCSS);
-    
-    // Also actively remove problematic elements from DOM to prevent gaps
-    if (typeof MutationObserver !== 'undefined') {
-        var chatObserver = new MutationObserver(function(mutations) {
-            mutations.forEach(function(mutation) {
-                mutation.addedNodes.forEach(function(node) {
-                    if (node.nodeType === 1) {
-                        // Remove server whispers and chat shadows immediately
-                        if (node.classList && (
-                            node.classList.contains('server-whisper') ||
-                            node.classList.contains('chat-shadow')
-                        )) {
-                            node.remove();
-                        }
-                        
-                        // Also remove timestamp elements immediately
-                        if (node.classList && node.classList.contains('timestamp')) {
-                            node.remove();
-                        }
-                        
-                        // Remove reply buttons
-                        if (node.classList && node.classList.contains('reply-button')) {
-                            node.remove();
-                        }
-                        
-                        // Check children for timestamps and reply buttons and remove them
-                        if (node.querySelectorAll) {
-                            var timestamps = node.querySelectorAll('.timestamp');
-                            timestamps.forEach(function(ts) {
-                                ts.remove();
-                            });
-                            
-                            var replyButtons = node.querySelectorAll('.reply-button');
-                            replyButtons.forEach(function(rb) {
-                                rb.remove();
-                            });
-                        }
-                    }
-                });
-            });
-        });
-        
-        var messageBuffer = document.getElementById('messagebuffer');
-        if (messageBuffer) {
-            chatObserver.observe(messageBuffer, {
-                childList: true,
-                subtree: true
-            });
-            
-            // Remove any existing timestamps and reply buttons on load
-            var existingTimestamps = messageBuffer.querySelectorAll('.timestamp');
-            existingTimestamps.forEach(function(ts) {
-                ts.remove();
-            });
-            
-            var existingReplyButtons = messageBuffer.querySelectorAll('.reply-button');
-            existingReplyButtons.forEach(function(rb) {
-                rb.remove();
-            });
-        } else {
-            // Wait for messagebuffer to exist
-            setTimeout(function() {
-                messageBuffer = document.getElementById('messagebuffer');
-                if (messageBuffer) {
-                    chatObserver.observe(messageBuffer, {
-                        childList: true,
-                        subtree: true
-                    });
-                    
-                    // Remove any existing timestamps and reply buttons
-                    var existingTimestamps = messageBuffer.querySelectorAll('.timestamp');
-                    existingTimestamps.forEach(function(ts) {
-                        ts.remove();
-                    });
-                    
-                    var existingReplyButtons = messageBuffer.querySelectorAll('.reply-button');
-                    existingReplyButtons.forEach(function(rb) {
-                        rb.remove();
-                    });
-                }
-            }, 1000);
+    function removeResizer() {
+        if (resizeHandle && resizeHandle.parentElement) {
+            resizeHandle.parentElement.removeChild(resizeHandle);
+            resizeHandle = null;
+            console.log('[Column Resizer] Removed for mobile');
         }
     }
+    
+    // Initialize after DOM is ready
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', function() {
+            setTimeout(initResizer, 1500);
+        });
+    } else {
+        setTimeout(initResizer, 1500);
+    }
+    
+    // Handle window resize (desktop ↔ mobile)
+    window.addEventListener('resize', function() {
+        if (window.innerWidth <= 768) {
+            removeResizer();
+        } else {
+            if (!document.getElementById('column-resize-handle')) {
+                setTimeout(initResizer, 500);
+            }
+        }
+    });
 })();
 
-/* ========== PLAYLIST SEARCH & SCROLLBAR ========== */
+/* ========== CUSTOM COLUMN RESIZER ========== */
 (function() {
-    function addPlaylistSearch() {
-        var queue = document.getElementById('queue');
-        if (!queue) {
-            setTimeout(addPlaylistSearch, 500);
+    'use strict';
+    
+    var resizeHandle = null;
+    var isResizing = false;
+    var startX = 0;
+    var startWidth = 0;
+    
+    // Add CSS for resizer
+    var resizerCSS = document.createElement('style');
+    resizerCSS.id = 'column-resizer-css';
+    resizerCSS.textContent = `
+        /* Only apply flex layout on desktop */
+        @media (min-width: 769px) {
+            #content-wrap {
+                display: flex !important;
+                flex-direction: row !important;
+                width: 100% !important;
+                gap: 0 !important;
+            }
+            
+            #leftcontent {
+                flex-shrink: 0 !important;
+                box-sizing: border-box !important;
+            }
+            
+            #rightcontent {
+                flex: 1 !important;
+                min-width: 0 !important;
+                box-sizing: border-box !important;
+            }
+            
+            #column-resize-handle {
+                width: 6px !important;
+                background: rgba(100, 100, 100, 0.3) !important;
+                cursor: col-resize !important;
+                flex-shrink: 0 !important;
+                transition: background 0.2s !important;
+                position: relative !important;
+                z-index: 1000 !important;
+            }
+            
+            #column-resize-handle:hover {
+                background: rgba(150, 150, 150, 0.6) !important;
+            }
+            
+            #column-resize-handle:active,
+            #column-resize-handle.resizing {
+                background: rgba(200, 200, 200, 0.8) !important;
+            }
+            
+            #column-resize-handle::after {
+                content: '⋮' !important;
+                position: absolute !important;
+                top: 50% !important;
+                left: 50% !important;
+                transform: translate(-50%, -50%) !important;
+                color: rgba(255, 255, 255, 0.4) !important;
+                font-size: 18px !important;
+                pointer-events: none !important;
+            }
+            
+            body.col-resizing {
+                cursor: col-resize !important;
+                user-select: none !important;
+            }
+        }
+    `;
+    document.head.appendChild(resizerCSS);
+    
+    function initResizer() {
+        // Only run on desktop
+        if (window.innerWidth <= 768) {
+            console.log('[Resizer] Skipping - mobile view');
             return;
         }
         
-        // Add CSS for search box and custom scrollbar
-        var css = document.createElement('style');
-        css.textContent = `
-            /* Search box */
-            #playlist-search-box {
-                padding: 8px;
-                margin: 8px;
-                background: #252530;
-                border: 1px solid #444;
-                border-radius: 4px;
-                color: #fff;
-                width: calc(100% - 20px);
-                box-sizing: border-box;
-            }
-            #playlist-search-box:focus {
-                border-color: #666;
-                outline: none;
-            }
-            .queue_entry.search-hidden {
-                display: none !important;
-            }
-            
-            /* Playlist scrollbar styling */
-            #queue {
-                max-height: 60vh !important;
-                overflow-y: auto !important;
-                overflow-x: hidden !important;
-                scroll-behavior: smooth !important;
-            }
-            
-            /* Custom scrollbar for webkit browsers */
-            #queue::-webkit-scrollbar {
-                width: 14px;
-            }
-            #queue::-webkit-scrollbar-track {
-                background: #1a1a1a;
-                border-radius: 8px;
-                margin: 4px;
-            }
-            #queue::-webkit-scrollbar-thumb {
-                background: linear-gradient(180deg, #555, #777);
-                border-radius: 8px;
-                border: 2px solid #1a1a1a;
-            }
-            #queue::-webkit-scrollbar-thumb:hover {
-                background: linear-gradient(180deg, #666, #888);
-            }
-            #queue::-webkit-scrollbar-thumb:active {
-                background: linear-gradient(180deg, #777, #999);
-            }
-            
-            /* Firefox scrollbar */
-            #queue {
-                scrollbar-width: auto;
-                scrollbar-color: #666 #1a1a1a;
-            }
-        `;
-        document.head.appendChild(css);
+        var contentWrap = document.getElementById('content-wrap');
+        var leftContent = document.getElementById('leftcontent');
+        var rightContent = document.getElementById('rightcontent');
         
-        // Add search box
-        var searchBox = document.createElement('input');
-        searchBox.type = 'text';
-        searchBox.id = 'playlist-search-box';
-        searchBox.placeholder = '🔍 Search playlist...';
-        queue.parentElement.insertBefore(searchBox, queue);
+        if (!contentWrap || !leftContent || !rightContent) {
+            console.log('[Resizer] Elements not ready, retrying...');
+            setTimeout(initResizer, 500);
+            return;
+        }
         
-        // Search functionality
-        searchBox.addEventListener('input', function() {
-            var query = this.value.toLowerCase().trim();
-            var entries = queue.querySelectorAll('.queue_entry');
+        // Check if rightcontent is a sibling (desktop mode)
+        if (rightContent.parentElement !== contentWrap) {
+            console.log('[Resizer] Not in desktop layout mode');
+            return;
+        }
+        
+        // Don't add handle twice
+        if (document.getElementById('column-resize-handle')) {
+            console.log('[Resizer] Handle already exists');
+            return;
+        }
+        
+        // Create resize handle
+        resizeHandle = document.createElement('div');
+        resizeHandle.id = 'column-resize-handle';
+        resizeHandle.title = 'Drag to resize video/chat columns';
+        
+        // Insert handle between left and right content
+        contentWrap.insertBefore(resizeHandle, rightContent);
+        
+        // Load saved width or use default
+        var savedWidth = localStorage.getItem('cytube_column_width');
+        if (savedWidth) {
+            leftContent.style.width = savedWidth;
+            console.log('[Resizer] Loaded saved width:', savedWidth);
+        } else {
+            leftContent.style.width = '88%';
+            console.log('[Resizer] Using default width: 88%');
+        }
+        
+        // Mouse down on handle
+        resizeHandle.addEventListener('mousedown', function(e) {
+            isResizing = true;
+            startX = e.clientX;
+            startWidth = leftContent.offsetWidth;
             
-            entries.forEach(function(entry) {
-                var title = entry.querySelector('.qe_title');
-                var text = title ? title.textContent.toLowerCase() : '';
-                
-                if (!query || text.includes(query)) {
-                    entry.classList.remove('search-hidden');
-                } else {
-                    entry.classList.add('search-hidden');
-                }
-            });
+            document.body.classList.add('col-resizing');
+            resizeHandle.classList.add('resizing');
+            
+            e.preventDefault();
         });
+        
+        // Mouse move
+        document.addEventListener('mousemove', function(e) {
+            if (!isResizing) return;
+            
+            var deltaX = e.clientX - startX;
+            var newWidth = startWidth + deltaX;
+            var containerWidth = contentWrap.offsetWidth;
+            var percentWidth = (newWidth / containerWidth) * 100;
+            
+            // Constrain between 50% and 95%
+            if (percentWidth >= 50 && percentWidth <= 95) {
+                leftContent.style.width = percentWidth + '%';
+            }
+        });
+        
+        // Mouse up
+        document.addEventListener('mouseup', function() {
+            if (isResizing) {
+                isResizing = false;
+                document.body.classList.remove('col-resizing');
+                resizeHandle.classList.remove('resizing');
+                
+                // Save the width
+                var containerWidth = contentWrap.offsetWidth;
+                var leftWidth = leftContent.offsetWidth;
+                var percentWidth = (leftWidth / containerWidth) * 100;
+                var savedValue = percentWidth.toFixed(1) + '%';
+                
+                localStorage.setItem('cytube_column_width', savedValue);
+                console.log('[Resizer] Saved width:', savedValue);
+            }
+        });
+        
+        console.log('[Resizer] ✓ Initialized successfully');
     }
     
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', addPlaylistSearch);
-    } else {
-        addPlaylistSearch();
+    function removeResizer() {
+        var handle = document.getElementById('column-resize-handle');
+        if (handle) {
+            handle.remove();
+            console.log('[Resizer] Removed handle (mobile mode)');
+        }
     }
+    
+    // Initialize after a delay
+    setTimeout(function() {
+        initResizer();
+    }, 1500);
+    
+    // Handle window resize - reinit if switching between mobile/desktop
+    var currentlyMobile = window.innerWidth <= 768;
+    window.addEventListener('resize', function() {
+        var nowMobile = window.innerWidth <= 768;
+        
+        if (currentlyMobile && !nowMobile) {
+            // Switched to desktop
+            console.log('[Resizer] Switched to desktop mode');
+            setTimeout(initResizer, 500);
+        } else if (!currentlyMobile && nowMobile) {
+            // Switched to mobile
+            console.log('[Resizer] Switched to mobile mode');
+            removeResizer();
+        }
+        
+        currentlyMobile = nowMobile;
+    });
 })();
