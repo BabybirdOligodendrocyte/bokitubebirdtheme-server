@@ -176,17 +176,12 @@ var textStyleSettings = JSON.parse(localStorage.getItem('textStyleSettings')) ||
 
 // Username style settings
 var usernameStyleSettings = JSON.parse(localStorage.getItem('usernameStyleSettings')) || {
-    enabled: false,
     color: null,
     gradient: null,
     glow: null,
     animation: null,
     font: null,
-    bold: false,
-    customColor: null,
-    customGlow: null,
-    displayName: null,
-    profilePic: null
+    bold: false
 };
 
 // Inject popup CSS with !important to override any conflicts
@@ -622,13 +617,20 @@ var usernameStyleSettings = JSON.parse(localStorage.getItem('usernameStyleSettin
         #filter-popup-body th { background: #333 !important; }
         #filter-popup-body td { background: #222 !important; font-family: monospace !important; }
         
-        /* Styled username - block level for message to appear below */
+        /* Styled username */
         .styled-username {
             font-weight: bold !important;
-            display: block !important;
         }
         .styled-username::after {
-            content: '' !important;
+            content: ': ' !important;
+        }
+        
+        /* Hide styled username from niconico overlay */
+        #nnd-container .styled-username,
+        .nnd-message .styled-username,
+        [class*="nnd"] .styled-username,
+        .danmaku .styled-username {
+            display: none !important;
         }
         
         /* Hide consecutive styled usernames */
@@ -636,17 +638,9 @@ var usernameStyleSettings = JSON.parse(localStorage.getItem('usernameStyleSettin
             display: none !important;
         }
         
-        /* Hide styled username from niconico overlay */
-        #nnd-container .styled-username,
-        .nnd-message .styled-username,
-        [class*="nnd"] .styled-username,
-        .danmaku .styled-username,
-        .videoText .styled-username {
-            display: none !important;
-        }
-        
         /* When styled username is present, hide original username elements via CSS */
-        .chat-msg-with-styled-name > .username {
+        .chat-msg-with-styled-name .username,
+        .chat-msg-with-styled-name .username + * {
             display: none !important;
         }
         
@@ -669,6 +663,20 @@ var usernameStyleSettings = JSON.parse(localStorage.getItem('usernameStyleSettin
         
         /* When message has hidden username - timestamp hidden, full width message */
         #messagebuffer > div.has-hidden-username > .timestamp {
+            display: none !important;
+        }
+        
+        /* Styled username on its own line */
+        .styled-username {
+            display: block !important;
+            font-weight: bold !important;
+        }
+        .styled-username::after {
+            content: '' !important;
+        }
+        
+        /* Hide consecutive styled usernames */
+        .styled-username.hidden-consecutive {
             display: none !important;
         }
         
@@ -1129,7 +1137,7 @@ function renderStyleTabContent(tab) {
         
         updateStylePreview();
         
-    } else if (tab === 'username') {
+    } else {
         // USERNAME STYLE TAB
         var settings = usernameStyleSettings;
         
@@ -1159,12 +1167,9 @@ function renderStyleTabContent(tab) {
             return '<button class="textstyle-btn uname-font-btn' + act + '" data-font="' + f + '" style="' + fontStyles[f] + '" onclick="selectUsernameFont(\'' + f + '\')">' + fontLabels[f] + '</button>';
         }).join('');
         
-        var displayNameVal = settings.displayName || '';
-        
         container.innerHTML = '<div class="textstyle-info"><p style="margin:0">Style your username! Others with this theme will see it.</p></div>' +
             '<div class="textstyle-popup-scroll">' +
             '<div class="textstyle-section"><h4>Enable Username Styling</h4><button id="username-style-toggle" class="textstyle-btn' + (settings.enabled ? ' active' : '') + '" onclick="toggleUsernameStyleEnabled()" style="width:100%">' + (settings.enabled ? '✓ Enabled' : '✗ Disabled') + '</button></div>' +
-            '<div class="textstyle-section"><h4>📝 Display Name</h4><div class="custom-color-row" style="margin-top:0"><input type="text" id="display-name-input" value="' + displayNameVal.replace(/"/g, '&quot;') + '" placeholder="Leave empty to use your actual name" style="flex:1;padding:8px;background:#252530;border:1px solid #444;border-radius:4px;color:#fff;font-size:14px;"><button class="textstyle-btn" onclick="saveDisplayName()" style="padding:8px 16px">Save</button>' + (displayNameVal ? '<button class="textstyle-btn" onclick="clearDisplayName()" style="padding:8px 10px;background:#633">✕</button>' : '') + '</div><p style="margin:8px 0 0;font-size:11px;color:#888">This name will be shown instead of your actual username</p></div>' +
             '<div class="textstyle-section"><h4>Solid Colors</h4><div class="textstyle-grid">' + cbtns + '</div>' +
             '<div class="custom-color-row"><label>Custom: </label><input type="color" id="uname-custom-color-picker" value="#' + (settings.customColor || 'ffffff') + '" onchange="selectUsernameCustomColor(this.value)"><button class="textstyle-btn' + (settings.customColor ? ' active' : '') + '" id="uname-custom-color-btn" onclick="applyUsernameCustomColor()" style="' + (settings.customColor ? 'background:#' + settings.customColor + ';' : '') + 'color:#fff;text-shadow:0 0 2px #000">Use Custom</button>' + (settings.customColor ? '<button class="textstyle-btn" onclick="clearUsernameCustomColor()" style="padding:8px 10px;background:#633">✕</button>' : '') + '</div></div>' +
             '<div class="textstyle-section"><h4>🌈 Gradients</h4><div class="textstyle-grid">' + gbtns + '</div></div>' +
@@ -1178,31 +1183,6 @@ function renderStyleTabContent(tab) {
             '<div class="textstyle-section" style="border-top:1px solid #333;"><button onclick="resetUsernameStyle()" style="width:100%;padding:12px;background:#422;border:1px solid #633;border-radius:6px;color:#f88;cursor:pointer;">↺ Reset to Default</button></div>';
         
         updateUsernamePreview();
-        
-    } else if (tab === 'profile') {
-        // PROFILE PICTURE TAB
-        var profilePicUrl = usernameStyleSettings.profilePic || '';
-        
-        container.innerHTML = '<div class="textstyle-info"><p style="margin:0">Set a profile picture that appears next to your messages!</p></div>' +
-            '<div class="textstyle-popup-scroll">' +
-            '<div class="textstyle-section"><h4>🖼️ Profile Picture URL</h4>' +
-            '<input type="text" id="profile-pic-input" value="' + profilePicUrl.replace(/"/g, '&quot;') + '" placeholder="https://example.com/image.png" style="width:100%;padding:10px;background:#252530;border:1px solid #444;border-radius:4px;color:#fff;font-size:14px;margin-bottom:10px;box-sizing:border-box;">' +
-            '<div style="display:flex;gap:8px;"><button class="textstyle-btn" onclick="saveProfilePic()" style="flex:1;padding:10px">💾 Save</button><button class="textstyle-btn" onclick="clearProfilePic()" style="padding:10px 16px;background:#633">✕ Clear</button></div>' +
-            '<p style="margin:10px 0 0;font-size:11px;color:#888">Enter a direct link to an image (PNG, JPG, GIF). Max display size: 24x24px</p></div>' +
-            '<div class="textstyle-section"><h4>Preview</h4>' +
-            '<div id="profile-pic-preview" style="padding:16px;background:#111;border-radius:6px;min-height:60px;display:flex;align-items:center;gap:10px;">' +
-            (profilePicUrl ? '<img src="' + profilePicUrl + '" style="width:24px;height:24px;object-fit:cover;border-radius:4px;" onerror="this.style.display=\'none\'" onload="this.style.display=\'inline\'">' : '<span style="color:#666;font-size:12px">[No image]</span>') +
-            '<span style="font-weight:bold;color:#fff">' + (usernameStyleSettings.displayName || getMyUsername() || 'YourName') + '</span>' +
-            '<span style="color:#aaa">Your message will appear like this</span>' +
-            '</div></div>' +
-            '<div class="textstyle-section"><h4>ℹ️ Tips</h4>' +
-            '<ul style="margin:0;padding-left:20px;color:#888;font-size:12px;line-height:1.8;">' +
-            '<li>Use square images for best results</li>' +
-            '<li>Supported formats: PNG, JPG, GIF, WebP</li>' +
-            '<li>Image will be scaled to 24x24 pixels</li>' +
-            '<li>Use image hosting sites like Imgur, Discord CDN, etc.</li>' +
-            '</ul></div>' +
-            '</div>';
     }
 }
 
@@ -1406,44 +1386,6 @@ function clearUsernameCustomGlow() {
     usernameStyleSettings.customGlow = null;
     saveUsernameStyleSettings();
     renderStyleTabContent('username');
-}
-
-// Display name functions
-function saveDisplayName() {
-    var input = document.getElementById('display-name-input');
-    if (input) {
-        var name = input.value.trim();
-        usernameStyleSettings.displayName = name || null;
-        saveUsernameStyleSettings();
-        renderStyleTabContent('username');
-    }
-}
-
-function clearDisplayName() {
-    usernameStyleSettings.displayName = null;
-    saveUsernameStyleSettings();
-    renderStyleTabContent('username');
-}
-
-// Profile picture functions
-function saveProfilePic() {
-    var input = document.getElementById('profile-pic-input');
-    if (input) {
-        var url = input.value.trim();
-        if (url && !url.match(/^https?:\/\//i)) {
-            alert('Please enter a valid URL starting with http:// or https://');
-            return;
-        }
-        usernameStyleSettings.profilePic = url || null;
-        saveUsernameStyleSettings();
-        renderStyleTabContent('profile');
-    }
-}
-
-function clearProfilePic() {
-    usernameStyleSettings.profilePic = null;
-    saveUsernameStyleSettings();
-    renderStyleTabContent('profile');
 }
 
 function refreshStyleBtns() {
@@ -2192,11 +2134,7 @@ var usernameStyleSettings = JSON.parse(localStorage.getItem('usernameStyleSettin
     glow: null,
     animation: null,
     font: null,
-    bold: false,
-    customColor: null,
-    customGlow: null,
-    displayName: null,
-    profilePic: null
+    bold: false
 };
 
 function getMyUsername() {
@@ -2288,7 +2226,7 @@ function processStyledUsername(msgElement) {
     // Add class to message element so CSS can hide original username
     msgElement.classList.add('chat-msg-with-styled-name');
     
-    // Get the styled username text
+    // Get the styled username text (without the colon from ::after)
     var styledName = styledUsername.textContent.trim();
     
     // Check previous messages for consecutive posts from same user
@@ -2409,14 +2347,9 @@ function resetUsernameStyle() {
         glow: null,
         animation: null,
         font: null,
-        bold: false,
-        customColor: null,
-        customGlow: null,
-        displayName: null,
-        profilePic: null
+        bold: false
     };
     saveUsernameStyleSettings();
-    renderStyleTabContent('username');
 }
 
 function refreshUsernameStyleBtns() {
@@ -2448,7 +2381,7 @@ function updateUsernamePreview() {
     var p = document.getElementById('username-preview');
     if (!p) return;
     
-    var myName = usernameStyleSettings.displayName || getMyUsername() || 'YourName';
+    var myName = getMyUsername() || 'YourName';
     var s = [];
     
     // Font
@@ -2478,7 +2411,7 @@ function updateUsernamePreview() {
         if (fontStyles[usernameStyleSettings.font]) s.push(fontStyles[usernameStyleSettings.font]);
     }
     
-    // Color or gradient or custom color
+    // Color or gradient
     if (usernameStyleSettings.gradient) {
         var gradientStyles = {
             'rainbow': 'background:linear-gradient(90deg,#ff0000,#ff7700,#ffff00,#00ff00,#0077ff,#8b00ff);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text',
@@ -2493,11 +2426,9 @@ function updateUsernamePreview() {
         if (gradientStyles[usernameStyleSettings.gradient]) s.push(gradientStyles[usernameStyleSettings.gradient]);
     } else if (usernameStyleSettings.color) {
         s.push('color:' + (usernameStyleSettings.color === 'blue' ? '#55f' : usernameStyleSettings.color));
-    } else if (usernameStyleSettings.customColor) {
-        s.push('color:#' + usernameStyleSettings.customColor);
     }
     
-    // Glow or custom glow
+    // Glow
     if (usernameStyleSettings.glow) {
         var glowStyles = {
             'glow-white': 'text-shadow:0 0 10px #fff,0 0 20px #fff,0 0 30px #fff',
@@ -2509,8 +2440,6 @@ function updateUsernamePreview() {
             'glow-rainbow': 'text-shadow:0 0 5px #f00,0 0 10px #ff0,0 0 15px #0f0,0 0 20px #0ff,0 0 25px #00f,0 0 30px #f0f'
         };
         if (glowStyles[usernameStyleSettings.glow]) s.push(glowStyles[usernameStyleSettings.glow]);
-    } else if (usernameStyleSettings.customGlow) {
-        s.push('text-shadow:0 0 10px #' + usernameStyleSettings.customGlow + ',0 0 20px #' + usernameStyleSettings.customGlow + ',0 0 30px #' + usernameStyleSettings.customGlow);
     }
     
     // Bold
@@ -2519,19 +2448,13 @@ function updateUsernamePreview() {
     // Animation class
     var animClass = usernameStyleSettings.animation ? 'text-' + usernameStyleSettings.animation : '';
     
-    var hasStyle = usernameStyleSettings.color || usernameStyleSettings.gradient || usernameStyleSettings.customColor ||
-                   usernameStyleSettings.bold || usernameStyleSettings.glow || usernameStyleSettings.customGlow ||
-                   usernameStyleSettings.animation || usernameStyleSettings.font || usernameStyleSettings.displayName ||
-                   usernameStyleSettings.profilePic;
+    var hasStyle = usernameStyleSettings.color || usernameStyleSettings.gradient || usernameStyleSettings.bold || 
+                   usernameStyleSettings.glow || usernameStyleSettings.animation || usernameStyleSettings.font;
     
-    // Build preview HTML with profile pic if set
-    var previewHtml = '';
-    if (usernameStyleSettings.profilePic) {
-        previewHtml += '<img src="' + usernameStyleSettings.profilePic + '" style="width:24px;height:24px;object-fit:cover;border-radius:4px;margin-right:8px;" onerror="this.style.display=\'none\'">';
-    }
-    previewHtml += '<span style="' + s.join(';') + '" class="' + animClass + '">' + myName + '</span>';
-    
-    p.innerHTML = hasStyle ? previewHtml : '<span style="color:#666;font-style:italic">No styling (default)</span>';
+    p.style.cssText = s.join(';');
+    p.className = animClass;
+    p.textContent = hasStyle ? myName : 'No styling (default)';
+    if (!hasStyle) { p.style.color = '#666'; p.style.fontStyle = 'italic'; }
 }
 
 // GIF EMBEDDING - Convert GIF links to inline images
@@ -2587,18 +2510,18 @@ var gifObserver = new MutationObserver(function(mutations) {
     mutations.forEach(function(mutation) {
         mutation.addedNodes.forEach(function(node) {
             if (node.nodeType === 1 && node.classList && node.classList.contains('chat-msg-')) {
-                // Process immediately for styling, small delay for GIFs
-                processStyledUsername(node);
+                // Small delay to let CyTube finish processing the message
                 setTimeout(function() { 
                     embedGifsInMessage(node); 
-                }, 10);
+                    processStyledUsername(node);
+                }, 50);
             }
             // Also check if it's a div directly added to messagebuffer
             if (node.nodeType === 1 && node.tagName === 'DIV' && node.parentElement && node.parentElement.id === 'messagebuffer') {
-                processStyledUsername(node);
                 setTimeout(function() { 
                     embedGifsInMessage(node); 
-                }, 10);
+                    processStyledUsername(node);
+                }, 50);
             }
         });
     });
@@ -2632,18 +2555,20 @@ socket.on('chatMsg', function(data) {
         // Override with our version that strips username tags and converts GIF URLs
         window.nnd._fn.addScrollingMessage = function(message, extraClass) {
             if (typeof message === 'string') {
-                // Remove [pfp]...[/pfp] profile picture tags first
-                message = message.replace(/\[pfp\][^\[]*\[\/pfp\]/gi, '');
+                // Remove [uname]...[/uname] tags and their contents (including styled spans)
+                message = message.replace(/\[uname\][\s\S]*?\[\/uname\]\s*/gi, '');
                 
-                // Remove [uname]...[/uname] tags and their contents
-                message = message.replace(/\[uname\][^\[]*\[\/uname\]\s*/gi, '');
-                
-                // Also remove already-processed styled-username spans and profile pics
-                message = message.replace(/<span[^>]*styled-username[^>]*>.*?<\/span>\s*/gi, '');
-                message = message.replace(/<img[^>]*chat-profile-pic[^>]*>/gi, '');
+                // Also remove already-processed styled-username spans
+                message = message.replace(/<span[^>]*class="[^"]*styled-username[^"]*"[^>]*>[\s\S]*?<\/span>\s*/gi, '');
                 
                 // Convert Tenor/Giphy/GIF URLs to img tags for display
+                // Match URLs that are GIFs (including those in anchor tags)
                 message = message.replace(/<a[^>]*href="(https?:\/\/[^"]*(?:tenor\.com|giphy\.com|\.gif)[^"]*)"[^>]*>[^<]*<\/a>/gi, function(match, url) {
+                    return '<img src="' + url + '" alt="GIF">';
+                });
+                
+                // Also convert plain GIF URLs that aren't in anchor tags
+                message = message.replace(/(?<![">])(https?:\/\/(?:media\.tenor\.com|[^\s]*\.gif)[^\s<]*)/gi, function(match, url) {
                     return '<img src="' + url + '" alt="GIF">';
                 });
             }
@@ -2676,6 +2601,7 @@ socket.on('chatMsg', function(data) {
         });
     }
 })();
+
 
 // ============================================================================
 // PLAYLIST ENHANCEMENTS - Search, Scrollbar, Jump to Current
@@ -2748,9 +2674,8 @@ socket.on('chatMsg', function(data) {
                 border: 1px solid #444;
                 border-radius: 6px;
                 color: #fff;
-                font-size: 14px;
-                outline: none;
-                transition: border-color 0.2s, box-shadow 0.2s;
+                font-size: 13px;
+                transition: border-color 0.2s;
             }
             #playlist-search:focus {
                 border-color: #666;
@@ -2902,6 +2827,11 @@ socket.on('chatMsg', function(data) {
             });
             
             updatePlaylistStats(matchCount, totalCount, query);
+            
+            // Reapply custom names after filtering (in case they were modified)
+            if (typeof applyAllCustomNames === 'function') {
+                applyAllCustomNames();
+            }
         }
         
         // Update stats display
@@ -2951,6 +2881,11 @@ socket.on('chatMsg', function(data) {
                 var items = playlist.querySelectorAll('.queue_entry');
                 updatePlaylistStats(items.length, items.length, '');
             }
+            
+            // Reapply custom names after playlist changes
+            if (typeof applyAllCustomNames === 'function') {
+                setTimeout(applyAllCustomNames, 100);
+            }
         });
         
         playlistObserver.observe(playlist, { childList: true, subtree: true });
@@ -2965,412 +2900,767 @@ socket.on('chatMsg', function(data) {
         initPlaylistEnhancements();
     }
 })();
-// ============================================================================
-// PLAYLIST RENAME SYSTEM (URL-based, slider/pagination compatible)
-// ============================================================================
+        animation: null,
+        font: null,
+        bold: false
+    };
+    saveUsernameStyleSettings();
+}
 
+function refreshUsernameStyleBtns() {
+    document.querySelectorAll('.uname-color-btn').forEach(function(b) { 
+        b.classList.toggle('active', usernameStyleSettings.color === b.dataset.color); 
+    });
+    document.querySelectorAll('.uname-gradient-btn').forEach(function(b) { 
+        b.classList.toggle('active', usernameStyleSettings.gradient === b.dataset.gradient); 
+    });
+    document.querySelectorAll('.uname-glow-btn').forEach(function(b) { 
+        b.classList.toggle('active', usernameStyleSettings.glow === b.dataset.glow); 
+    });
+    document.querySelectorAll('.uname-anim-btn').forEach(function(b) { 
+        b.classList.toggle('active', usernameStyleSettings.animation === b.dataset.anim); 
+    });
+    document.querySelectorAll('.uname-font-btn').forEach(function(b) { 
+        b.classList.toggle('active', usernameStyleSettings.font === b.dataset.font); 
+    });
+    var boldBtn = document.getElementById('uname-bold-btn');
+    if (boldBtn) boldBtn.classList.toggle('active', usernameStyleSettings.bold);
+    var toggleBtn = document.getElementById('username-style-toggle');
+    if (toggleBtn) {
+        toggleBtn.textContent = usernameStyleSettings.enabled ? '✓ Enabled' : '✗ Disabled';
+        toggleBtn.classList.toggle('active', usernameStyleSettings.enabled);
+    }
+}
+
+function updateUsernamePreview() {
+    var p = document.getElementById('username-preview');
+    if (!p) return;
+    
+    var myName = getMyUsername() || 'YourName';
+    var s = [];
+    
+    // Font
+    if (usernameStyleSettings.font) {
+        var fontStyles = {
+            'comic': 'font-family:"Comic Sans MS",cursive',
+            'impact': 'font-family:Impact,sans-serif',
+            'papyrus': 'font-family:Papyrus,fantasy',
+            'copperplate': 'font-family:Copperplate,fantasy',
+            'brush': 'font-family:"Brush Script MT",cursive',
+            'lucida': 'font-family:"Lucida Handwriting",cursive',
+            'courier': 'font-family:"Courier New",monospace',
+            'times': 'font-family:"Times New Roman",serif',
+            'georgia': 'font-family:Georgia,serif',
+            'trebuchet': 'font-family:"Trebuchet MS",sans-serif',
+            'verdana': 'font-family:Verdana,sans-serif',
+            'gothic': 'font-family:"Century Gothic",sans-serif',
+            'garamond': 'font-family:Garamond,serif',
+            'palatino': 'font-family:"Palatino Linotype",serif',
+            'bookman': 'font-family:"Bookman Old Style",serif',
+            'mono': 'font-family:monospace',
+            'cursive': 'font-family:cursive',
+            'fantasy': 'font-family:fantasy',
+            'system': 'font-family:system-ui',
+            'serif': 'font-family:serif'
+        };
+        if (fontStyles[usernameStyleSettings.font]) s.push(fontStyles[usernameStyleSettings.font]);
+    }
+    
+    // Color or gradient
+    if (usernameStyleSettings.gradient) {
+        var gradientStyles = {
+            'rainbow': 'background:linear-gradient(90deg,#ff0000,#ff7700,#ffff00,#00ff00,#0077ff,#8b00ff);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text',
+            'fire': 'background:linear-gradient(90deg,#ff0000,#ff5500,#ffaa00,#ffcc00);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text',
+            'ocean': 'background:linear-gradient(90deg,#00ffff,#0088ff,#0044aa,#002255);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text',
+            'sunset': 'background:linear-gradient(90deg,#ff6b6b,#ffa500,#ffdb58,#ff6b9d);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text',
+            'neon': 'background:linear-gradient(90deg,#ff00ff,#00ffff,#ff00ff);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text',
+            'forest': 'background:linear-gradient(90deg,#228b22,#32cd32,#90ee90,#006400);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text',
+            'gold': 'background:linear-gradient(90deg,#ffd700,#ffec8b,#daa520,#b8860b);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text',
+            'ice': 'background:linear-gradient(90deg,#e0ffff,#87ceeb,#add8e6,#b0e0e6);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text'
+        };
+        if (gradientStyles[usernameStyleSettings.gradient]) s.push(gradientStyles[usernameStyleSettings.gradient]);
+    } else if (usernameStyleSettings.color) {
+        s.push('color:' + (usernameStyleSettings.color === 'blue' ? '#55f' : usernameStyleSettings.color));
+    }
+    
+    // Glow
+    if (usernameStyleSettings.glow) {
+        var glowStyles = {
+            'glow-white': 'text-shadow:0 0 10px #fff,0 0 20px #fff,0 0 30px #fff',
+            'glow-red': 'text-shadow:0 0 10px #f00,0 0 20px #f00,0 0 30px #f00',
+            'glow-blue': 'text-shadow:0 0 10px #00f,0 0 20px #00f,0 0 30px #0ff',
+            'glow-green': 'text-shadow:0 0 10px #0f0,0 0 20px #0f0,0 0 30px #0f0',
+            'glow-gold': 'text-shadow:0 0 10px #ffd700,0 0 20px #ffa500,0 0 30px #ff8c00',
+            'glow-pink': 'text-shadow:0 0 10px #ff69b4,0 0 20px #ff1493,0 0 30px #ff69b4',
+            'glow-rainbow': 'text-shadow:0 0 5px #f00,0 0 10px #ff0,0 0 15px #0f0,0 0 20px #0ff,0 0 25px #00f,0 0 30px #f0f'
+        };
+        if (glowStyles[usernameStyleSettings.glow]) s.push(glowStyles[usernameStyleSettings.glow]);
+    }
+    
+    // Bold
+    if (usernameStyleSettings.bold) s.push('font-weight:bold');
+    
+    // Animation class
+    var animClass = usernameStyleSettings.animation ? 'text-' + usernameStyleSettings.animation : '';
+    
+    var hasStyle = usernameStyleSettings.color || usernameStyleSettings.gradient || usernameStyleSettings.bold || 
+                   usernameStyleSettings.glow || usernameStyleSettings.animation || usernameStyleSettings.font;
+    
+    p.style.cssText = s.join(';');
+    p.className = animClass;
+    p.textContent = hasStyle ? myName : 'No styling (default)';
+    if (!hasStyle) { p.style.color = '#666'; p.style.fontStyle = 'italic'; }
+}
+
+// GIF EMBEDDING - Convert GIF links to inline images
+function embedGifsInMessage(msgElement) {
+    if (!msgElement) return;
+    
+    // Find all links in the message
+    var links = msgElement.querySelectorAll('a');
+    links.forEach(function(link) {
+        var href = link.getAttribute('href');
+        if (!href) return;
+        
+        // Check if it's a GIF URL (Tenor, Giphy, or any .gif)
+        var isGif = href.match(/\.(gif)$/i) ||
+                    href.match(/media\.tenor\.com/i) ||
+                    href.match(/giphy\.com/i) ||
+                    href.match(/media\d*\.giphy\.com/i);
+        
+        if (isGif) {
+            // Create image element
+            var img = document.createElement('img');
+            img.src = href;
+            img.alt = 'GIF';
+            img.style.cssText = 'height:100px;max-width:250px;object-fit:contain;vertical-align:middle;cursor:pointer;';
+            img.title = 'Click to open full size';
+            img.onclick = function() { window.open(href, '_blank'); };
+            
+            // Handle load errors - revert to link if image fails
+            img.onerror = function() {
+                img.replaceWith(link);
+            };
+            
+            // Replace link with image
+            link.replaceWith(img);
+        }
+    });
+}
+
+// Run on all existing messages when script loads
+function embedAllExistingGifs() {
+    var messages = document.querySelectorAll('#messagebuffer > div');
+    messages.forEach(function(msg) {
+        embedGifsInMessage(msg);
+        processStyledUsername(msg);
+    });
+}
+
+// Run after page loads
+setTimeout(embedAllExistingGifs, 1000);
+
+// Watch for new messages using MutationObserver
+var gifObserver = new MutationObserver(function(mutations) {
+    mutations.forEach(function(mutation) {
+        mutation.addedNodes.forEach(function(node) {
+            if (node.nodeType === 1 && node.classList && node.classList.contains('chat-msg-')) {
+                // Small delay to let CyTube finish processing the message
+                setTimeout(function() { 
+                    embedGifsInMessage(node); 
+                    processStyledUsername(node);
+                }, 50);
+            }
+            // Also check if it's a div directly added to messagebuffer
+            if (node.nodeType === 1 && node.tagName === 'DIV' && node.parentElement && node.parentElement.id === 'messagebuffer') {
+                setTimeout(function() { 
+                    embedGifsInMessage(node); 
+                    processStyledUsername(node);
+                }, 50);
+            }
+        });
+    });
+});
+
+// Start observing the message buffer
+var msgBuffer = document.getElementById('messagebuffer');
+if (msgBuffer) {
+    gifObserver.observe(msgBuffer, { childList: true, subtree: true });
+}
+
+socket.on('chatMsg', function(data) {
+    formatChatMsg(data, $("#messagebuffer > div").last());
+});
+
+// Hook into niconico script to strip username tags and show GIFs in scrolling messages
 (function() {
-    'use strict';
-    
-    const STORAGE_KEY = 'playlist_custom_names';
-    
-    // Get custom names from storage
-    function getCustomNames() {
-        try {
-            const stored = localStorage.getItem(STORAGE_KEY);
-            if (stored) {
-                const names = JSON.parse(stored);
-                console.log('[Playlist Rename] Loaded ' + Object.keys(names).length + ' custom names from storage');
-                return names;
-            }
-            console.log('[Playlist Rename] No saved custom names found');
-            return {};
-        } catch (e) {
-            console.error('[Playlist Rename] Error loading custom names:', e);
-            return {};
-        }
-    }
-    
-    // Save custom names to storage
-    function saveCustomNames(names) {
-        try {
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(names));
-            console.log('[Playlist Rename] Saved ' + Object.keys(names).length + ' custom names to storage');
-        } catch (e) {
-            console.error('[Playlist Rename] Error saving custom names:', e);
-        }
-    }
-    
-    // Extract video URL from entry element
-    function getVideoUrlFromEntry(entry) {
-        // Method 1: Check the qe_title link
-        const titleLink = entry.querySelector('a.qe_title');
-        if (titleLink && titleLink.href) {
-            console.debug('[Playlist Rename] Found URL from title link:', titleLink.href);
-            return titleLink.href;
-        }
-        
-        // Method 2: Check data attributes
-        if (entry.dataset && entry.dataset.media) {
-            try {
-                const media = JSON.parse(entry.dataset.media);
-                if (media.id) {
-                    console.debug('[Playlist Rename] Found URL from data.media.id:', media.id);
-                    return media.id;
-                }
-            } catch (e) {
-                console.debug('[Playlist Rename] Error parsing data.media:', e);
-            }
-        }
-        
-        // Method 3: Extract from any link in the entry
-        const anyLink = entry.querySelector('a[href*="http"]');
-        if (anyLink && anyLink.href) {
-            console.debug('[Playlist Rename] Found URL from any link:', anyLink.href);
-            return anyLink.href;
-        }
-        
-        console.warn('[Playlist Rename] Could not find URL for entry');
-        return null;
-    }
-    
-    // Generate stable key from video URL
-    function getMediaKeyFromUrl(url) {
-        if (!url) return null;
-        
-        // For direct file URLs, use filename
-        const filename = url.split('/').pop().split('?')[0];
-        if (filename.match(/\.(mp4|webm|mkv|avi|mov)$/i)) {
-            const key = 'url_' + filename;
-            console.debug('[Playlist Rename] Generated key from filename:', key);
-            return key;
-        }
-        
-        // For YouTube, use video ID
-        const ytMatch = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([a-zA-Z0-9_-]{11})/);
-        if (ytMatch) {
-            const key = 'yt_' + ytMatch[1];
-            console.debug('[Playlist Rename] Generated key from YouTube ID:', key);
-            return key;
-        }
-        
-        // For other services, hash the URL
-        const key = 'url_' + filename;
-        console.debug('[Playlist Rename] Generated key from URL:', key);
-        return key;
-    }
-    
-    // Get media key from entry element
-    function getMediaKeyFromEntry(entry) {
-        const url = getVideoUrlFromEntry(entry);
-        return getMediaKeyFromUrl(url);
-    }
-    
-    // Apply custom name to entry
-    function applyCustomNameToEntry(entry) {
-        const customNames = getCustomNames();
-        const mediaKey = getMediaKeyFromEntry(entry);
-        
-        if (!mediaKey) {
-            console.debug('[Playlist Rename] Could not get media key for entry');
+    function installNNDHook() {
+        if (!window.nnd || !window.nnd._fn || !window.nnd._fn.addScrollingMessage) {
             return false;
         }
         
-        const customName = customNames[mediaKey];
-        if (!customName) return false;
-        
-        const titleElement = entry.querySelector('.qe_title');
-        if (!titleElement) {
-            console.debug('[Playlist Rename] No title element found in entry');
-            return false;
+        // Check if already hooked
+        if (window.nnd._fn._hookedByBokitube) {
+            return true;
         }
         
-        // Store original title if not already stored
-        if (!titleElement.dataset.originalTitle) {
-            titleElement.dataset.originalTitle = titleElement.textContent.trim();
-        }
+        // Store original function
+        var originalAddScrollingMessage = window.nnd._fn.addScrollingMessage;
         
-        // Apply custom name
-        titleElement.textContent = customName;
-        titleElement.title = 'Custom: ' + customName + '\nOriginal: ' + titleElement.dataset.originalTitle;
-        entry.dataset.hasCustomName = 'true';
+        // Override with our version that strips username tags and converts GIF URLs
+        window.nnd._fn.addScrollingMessage = function(message, extraClass) {
+            if (typeof message === 'string') {
+                // Remove [uname]...[/uname] tags and their contents (including styled spans)
+                message = message.replace(/\[uname\][\s\S]*?\[\/uname\]\s*/gi, '');
+                
+                // Also remove already-processed styled-username spans
+                message = message.replace(/<span[^>]*class="[^"]*styled-username[^"]*"[^>]*>[\s\S]*?<\/span>\s*/gi, '');
+                
+                // Convert Tenor/Giphy/GIF URLs to img tags for display
+                // Match URLs that are GIFs (including those in anchor tags)
+                message = message.replace(/<a[^>]*href="(https?:\/\/[^"]*(?:tenor\.com|giphy\.com|\.gif)[^"]*)"[^>]*>[^<]*<\/a>/gi, function(match, url) {
+                    return '<img src="' + url + '" alt="GIF">';
+                });
+                
+                // Also convert plain GIF URLs that aren't in anchor tags
+                message = message.replace(/(?<![">])(https?:\/\/(?:media\.tenor\.com|[^\s]*\.gif)[^\s<]*)/gi, function(match, url) {
+                    return '<img src="' + url + '" alt="GIF">';
+                });
+            }
+            // Call original function with cleaned message
+            return originalAddScrollingMessage.call(this, message, extraClass);
+        };
         
-        console.log('[Playlist Rename] Applied custom name "' + customName + '" to entry with key: ' + mediaKey);
+        window.nnd._fn._hookedByBokitube = true;
+        console.log('NND username/GIF filter hook installed');
         return true;
     }
     
-    // Apply custom names to all visible entries
-    function applyAllCustomNames() {
-        const entries = document.querySelectorAll('.queue_entry');
-        let appliedCount = 0;
-        
-        entries.forEach(entry => {
-            if (applyCustomNameToEntry(entry)) {
-                appliedCount++;
+    // Try to install hook immediately
+    if (!installNNDHook()) {
+        // If NND not loaded yet, keep trying
+        var checkNND = setInterval(function() {
+            if (installNNDHook()) {
+                clearInterval(checkNND);
             }
-        });
+        }, 200);
         
-        if (appliedCount > 0) {
-            console.log('Applied ' + appliedCount + ' custom names');
-        }
+        // Stop checking after 30 seconds
+        setTimeout(function() { clearInterval(checkNND); }, 30000);
     }
     
-    // Add rename button to entry
-    function addRenameButtonToEntry(entry) {
-        // Don't add if already exists
-        if (entry.querySelector('.rename-btn')) return;
-        
-        const qeButtons = entry.querySelector('.qe_btn');
-        if (!qeButtons) return;
-        
-        const renameBtn = document.createElement('button');
-        renameBtn.className = 'rename-btn qe_btn';
-        renameBtn.innerHTML = '✏️';
-        renameBtn.title = 'Rename this entry';
-        renameBtn.style.cssText = 'margin-left: 4px; padding: 2px 6px; font-size: 12px;';
-        
-        // Insert after the buttons container
-        qeButtons.parentElement.insertBefore(renameBtn, qeButtons.nextSibling);
-    }
-    
-    // Add rename buttons to all entries
-    function addRenameButtons() {
-        const entries = document.querySelectorAll('.queue_entry');
-        entries.forEach(entry => {
-            addRenameButtonToEntry(entry);
-            applyCustomNameToEntry(entry);
+    // Also hook when socket reconnects (NND might reload)
+    if (typeof socket !== 'undefined') {
+        socket.on('connect', function() {
+            setTimeout(installNNDHook, 1000);
         });
     }
-    
-    // Open rename popup
-    function openRenamePopup(entry) {
-        const customNames = getCustomNames();
-        const mediaKey = getMediaKeyFromEntry(entry);
-        const videoUrl = getVideoUrlFromEntry(entry);
-        
-        if (!mediaKey) {
-            alert('Could not identify this video. Make sure it has a valid URL.');
-            return;
+})();
+
+/* ========== PLAYLIST RENAME SYSTEM ========== */
+/* Add this code to your script.js file */
+
+// JSONBin Configuration
+var JSONBIN_BIN_ID = '69607c81d0ea881f405ea137';
+var JSONBIN_API_KEY = '$2a$10$d8GSLo33pwEFh6n31kbyEOotfsidBcVubhZEk7kYOg0sC6DvHJgjW';
+var JSONBIN_BASE_URL = 'https://api.jsonbin.io/v3/b/';
+
+// Local cache of custom playlist names
+var playlistCustomNames = {};
+var playlistNamesLoaded = false;
+
+// Inject CSS for rename feature
+(function() {
+    var renameStyles = document.createElement('style');
+    renameStyles.id = 'playlist-rename-styles';
+    renameStyles.textContent = `
+        /* Rename button on playlist items */
+        .queue_entry .rename-btn {
+            display: none;
+            position: absolute;
+            right: 8px;
+            top: 50%;
+            transform: translateY(-50%);
+            background: rgba(100, 100, 100, 0.8);
+            border: none;
+            border-radius: 4px;
+            color: #fff;
+            font-size: 14px;
+            padding: 4px 8px;
+            cursor: pointer;
+            z-index: 10;
+            transition: background 0.2s;
+        }
+        .queue_entry:hover .rename-btn {
+            display: block;
+        }
+        .queue_entry .rename-btn:hover {
+            background: rgba(150, 150, 150, 0.9);
+        }
+        .queue_entry {
+            position: relative !important;
         }
         
-        const titleElement = entry.querySelector('.qe_title');
-        const originalTitle = titleElement.dataset.originalTitle || titleElement.textContent.trim();
-        const currentCustomName = customNames[mediaKey] || '';
+        /* Custom name indicator */
+        .queue_entry .custom-name-indicator {
+            color: #ffd700;
+            font-size: 10px;
+            margin-left: 5px;
+            opacity: 0.7;
+        }
         
-        // Create popup overlay
-        const overlay = document.createElement('div');
-        overlay.style.cssText = `
+        /* Rename popup overlay */
+        #rename-popup-overlay {
+            display: none;
             position: fixed;
             top: 0;
             left: 0;
             right: 0;
             bottom: 0;
-            background: rgba(0,0,0,0.7);
-            z-index: 99999;
+            background: rgba(0, 0, 0, 0.7);
+            z-index: 999999;
+            align-items: center;
+            justify-content: center;
+        }
+        #rename-popup-overlay.visible {
+            display: flex !important;
+        }
+        
+        /* Rename popup */
+        #rename-popup {
+            background: #1e1e24;
+            border: 2px solid #555;
+            border-radius: 12px;
+            padding: 0;
+            width: 400px;
+            max-width: 90vw;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.9);
+        }
+        #rename-popup-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 14px 18px;
+            background: #2d2d35;
+            border-radius: 10px 10px 0 0;
+        }
+        #rename-popup-header span {
+            color: #fff;
+            font-weight: bold;
+            font-size: 16px;
+        }
+        #rename-popup-close {
+            background: #e44;
+            border: none;
+            color: #fff;
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            font-size: 20px;
+            cursor: pointer;
             display: flex;
             align-items: center;
             justify-content: center;
-        `;
-        
-        const popup = document.createElement('div');
-        popup.style.cssText = `
-            background: #1e1e24;
-            border: 2px solid #444;
-            border-radius: 8px;
-            padding: 20px;
-            min-width: 400px;
-            max-width: 600px;
-            box-shadow: 0 10px 40px rgba(0,0,0,0.5);
-        `;
-        
-        popup.innerHTML = `
-            <h3 style="margin: 0 0 15px 0; color: #fff; font-size: 18px;">Rename Playlist Entry</h3>
-            
-            <div style="margin-bottom: 12px;">
-                <div style="font-size: 12px; color: #999; margin-bottom: 8px;">
-                    <strong style="color: #bbb;">Original Title:</strong><br>
-                    <span style="color: #ddd;">${originalTitle}</span>
-                </div>
-            </div>
-            
-            <div style="margin-bottom: 12px;">
-                <div style="font-size: 11px; color: #666; word-break: break-all;">
-                    <strong style="color: #888;">Key:</strong> ${mediaKey}
-                </div>
-            </div>
-            
-            <div style="margin-bottom: 15px;">
-                <label style="display: block; margin-bottom: 6px; color: #ccc; font-weight: bold;">Custom Name:</label>
-                <input type="text" id="rename-input" value="${currentCustomName}" 
-                       placeholder="Enter custom name (leave empty to remove)"
-                       style="width: 100%; padding: 10px; background: #252530; border: 1px solid #444; 
-                              color: #fff; border-radius: 4px; box-sizing: border-box; font-size: 14px;">
-            </div>
-            
-            <div style="display: flex; gap: 10px; justify-content: flex-end;">
-                <button id="rename-cancel" style="padding: 8px 16px; background: #333; color: #ccc; 
-                        border: 1px solid #444; border-radius: 4px; cursor: pointer;">Cancel</button>
-                <button id="rename-reset" style="padding: 8px 16px; background: #a33; color: #fff; 
-                        border: none; border-radius: 4px; cursor: pointer;">Reset</button>
-                <button id="rename-save" style="padding: 8px 16px; background: #3a3; color: #fff; 
-                        border: none; border-radius: 4px; cursor: pointer; font-weight: bold;">Save</button>
-            </div>
-        `;
-        
-        overlay.appendChild(popup);
-        document.body.appendChild(overlay);
-        
-        const input = popup.querySelector('#rename-input');
-        const saveBtn = popup.querySelector('#rename-save');
-        const resetBtn = popup.querySelector('#rename-reset');
-        const cancelBtn = popup.querySelector('#rename-cancel');
-        
-        input.focus();
-        input.select();
-        
-        function close() {
-            document.body.removeChild(overlay);
+        }
+        #rename-popup-close:hover {
+            background: #f66;
+        }
+        #rename-popup-body {
+            padding: 18px;
+        }
+        #rename-popup-body label {
+            display: block;
+            color: #aaa;
+            font-size: 12px;
+            margin-bottom: 6px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        #rename-popup-body input {
+            width: 100%;
+            padding: 12px;
+            background: #333;
+            border: 1px solid #555;
+            border-radius: 6px;
+            color: #fff;
+            font-size: 14px;
+            box-sizing: border-box;
+            margin-bottom: 12px;
+        }
+        #rename-popup-body input:focus {
+            outline: none;
+            border-color: #888;
+        }
+        #rename-original-title {
+            color: #888;
+            font-size: 12px;
+            margin-bottom: 15px;
+            padding: 10px;
+            background: #252530;
+            border-radius: 6px;
+            word-break: break-word;
+        }
+        #rename-popup-actions {
+            display: flex;
+            gap: 10px;
+        }
+        #rename-popup-actions button {
+            flex: 1;
+            padding: 12px;
+            border: none;
+            border-radius: 6px;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+        #rename-save-btn {
+            background: #4a7;
+            color: #fff;
+        }
+        #rename-save-btn:hover {
+            background: #5b8;
+        }
+        #rename-save-btn:disabled {
+            background: #555;
+            cursor: not-allowed;
+        }
+        #rename-reset-btn {
+            background: #744;
+            color: #fff;
+        }
+        #rename-reset-btn:hover {
+            background: #855;
+        }
+        #rename-cancel-btn {
+            background: #444;
+            color: #fff;
+        }
+        #rename-cancel-btn:hover {
+            background: #555;
         }
         
-        function save() {
-            const newName = input.value.trim();
-            const names = getCustomNames();
-            
-            if (newName) {
-                names[mediaKey] = newName;
-                console.log('Saved custom name for ' + mediaKey + ': ' + newName);
-            } else {
-                delete names[mediaKey];
-                console.log('Removed custom name for ' + mediaKey);
-            }
-            
-            saveCustomNames(names);
-            applyAllCustomNames();
-            close();
+        /* Status message */
+        #rename-status {
+            margin-top: 10px;
+            padding: 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            text-align: center;
+            display: none;
         }
-        
-        function reset() {
-            if (confirm('Remove the custom name for this entry?')) {
-                const names = getCustomNames();
-                delete names[mediaKey];
-                saveCustomNames(names);
-                applyAllCustomNames();
-                close();
-            }
+        #rename-status.success {
+            display: block;
+            background: rgba(100, 200, 100, 0.2);
+            color: #8f8;
         }
-        
-        saveBtn.onclick = save;
-        resetBtn.onclick = reset;
-        cancelBtn.onclick = close;
-        overlay.onclick = function(e) {
-            if (e.target === overlay) close();
-        };
-        
-        input.addEventListener('keypress', function(e) {
-            if (e.key === 'Enter') save();
-        });
-        
-        popup.addEventListener('keydown', function(e) {
-            if (e.key === 'Escape') close();
-        });
+        #rename-status.error {
+            display: block;
+            background: rgba(200, 100, 100, 0.2);
+            color: #f88;
+        }
+        #rename-status.loading {
+            display: block;
+            background: rgba(100, 100, 200, 0.2);
+            color: #88f;
+        }
+    `;
+    document.head.appendChild(renameStyles);
+})();
+
+// Fetch custom names from JSONBin
+function fetchPlaylistNames() {
+    return fetch(JSONBIN_BASE_URL + JSONBIN_BIN_ID + '/latest', {
+        method: 'GET',
+        headers: {
+            'X-Master-Key': JSONBIN_API_KEY
+        }
+    })
+    .then(function(response) {
+        if (!response.ok) throw new Error('Failed to fetch');
+        return response.json();
+    })
+    .then(function(data) {
+        playlistCustomNames = data.record || {};
+        // Remove initialization placeholder if present
+        delete playlistCustomNames._init;
+        delete playlistCustomNames.placeholder;
+        playlistNamesLoaded = true;
+        console.log('Playlist custom names loaded:', Object.keys(playlistCustomNames).length, 'entries');
+        applyAllCustomNames();
+        return playlistCustomNames;
+    })
+    .catch(function(err) {
+        console.error('Error fetching playlist names:', err);
+        playlistNamesLoaded = true; // Mark as loaded even on error to prevent blocking
+        return {};
+    });
+}
+
+// Save custom names to JSONBin
+function savePlaylistNames() {
+    return fetch(JSONBIN_BASE_URL + JSONBIN_BIN_ID, {
+        method: 'PUT',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-Master-Key': JSONBIN_API_KEY
+        },
+        body: JSON.stringify(playlistCustomNames)
+    })
+    .then(function(response) {
+        if (!response.ok) throw new Error('Failed to save');
+        return response.json();
+    })
+    .then(function(data) {
+        console.log('Playlist names saved successfully');
+        return true;
+    })
+    .catch(function(err) {
+        console.error('Error saving playlist names:', err);
+        throw err;
+    });
+}
+
+// Generate a unique key for a playlist item
+function getPlaylistItemKey(item) {
+    // Use media type + id as the unique key
+    if (item && item.media) {
+        return item.media.type + '_' + item.media.id;
+    }
+    return null;
+}
+
+// Get custom name for a playlist item
+function getCustomName(mediaKey) {
+    return playlistCustomNames[mediaKey] || null;
+}
+
+// Set custom name for a playlist item
+function setCustomName(mediaKey, customName) {
+    if (customName && customName.trim()) {
+        playlistCustomNames[mediaKey] = customName.trim();
+    } else {
+        delete playlistCustomNames[mediaKey];
+    }
+}
+
+// Extract media key from a playlist entry element
+function getMediaKeyFromEntry(entryElement) {
+    if (!entryElement) return null;
+    
+    // PRIMARY: Use video URL - it's unique and persistent
+    var mediaLink = entryElement.querySelector('a.qe_title');
+    if (!mediaLink) {
+        mediaLink = entryElement.querySelector('a[href]');
     }
     
-    // Handle rename button clicks using event delegation
-    document.addEventListener('click', function(e) {
-        if (e.target.classList.contains('rename-btn') || 
-            e.target.closest('.rename-btn')) {
-            const btn = e.target.classList.contains('rename-btn') ? e.target : e.target.closest('.rename-btn');
-            const entry = btn.closest('.queue_entry');
-            if (entry) {
-                e.preventDefault();
-                e.stopPropagation();
-                openRenamePopup(entry);
-            }
+    var mediaUrl = mediaLink ? mediaLink.getAttribute('href') : null;
+    
+    if (mediaUrl) {
+        // Extract just the filename/ID part to keep keys shorter
+        // e.g., "https://pomf2.lain.la/f/h7gfu0h.mp4" -> "h7gfu0h.mp4"
+        var urlParts = mediaUrl.split('/');
+        var filename = urlParts[urlParts.length - 1] || mediaUrl;
+        // Also handle YouTube, etc.
+        var ytMatch = mediaUrl.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([^&\s]+)/);
+        if (ytMatch) {
+            return 'yt_' + ytMatch[1];
+        }
+        return 'url_' + filename.replace(/[^a-zA-Z0-9._-]/g, '_').substring(0, 100);
+    }
+    
+    // FALLBACK: Use UID if no URL (less reliable but better than nothing)
+    var uid = getEntryUid(entryElement);
+    if (uid) {
+        return 'uid_' + uid;
+    }
+    
+    return null;
+}
+
+// Apply custom name to a single playlist entry element
+function applyCustomNameToEntry(entryElement) {
+    if (!entryElement) return;
+    
+    var mediaKey = getMediaKeyFromEntry(entryElement);
+    if (!mediaKey) return;
+    
+    var customName = getCustomName(mediaKey);
+    var titleElement = entryElement.querySelector('.qe_title');
+    
+    if (!titleElement) return;
+    
+    // Store original title if not already stored
+    if (!titleElement.getAttribute('data-original-title')) {
+        titleElement.setAttribute('data-original-title', titleElement.textContent);
+    }
+    
+    var originalTitle = titleElement.getAttribute('data-original-title');
+    
+    // Remove existing indicator if present
+    var existingIndicator = entryElement.querySelector('.custom-name-indicator');
+    if (existingIndicator) existingIndicator.remove();
+    
+    if (customName) {
+        titleElement.textContent = customName;
+        titleElement.title = 'Original: ' + originalTitle;
+        
+        // Add indicator that this has a custom name
+        var indicator = document.createElement('span');
+        indicator.className = 'custom-name-indicator';
+        indicator.textContent = '✎';
+        indicator.title = 'Custom name';
+        titleElement.parentNode.insertBefore(indicator, titleElement.nextSibling);
+    } else {
+        titleElement.textContent = originalTitle;
+        titleElement.title = '';
+    }
+}
+
+// Apply custom names to all playlist entries
+function applyAllCustomNames() {
+    var entries = document.querySelectorAll('#queue .queue_entry');
+    entries.forEach(function(entry) {
+        applyCustomNameToEntry(entry);
+    });
+}
+
+// Check if current user is a moderator or higher
+function canRenamePlaylist() {
+    // CLIENT.rank values in CyTube:
+    // 0 = Guest
+    // 1 = Regular user
+    // 2 = Moderator
+    // 3 = Channel Admin
+    // 4 = Channel Owner
+    // 5+ = Site admin/superuser
+    if (typeof CLIENT !== 'undefined' && CLIENT.rank >= 2) {
+        return true;
+    }
+    return false;
+}
+
+// Add rename button to a playlist entry
+function addRenameButton(entryElement) {
+    if (!entryElement) return;
+    if (entryElement.querySelector('.rename-btn')) return; // Already has button
+    
+    // Only add button if user is moderator or higher
+    if (!canRenamePlaylist()) {
+        return;
+    }
+    
+    var btn = document.createElement('button');
+    btn.className = 'rename-btn';
+    btn.innerHTML = '✏️';
+    btn.title = 'Rename this item (Mod only)';
+    
+    btn.addEventListener('click', function(e) {
+        e.stopPropagation();
+        e.preventDefault();
+        console.log('Rename button clicked');
+        try {
+            openRenamePopup(entryElement);
+        } catch (err) {
+            console.error('Error opening rename popup:', err);
         }
     });
     
-    // Initialize
-    function init() {
-        const queue = document.getElementById('queue');
-        if (!queue) {
-            console.log('[Playlist Rename] Waiting for queue element...');
-            setTimeout(init, 500);
-            return;
-        }
-        
-        console.log('[Playlist Rename] Initializing rename system...');
-        
-        // Export functions for debugging BEFORE doing anything else
-        window.playlistRename = {
-            getCustomNames: getCustomNames,
-            saveCustomNames: saveCustomNames,
-            applyAll: applyAllCustomNames,
-            clearAll: function() {
-                if (confirm('Clear all custom playlist names?')) {
-                    localStorage.removeItem(STORAGE_KEY);
-                    console.log('[Playlist Rename] Cleared all custom names');
-                    location.reload();
-                }
-            }
-        };
-        
-        // Add buttons and apply names initially
-        setTimeout(function() {
-            console.log('[Playlist Rename] Adding rename buttons and applying custom names...');
-            addRenameButtons();
-            applyAllCustomNames();
-        }, 1000);
-        
-        // Watch for playlist changes (new entries added, pagination, etc.)
-        const observer = new MutationObserver(function(mutations) {
-            let shouldUpdate = false;
-            
-            mutations.forEach(function(mutation) {
-                if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
-                    mutation.addedNodes.forEach(function(node) {
-                        if (node.classList && node.classList.contains('queue_entry')) {
-                            addRenameButtonToEntry(node);
-                            applyCustomNameToEntry(node);
-                            shouldUpdate = true;
-                        }
-                    });
-                }
-            });
-            
-            if (shouldUpdate) {
-                // Small delay to let DOM settle
-                setTimeout(function() {
-                    console.log('[Playlist Rename] Playlist changed, updating...');
-                    addRenameButtons();
-                    applyAllCustomNames();
-                }, 100);
-            }
-        });
-        
-        observer.observe(queue, {
-            childList: true,
-            subtree: true
-        });
-        
-        // Also re-apply names periodically (catches slider/pagination changes)
-        setInterval(function() {
-            applyAllCustomNames();
-        }, 2000);
-        
-        const customNames = getCustomNames();
-        console.log('[Playlist Rename] ✓ System initialized! Loaded ' + Object.keys(customNames).length + ' custom names');
-    }
+    entryElement.appendChild(btn);
+}
+
+// Extract UID from entry element (can be in data-uid or class name)
+function getEntryUid(entryElement) {
+    // Try data-uid first
+    var uid = entryElement.getAttribute('data-uid');
+    if (uid) return uid;
     
-    // Export early for debugging
-    window.playlistRename = {
-        getCustomNames: getCustomNames,
-        status: 'loading'
+    // Try to extract from class name (e.g., "queue_entry pluid-265")
+    var classList = entryElement.className || '';
+    var match = classList.match(/pluid-(\d+)/);
+    if (match) return match[1];
+    
+    return null;
+}
+
+// Add rename buttons to all playlist entries
+function addAllRenameButtons() {
+    var entries = document.querySelectorAll('#queue .queue_entry');
+    entries.forEach(function(entry) {
+        addRenameButton(entry);
+    });
+}
+
+// Current item being renamed
+var currentRenameItem = null;
+var currentRenameKey = null;
+
+// Create rename popup
+function createRenamePopup() {
+    if (document.getElementById('rename-popup-overlay')) return;
+    
+    var overlay = document.createElement('div');
+    overlay.id = 'rename-popup-overlay';
+    overlay.onclick = function(e) {
+        if (e.target === overlay) closeRenamePopup();
     };
     
-    // Start initialization
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', init);
-    } else {
-        init();
+    var popup = document.createElement('div');
+    popup.id = 'rename-popup';
+    popup.innerHTML = 
+        '<div id="rename-popup-header">' +
+            '<span>✏️ Rename Playlist Item</span>' +
+            '<button id="rename-popup-close" onclick="closeRenamePopup()">×</button>' +
+        '</div>' +
+        '<div id="rename-popup-body">' +
+            '<label>Original Title</label>' +
+            '<div id="rename-original-title"></div>' +
+            '<label>Custom Name</label>' +
+            '<input type="text" id="rename-input" placeholder="Enter custom name..." maxlength="200">' +
+            '<div id="rename-popup-actions">' +
+                '<button id="rename-save-btn" onclick="saveRename()">💾 Save</button>' +
+                '<button id="rename-reset-btn" onclick="resetRename()">↺ Reset</button>' +
+                '<button id="rename-cancel-btn" onclick="closeRenamePopup()">Cancel</button>' +
+            '</div>' +
+            '<div id="rename-status"></div>' +
+        '</div>';
+    
+    overlay.appendChild(popup);
+    document.body.appendChild(overlay);
+    
+    // Handle Enter key in input
+    document.getElementById('rename-input').addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') {
+            saveRename();
+        } else if (e.key === 'Escape') {
+            closeRenamePopup();
+        }
+    });
+}
+
+// Open rename popup for a playlist entry
+function openRenamePopup(entryElement) {
+    console.log('openRenamePopup called');
+    
+    // Double-check permission
+    if (!canRenamePlaylist()) {
+        console.log('Permission denied');
+        return;
     }
-})();
+    
+    createRenamePopup();
+    
+    // Get the title element
+    var titleEl = entryElement.querySelector('.qe_title');
+    var title = titleEl ? titleEl.textContent.trim() : '';
+    console.log('Title:', title);
+    
+    // Get UID from class or data attribute
+    var uid = getEntryUid(entryElement);
+    console.log('UID:', uid);
+    
+    // PRIMARY: Use video URL as key - it's unique and persistent across server restarts
+    var mediaLink = entryElement.querySelector('a.qe_title');
+    if (!mediaLink) {
+        mediaLink = entryElement.querySelector('a[href]');
+    }
+    var mediaUrl =
