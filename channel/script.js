@@ -3429,16 +3429,118 @@ window.closeRenamePopup = closeRenamePopup;
 window.saveRename = saveRename;
 window.resetRename = resetRename;
 
-/* ========== HIDE JOIN/LEAVE MESSAGES ========== */
+/* ========== HIDE JOIN/LEAVE MESSAGES & FIX CHAT ========== */
 // CyTube adds join/leave messages with specific classes
-// This CSS hides them completely
+// This CSS removes them completely without leaving gaps
 (function() {
-    var hideJoinLeaveCSS = document.createElement('style');
-    hideJoinLeaveCSS.id = 'hide-join-leave-css';
-    hideJoinLeaveCSS.textContent = 
-        '#messagebuffer .server-whisper { display: none !important; }' +
-        '#messagebuffer .chat-shadow { display: none !important; }';
-    document.head.appendChild(hideJoinLeaveCSS);
+    var chatFixCSS = document.createElement('style');
+    chatFixCSS.id = 'chat-fix-css';
+    chatFixCSS.textContent = `
+        /* Completely remove join/leave messages - no gaps */
+        #messagebuffer .server-whisper,
+        #messagebuffer .chat-shadow {
+            display: none !important;
+            height: 0 !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            line-height: 0 !important;
+        }
+        
+        /* Remove timestamps completely - CyTube uses .timestamp class */
+        #messagebuffer .timestamp,
+        #messagebuffer > div > .timestamp {
+            display: none !important;
+            width: 0 !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            float: none !important;
+        }
+        
+        /* Override any timestamp visibility rules */
+        #messagebuffer > div.has-visible-username > .timestamp,
+        #messagebuffer > div.has-hidden-username > .timestamp {
+            display: none !important;
+        }
+        
+        /* Ensure messages use full width */
+        #messagebuffer > div {
+            width: 100% !important;
+        }
+        
+        /* Remove any flex gaps that might cause spacing */
+        #messagebuffer > div {
+            margin-bottom: 2px !important;
+        }
+        
+        /* Ensure no empty space from hidden elements */
+        #messagebuffer {
+            line-height: normal !important;
+        }
+    `;
+    document.head.appendChild(chatFixCSS);
+    
+    // Also actively remove join/leave messages from DOM to prevent gaps
+    if (typeof MutationObserver !== 'undefined') {
+        var chatObserver = new MutationObserver(function(mutations) {
+            mutations.forEach(function(mutation) {
+                mutation.addedNodes.forEach(function(node) {
+                    if (node.nodeType === 1) {
+                        // Remove server whispers and chat shadows immediately
+                        if (node.classList && (
+                            node.classList.contains('server-whisper') ||
+                            node.classList.contains('chat-shadow')
+                        )) {
+                            node.remove();
+                        }
+                        
+                        // Also remove timestamp elements immediately
+                        if (node.classList && node.classList.contains('timestamp')) {
+                            node.remove();
+                        }
+                        
+                        // Check children for timestamps and remove them
+                        if (node.querySelectorAll) {
+                            var timestamps = node.querySelectorAll('.timestamp');
+                            timestamps.forEach(function(ts) {
+                                ts.remove();
+                            });
+                        }
+                    }
+                });
+            });
+        });
+        
+        var messageBuffer = document.getElementById('messagebuffer');
+        if (messageBuffer) {
+            chatObserver.observe(messageBuffer, {
+                childList: true,
+                subtree: true
+            });
+            
+            // Remove any existing timestamps on load
+            var existingTimestamps = messageBuffer.querySelectorAll('.timestamp');
+            existingTimestamps.forEach(function(ts) {
+                ts.remove();
+            });
+        } else {
+            // Wait for messagebuffer to exist
+            setTimeout(function() {
+                messageBuffer = document.getElementById('messagebuffer');
+                if (messageBuffer) {
+                    chatObserver.observe(messageBuffer, {
+                        childList: true,
+                        subtree: true
+                    });
+                    
+                    // Remove any existing timestamps
+                    var existingTimestamps = messageBuffer.querySelectorAll('.timestamp');
+                    existingTimestamps.forEach(function(ts) {
+                        ts.remove();
+                    });
+                }
+            }, 1000);
+        }
+    }
 })();
 
 /* ========== PLAYLIST SEARCH & SCROLLBAR ========== */
