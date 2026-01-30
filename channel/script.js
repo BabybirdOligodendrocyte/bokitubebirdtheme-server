@@ -3376,12 +3376,13 @@ window.resetRename = resetRename;
             return;
         }
         
-        // Add minimal CSS
+        // Add CSS for search box, pagination, and button positioning
         var css = document.createElement('style');
         css.textContent = `
+            /* Search box */
             #playlist-search-box {
                 padding: 8px;
-                margin: 8px;
+                margin: 8px 8px 4px 8px;
                 background: #252530;
                 border: 1px solid #444;
                 border-radius: 4px;
@@ -3389,8 +3390,49 @@ window.resetRename = resetRename;
                 width: calc(100% - 20px);
                 box-sizing: border-box;
             }
+            #playlist-search-box:focus {
+                border-color: #666;
+                outline: none;
+            }
             .queue_entry.search-hidden {
                 display: none !important;
+            }
+            
+            /* Pagination controls */
+            #playlist-pagination {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                padding: 8px;
+                margin: 4px 8px 8px 8px;
+                background: #1e1e24;
+                border-radius: 4px;
+            }
+            #playlist-pagination button {
+                padding: 6px 12px;
+                background: #333;
+                border: 1px solid #444;
+                border-radius: 4px;
+                color: #ddd;
+                cursor: pointer;
+                font-size: 12px;
+            }
+            #playlist-pagination button:hover:not(:disabled) {
+                background: #444;
+                border-color: #555;
+            }
+            #playlist-pagination button:disabled {
+                opacity: 0.3;
+                cursor: not-allowed;
+            }
+            #playlist-page-info {
+                color: #888;
+                font-size: 12px;
+            }
+            
+            /* Better positioning for scroll to current button */
+            #jump-btn {
+                margin-left: 8px !important;
             }
         `;
         document.head.appendChild(css);
@@ -3400,13 +3442,96 @@ window.resetRename = resetRename;
         searchBox.type = 'text';
         searchBox.id = 'playlist-search-box';
         searchBox.placeholder = '🔍 Search playlist...';
-        
         queue.parentElement.insertBefore(searchBox, queue);
+        
+        // Add pagination controls
+        var paginationDiv = document.createElement('div');
+        paginationDiv.id = 'playlist-pagination';
+        paginationDiv.innerHTML = `
+            <button id="playlist-prev">◄ Prev</button>
+            <span id="playlist-page-info">Page 1</span>
+            <button id="playlist-next">Next ►</button>
+        `;
+        queue.parentElement.insertBefore(paginationDiv, queue);
+        
+        // Pagination state
+        var itemsPerPage = 20;
+        var currentPage = 1;
+        var isSearching = false;
+        
+        function updatePagination() {
+            var entries = Array.from(queue.querySelectorAll('.queue_entry'));
+            var visibleEntries = entries.filter(function(e) {
+                return !e.classList.contains('search-hidden');
+            });
+            
+            var totalPages = Math.ceil(visibleEntries.length / itemsPerPage);
+            if (totalPages === 0) totalPages = 1;
+            
+            // Show/hide pagination based on whether we're searching
+            if (isSearching) {
+                paginationDiv.style.display = 'none';
+                // Show all visible entries when searching
+                visibleEntries.forEach(function(entry) {
+                    entry.style.display = '';
+                });
+                return;
+            } else {
+                paginationDiv.style.display = 'flex';
+            }
+            
+            // Make sure current page is valid
+            if (currentPage > totalPages) currentPage = totalPages;
+            if (currentPage < 1) currentPage = 1;
+            
+            // Hide all entries first
+            entries.forEach(function(entry) {
+                entry.style.display = 'none';
+            });
+            
+            // Show only current page
+            var start = (currentPage - 1) * itemsPerPage;
+            var end = start + itemsPerPage;
+            var pageEntries = visibleEntries.slice(start, end);
+            
+            pageEntries.forEach(function(entry) {
+                entry.style.display = '';
+            });
+            
+            // Update controls
+            document.getElementById('playlist-page-info').textContent = 
+                'Page ' + currentPage + ' of ' + totalPages + ' (' + visibleEntries.length + ' items)';
+            document.getElementById('playlist-prev').disabled = currentPage === 1;
+            document.getElementById('playlist-next').disabled = currentPage === totalPages;
+        }
+        
+        // Pagination button handlers
+        document.getElementById('playlist-prev').addEventListener('click', function() {
+            if (currentPage > 1) {
+                currentPage--;
+                updatePagination();
+            }
+        });
+        
+        document.getElementById('playlist-next').addEventListener('click', function() {
+            var entries = Array.from(queue.querySelectorAll('.queue_entry'));
+            var visibleEntries = entries.filter(function(e) {
+                return !e.classList.contains('search-hidden');
+            });
+            var totalPages = Math.ceil(visibleEntries.length / itemsPerPage);
+            
+            if (currentPage < totalPages) {
+                currentPage++;
+                updatePagination();
+            }
+        });
         
         // Search functionality
         searchBox.addEventListener('input', function() {
             var query = this.value.toLowerCase().trim();
             var entries = queue.querySelectorAll('.queue_entry');
+            
+            isSearching = query.length > 0;
             
             entries.forEach(function(entry) {
                 var title = entry.querySelector('.qe_title');
@@ -3418,7 +3543,23 @@ window.resetRename = resetRename;
                     entry.classList.add('search-hidden');
                 }
             });
+            
+            // Reset to page 1 when searching
+            if (isSearching) {
+                currentPage = 1;
+            }
+            
+            updatePagination();
         });
+        
+        // Watch for playlist changes
+        var observer = new MutationObserver(function() {
+            updatePagination();
+        });
+        observer.observe(queue, { childList: true });
+        
+        // Initial pagination
+        setTimeout(updatePagination, 500);
     }
     
     if (document.readyState === 'loading') {
