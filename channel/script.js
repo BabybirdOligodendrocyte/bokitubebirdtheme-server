@@ -88,7 +88,33 @@ var jumpBtn = document.createElement("button");
 jumpBtn.innerHTML = "Scroll to current item";
 jumpBtn.setAttribute("id", "jump-btn");
 jumpBtn.setAttribute("class", "btn");
-jumpBtn.onclick = function() { window.scrollQueue(); }
+jumpBtn.onclick = function() {
+    var queue = document.getElementById('queue');
+    if (!queue) return;
+    
+    // Find the currently playing item
+    var currentItem = queue.querySelector('.queue_active');
+    if (currentItem) {
+        // Scroll it into view smoothly and center it
+        currentItem.scrollIntoView({ 
+            behavior: 'smooth', 
+            block: 'center',
+            inline: 'nearest'
+        });
+        
+        // Flash highlight effect
+        var originalBg = currentItem.style.background;
+        currentItem.style.transition = 'background 0.3s';
+        currentItem.style.background = 'rgba(255, 200, 0, 0.3)';
+        
+        setTimeout(function() {
+            currentItem.style.background = originalBg;
+        }, 600);
+    } else {
+        // No current item, scroll to top
+        queue.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+}
 var rightControls = document.getElementById("rightcontrols");
 rightControls.insertBefore(jumpBtn, rightControls.children[1]);
 
