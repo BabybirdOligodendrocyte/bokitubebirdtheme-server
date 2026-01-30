@@ -2602,561 +2602,6 @@ socket.on('chatMsg', function(data) {
     }
 })();
 
-
-// ============================================================================
-// PLAYLIST ENHANCEMENTS - Search, Scrollbar, Jump to Current
-// ============================================================================
-
-(function() {
-    // Wait for playlist to exist
-    function initPlaylistEnhancements() {
-        var playlist = document.getElementById('queue');
-        if (!playlist) {
-            setTimeout(initPlaylistEnhancements, 500);
-            return;
-        }
-        
-        // Add CSS for playlist enhancements
-        var style = document.createElement('style');
-        style.id = 'playlist-enhancements-style';
-        style.textContent = `
-            /* Playlist container improvements */
-            #queue {
-                max-height: 50vh !important;
-                overflow-y: auto !important;
-                overflow-x: hidden !important;
-                scroll-behavior: smooth;
-            }
-            
-            /* Custom scrollbar styling */
-            #queue::-webkit-scrollbar {
-                width: 12px !important;
-            }
-            #queue::-webkit-scrollbar-track {
-                background: #1a1a1a !important;
-                border-radius: 6px !important;
-            }
-            #queue::-webkit-scrollbar-thumb {
-                background: linear-gradient(180deg, #444, #666) !important;
-                border-radius: 6px !important;
-                border: 2px solid #1a1a1a !important;
-            }
-            #queue::-webkit-scrollbar-thumb:hover {
-                background: linear-gradient(180deg, #555, #777) !important;
-            }
-            #queue::-webkit-scrollbar-thumb:active {
-                background: linear-gradient(180deg, #666, #888) !important;
-            }
-            
-            /* Firefox scrollbar */
-            #queue {
-                scrollbar-width: auto;
-                scrollbar-color: #555 #1a1a1a;
-            }
-            
-            /* Playlist toolbar */
-            #playlist-toolbar {
-                display: flex;
-                gap: 8px;
-                padding: 8px;
-                background: #1e1e24;
-                border-bottom: 1px solid #333;
-                align-items: center;
-                flex-wrap: wrap;
-            }
-            
-            /* Search box */
-            #playlist-search {
-                flex: 1;
-                min-width: 150px;
-                padding: 8px 12px;
-                background: #252530;
-                border: 1px solid #444;
-                border-radius: 6px;
-                color: #fff;
-                font-size: 13px;
-                transition: border-color 0.2s;
-            }
-            #playlist-search:focus {
-                border-color: #666;
-                box-shadow: 0 0 0 2px rgba(100, 100, 255, 0.2);
-            }
-            #playlist-search::placeholder {
-                color: #888;
-            }
-            
-            /* Toolbar buttons */
-            .playlist-toolbar-btn {
-                padding: 8px 14px;
-                background: #333;
-                border: 1px solid #444;
-                border-radius: 6px;
-                color: #ddd;
-                font-size: 13px;
-                cursor: pointer;
-                transition: all 0.2s;
-                white-space: nowrap;
-            }
-            .playlist-toolbar-btn:hover {
-                background: #444;
-                color: #fff;
-                border-color: #555;
-            }
-            .playlist-toolbar-btn:active {
-                background: #555;
-            }
-            .playlist-toolbar-btn.highlight {
-                background: #2a4a2a;
-                border-color: #4a4;
-                color: #8f8;
-            }
-            
-            /* Playlist stats */
-            #playlist-stats {
-                font-size: 12px;
-                color: #888;
-                padding: 4px 8px;
-            }
-            
-            /* Hide non-matching items when filtering */
-            #queue .queue_entry.playlist-hidden {
-                display: none !important;
-            }
-            
-            /* Highlight matching text */
-            #queue .queue_entry.playlist-match {
-                background: rgba(255, 200, 0, 0.1) !important;
-            }
-            
-            /* Currently playing highlight */
-            #queue .queue_entry.queue_active {
-                background: rgba(0, 150, 255, 0.15) !important;
-                border-left: 3px solid #08f !important;
-            }
-            
-            /* Clear search button */
-            #playlist-search-clear {
-                position: absolute;
-                right: 8px;
-                top: 50%;
-                transform: translateY(-50%);
-                background: none;
-                border: none;
-                color: #888;
-                font-size: 16px;
-                cursor: pointer;
-                padding: 4px 8px;
-                display: none;
-            }
-            #playlist-search-clear:hover {
-                color: #fff;
-            }
-            #playlist-search-wrap {
-                position: relative;
-                flex: 1;
-                min-width: 150px;
-            }
-            #playlist-search-wrap #playlist-search {
-                width: 100%;
-                padding-right: 30px;
-            }
-        `;
-        document.head.appendChild(style);
-        
-        // Create toolbar
-        var playlistRow = document.getElementById('playlistrow');
-        if (!playlistRow) return;
-        
-        var toolbar = document.createElement('div');
-        toolbar.id = 'playlist-toolbar';
-        toolbar.innerHTML = `
-            <div id="playlist-search-wrap">
-                <input type="text" id="playlist-search" placeholder="🔍 Search playlist...">
-                <button id="playlist-search-clear">✕</button>
-            </div>
-            <button class="playlist-toolbar-btn" id="playlist-jump-current" title="Jump to currently playing">▶ Now Playing</button>
-            <span id="playlist-stats"></span>
-        `;
-        
-        // Insert toolbar before the queue
-        var queueWrap = playlist.parentElement;
-        queueWrap.insertBefore(toolbar, playlist);
-        
-        // Search functionality
-        var searchInput = document.getElementById('playlist-search');
-        var searchClear = document.getElementById('playlist-search-clear');
-        var searchTimeout;
-        
-        searchInput.addEventListener('input', function() {
-            clearTimeout(searchTimeout);
-            searchTimeout = setTimeout(function() {
-                filterPlaylist(searchInput.value);
-            }, 150);
-            
-            // Show/hide clear button
-            searchClear.style.display = searchInput.value ? 'block' : 'none';
-        });
-        
-        searchClear.addEventListener('click', function() {
-            searchInput.value = '';
-            searchClear.style.display = 'none';
-            filterPlaylist('');
-            searchInput.focus();
-        });
-        
-        // Filter playlist function
-        function filterPlaylist(query) {
-            var items = playlist.querySelectorAll('.queue_entry');
-            var matchCount = 0;
-            var totalCount = items.length;
-            
-            query = query.toLowerCase().trim();
-            
-            items.forEach(function(item) {
-                var title = item.querySelector('.qe_title');
-                var titleText = title ? title.textContent.toLowerCase() : '';
-                
-                if (!query || titleText.includes(query)) {
-                    item.classList.remove('playlist-hidden');
-                    item.classList.toggle('playlist-match', query && titleText.includes(query));
-                    matchCount++;
-                } else {
-                    item.classList.add('playlist-hidden');
-                    item.classList.remove('playlist-match');
-                }
-            });
-            
-            updatePlaylistStats(matchCount, totalCount, query);
-            
-            // Reapply custom names after filtering (in case they were modified)
-            if (typeof applyAllCustomNames === 'function') {
-                applyAllCustomNames();
-            }
-        }
-        
-        // Update stats display
-        function updatePlaylistStats(shown, total, query) {
-            var stats = document.getElementById('playlist-stats');
-            if (!stats) return;
-            
-            if (query) {
-                stats.textContent = shown + ' of ' + total + ' matches';
-                stats.style.color = shown > 0 ? '#8f8' : '#f88';
-            } else {
-                stats.textContent = total + ' items';
-                stats.style.color = '#888';
-            }
-        }
-        
-        // Jump to current function
-        document.getElementById('playlist-jump-current').addEventListener('click', function() {
-            var current = playlist.querySelector('.queue_active');
-            if (current) {
-                current.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                
-                // Flash highlight
-                current.style.transition = 'background 0.3s';
-                current.style.background = 'rgba(0, 200, 255, 0.3)';
-                setTimeout(function() {
-                    current.style.background = '';
-                }, 500);
-            } else {
-                // No current item, scroll to top
-                playlist.scrollTop = 0;
-            }
-        });
-        
-        // Initial stats update
-        setTimeout(function() {
-            var items = playlist.querySelectorAll('.queue_entry');
-            updatePlaylistStats(items.length, items.length, '');
-        }, 500);
-        
-        // Update stats when playlist changes
-        var playlistObserver = new MutationObserver(function() {
-            var searchVal = searchInput.value;
-            if (searchVal) {
-                filterPlaylist(searchVal);
-            } else {
-                var items = playlist.querySelectorAll('.queue_entry');
-                updatePlaylistStats(items.length, items.length, '');
-            }
-            
-            // Reapply custom names after playlist changes
-            if (typeof applyAllCustomNames === 'function') {
-                setTimeout(applyAllCustomNames, 100);
-            }
-        });
-        
-        playlistObserver.observe(playlist, { childList: true, subtree: true });
-        
-        console.log('Playlist enhancements initialized');
-    }
-    
-    // Start initialization
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', initPlaylistEnhancements);
-    } else {
-        initPlaylistEnhancements();
-    }
-})();
-        animation: null,
-        font: null,
-        bold: false
-    };
-    saveUsernameStyleSettings();
-}
-
-function refreshUsernameStyleBtns() {
-    document.querySelectorAll('.uname-color-btn').forEach(function(b) { 
-        b.classList.toggle('active', usernameStyleSettings.color === b.dataset.color); 
-    });
-    document.querySelectorAll('.uname-gradient-btn').forEach(function(b) { 
-        b.classList.toggle('active', usernameStyleSettings.gradient === b.dataset.gradient); 
-    });
-    document.querySelectorAll('.uname-glow-btn').forEach(function(b) { 
-        b.classList.toggle('active', usernameStyleSettings.glow === b.dataset.glow); 
-    });
-    document.querySelectorAll('.uname-anim-btn').forEach(function(b) { 
-        b.classList.toggle('active', usernameStyleSettings.animation === b.dataset.anim); 
-    });
-    document.querySelectorAll('.uname-font-btn').forEach(function(b) { 
-        b.classList.toggle('active', usernameStyleSettings.font === b.dataset.font); 
-    });
-    var boldBtn = document.getElementById('uname-bold-btn');
-    if (boldBtn) boldBtn.classList.toggle('active', usernameStyleSettings.bold);
-    var toggleBtn = document.getElementById('username-style-toggle');
-    if (toggleBtn) {
-        toggleBtn.textContent = usernameStyleSettings.enabled ? '✓ Enabled' : '✗ Disabled';
-        toggleBtn.classList.toggle('active', usernameStyleSettings.enabled);
-    }
-}
-
-function updateUsernamePreview() {
-    var p = document.getElementById('username-preview');
-    if (!p) return;
-    
-    var myName = getMyUsername() || 'YourName';
-    var s = [];
-    
-    // Font
-    if (usernameStyleSettings.font) {
-        var fontStyles = {
-            'comic': 'font-family:"Comic Sans MS",cursive',
-            'impact': 'font-family:Impact,sans-serif',
-            'papyrus': 'font-family:Papyrus,fantasy',
-            'copperplate': 'font-family:Copperplate,fantasy',
-            'brush': 'font-family:"Brush Script MT",cursive',
-            'lucida': 'font-family:"Lucida Handwriting",cursive',
-            'courier': 'font-family:"Courier New",monospace',
-            'times': 'font-family:"Times New Roman",serif',
-            'georgia': 'font-family:Georgia,serif',
-            'trebuchet': 'font-family:"Trebuchet MS",sans-serif',
-            'verdana': 'font-family:Verdana,sans-serif',
-            'gothic': 'font-family:"Century Gothic",sans-serif',
-            'garamond': 'font-family:Garamond,serif',
-            'palatino': 'font-family:"Palatino Linotype",serif',
-            'bookman': 'font-family:"Bookman Old Style",serif',
-            'mono': 'font-family:monospace',
-            'cursive': 'font-family:cursive',
-            'fantasy': 'font-family:fantasy',
-            'system': 'font-family:system-ui',
-            'serif': 'font-family:serif'
-        };
-        if (fontStyles[usernameStyleSettings.font]) s.push(fontStyles[usernameStyleSettings.font]);
-    }
-    
-    // Color or gradient
-    if (usernameStyleSettings.gradient) {
-        var gradientStyles = {
-            'rainbow': 'background:linear-gradient(90deg,#ff0000,#ff7700,#ffff00,#00ff00,#0077ff,#8b00ff);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text',
-            'fire': 'background:linear-gradient(90deg,#ff0000,#ff5500,#ffaa00,#ffcc00);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text',
-            'ocean': 'background:linear-gradient(90deg,#00ffff,#0088ff,#0044aa,#002255);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text',
-            'sunset': 'background:linear-gradient(90deg,#ff6b6b,#ffa500,#ffdb58,#ff6b9d);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text',
-            'neon': 'background:linear-gradient(90deg,#ff00ff,#00ffff,#ff00ff);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text',
-            'forest': 'background:linear-gradient(90deg,#228b22,#32cd32,#90ee90,#006400);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text',
-            'gold': 'background:linear-gradient(90deg,#ffd700,#ffec8b,#daa520,#b8860b);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text',
-            'ice': 'background:linear-gradient(90deg,#e0ffff,#87ceeb,#add8e6,#b0e0e6);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text'
-        };
-        if (gradientStyles[usernameStyleSettings.gradient]) s.push(gradientStyles[usernameStyleSettings.gradient]);
-    } else if (usernameStyleSettings.color) {
-        s.push('color:' + (usernameStyleSettings.color === 'blue' ? '#55f' : usernameStyleSettings.color));
-    }
-    
-    // Glow
-    if (usernameStyleSettings.glow) {
-        var glowStyles = {
-            'glow-white': 'text-shadow:0 0 10px #fff,0 0 20px #fff,0 0 30px #fff',
-            'glow-red': 'text-shadow:0 0 10px #f00,0 0 20px #f00,0 0 30px #f00',
-            'glow-blue': 'text-shadow:0 0 10px #00f,0 0 20px #00f,0 0 30px #0ff',
-            'glow-green': 'text-shadow:0 0 10px #0f0,0 0 20px #0f0,0 0 30px #0f0',
-            'glow-gold': 'text-shadow:0 0 10px #ffd700,0 0 20px #ffa500,0 0 30px #ff8c00',
-            'glow-pink': 'text-shadow:0 0 10px #ff69b4,0 0 20px #ff1493,0 0 30px #ff69b4',
-            'glow-rainbow': 'text-shadow:0 0 5px #f00,0 0 10px #ff0,0 0 15px #0f0,0 0 20px #0ff,0 0 25px #00f,0 0 30px #f0f'
-        };
-        if (glowStyles[usernameStyleSettings.glow]) s.push(glowStyles[usernameStyleSettings.glow]);
-    }
-    
-    // Bold
-    if (usernameStyleSettings.bold) s.push('font-weight:bold');
-    
-    // Animation class
-    var animClass = usernameStyleSettings.animation ? 'text-' + usernameStyleSettings.animation : '';
-    
-    var hasStyle = usernameStyleSettings.color || usernameStyleSettings.gradient || usernameStyleSettings.bold || 
-                   usernameStyleSettings.glow || usernameStyleSettings.animation || usernameStyleSettings.font;
-    
-    p.style.cssText = s.join(';');
-    p.className = animClass;
-    p.textContent = hasStyle ? myName : 'No styling (default)';
-    if (!hasStyle) { p.style.color = '#666'; p.style.fontStyle = 'italic'; }
-}
-
-// GIF EMBEDDING - Convert GIF links to inline images
-function embedGifsInMessage(msgElement) {
-    if (!msgElement) return;
-    
-    // Find all links in the message
-    var links = msgElement.querySelectorAll('a');
-    links.forEach(function(link) {
-        var href = link.getAttribute('href');
-        if (!href) return;
-        
-        // Check if it's a GIF URL (Tenor, Giphy, or any .gif)
-        var isGif = href.match(/\.(gif)$/i) ||
-                    href.match(/media\.tenor\.com/i) ||
-                    href.match(/giphy\.com/i) ||
-                    href.match(/media\d*\.giphy\.com/i);
-        
-        if (isGif) {
-            // Create image element
-            var img = document.createElement('img');
-            img.src = href;
-            img.alt = 'GIF';
-            img.style.cssText = 'height:100px;max-width:250px;object-fit:contain;vertical-align:middle;cursor:pointer;';
-            img.title = 'Click to open full size';
-            img.onclick = function() { window.open(href, '_blank'); };
-            
-            // Handle load errors - revert to link if image fails
-            img.onerror = function() {
-                img.replaceWith(link);
-            };
-            
-            // Replace link with image
-            link.replaceWith(img);
-        }
-    });
-}
-
-// Run on all existing messages when script loads
-function embedAllExistingGifs() {
-    var messages = document.querySelectorAll('#messagebuffer > div');
-    messages.forEach(function(msg) {
-        embedGifsInMessage(msg);
-        processStyledUsername(msg);
-    });
-}
-
-// Run after page loads
-setTimeout(embedAllExistingGifs, 1000);
-
-// Watch for new messages using MutationObserver
-var gifObserver = new MutationObserver(function(mutations) {
-    mutations.forEach(function(mutation) {
-        mutation.addedNodes.forEach(function(node) {
-            if (node.nodeType === 1 && node.classList && node.classList.contains('chat-msg-')) {
-                // Small delay to let CyTube finish processing the message
-                setTimeout(function() { 
-                    embedGifsInMessage(node); 
-                    processStyledUsername(node);
-                }, 50);
-            }
-            // Also check if it's a div directly added to messagebuffer
-            if (node.nodeType === 1 && node.tagName === 'DIV' && node.parentElement && node.parentElement.id === 'messagebuffer') {
-                setTimeout(function() { 
-                    embedGifsInMessage(node); 
-                    processStyledUsername(node);
-                }, 50);
-            }
-        });
-    });
-});
-
-// Start observing the message buffer
-var msgBuffer = document.getElementById('messagebuffer');
-if (msgBuffer) {
-    gifObserver.observe(msgBuffer, { childList: true, subtree: true });
-}
-
-socket.on('chatMsg', function(data) {
-    formatChatMsg(data, $("#messagebuffer > div").last());
-});
-
-// Hook into niconico script to strip username tags and show GIFs in scrolling messages
-(function() {
-    function installNNDHook() {
-        if (!window.nnd || !window.nnd._fn || !window.nnd._fn.addScrollingMessage) {
-            return false;
-        }
-        
-        // Check if already hooked
-        if (window.nnd._fn._hookedByBokitube) {
-            return true;
-        }
-        
-        // Store original function
-        var originalAddScrollingMessage = window.nnd._fn.addScrollingMessage;
-        
-        // Override with our version that strips username tags and converts GIF URLs
-        window.nnd._fn.addScrollingMessage = function(message, extraClass) {
-            if (typeof message === 'string') {
-                // Remove [uname]...[/uname] tags and their contents (including styled spans)
-                message = message.replace(/\[uname\][\s\S]*?\[\/uname\]\s*/gi, '');
-                
-                // Also remove already-processed styled-username spans
-                message = message.replace(/<span[^>]*class="[^"]*styled-username[^"]*"[^>]*>[\s\S]*?<\/span>\s*/gi, '');
-                
-                // Convert Tenor/Giphy/GIF URLs to img tags for display
-                // Match URLs that are GIFs (including those in anchor tags)
-                message = message.replace(/<a[^>]*href="(https?:\/\/[^"]*(?:tenor\.com|giphy\.com|\.gif)[^"]*)"[^>]*>[^<]*<\/a>/gi, function(match, url) {
-                    return '<img src="' + url + '" alt="GIF">';
-                });
-                
-                // Also convert plain GIF URLs that aren't in anchor tags
-                message = message.replace(/(?<![">])(https?:\/\/(?:media\.tenor\.com|[^\s]*\.gif)[^\s<]*)/gi, function(match, url) {
-                    return '<img src="' + url + '" alt="GIF">';
-                });
-            }
-            // Call original function with cleaned message
-            return originalAddScrollingMessage.call(this, message, extraClass);
-        };
-        
-        window.nnd._fn._hookedByBokitube = true;
-        console.log('NND username/GIF filter hook installed');
-        return true;
-    }
-    
-    // Try to install hook immediately
-    if (!installNNDHook()) {
-        // If NND not loaded yet, keep trying
-        var checkNND = setInterval(function() {
-            if (installNNDHook()) {
-                clearInterval(checkNND);
-            }
-        }, 200);
-        
-        // Stop checking after 30 seconds
-        setTimeout(function() { clearInterval(checkNND); }, 30000);
-    }
-    
-    // Also hook when socket reconnects (NND might reload)
-    if (typeof socket !== 'undefined') {
-        socket.on('connect', function() {
-            setTimeout(installNNDHook, 1000);
-        });
-    }
-})();
-
 /* ========== PLAYLIST RENAME SYSTEM ========== */
 /* Add this code to your script.js file */
 
@@ -3663,4 +3108,322 @@ function openRenamePopup(entryElement) {
     if (!mediaLink) {
         mediaLink = entryElement.querySelector('a[href]');
     }
-    var mediaUrl =
+    var mediaUrl = mediaLink ? mediaLink.getAttribute('href') : null;
+    console.log('Media URL:', mediaUrl);
+    
+    if (mediaUrl) {
+        // Extract just the filename/ID part
+        var urlParts = mediaUrl.split('/');
+        var filename = urlParts[urlParts.length - 1] || mediaUrl;
+        // Handle YouTube
+        var ytMatch = mediaUrl.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([^&\s]+)/);
+        if (ytMatch) {
+            currentRenameKey = 'yt_' + ytMatch[1];
+        } else {
+            currentRenameKey = 'url_' + filename.replace(/[^a-zA-Z0-9._-]/g, '_').substring(0, 100);
+        }
+    } else if (uid) {
+        // Fallback to UID if no URL
+        currentRenameKey = 'uid_' + uid;
+    } else {
+        // Last resort
+        currentRenameKey = 'temp_' + Date.now();
+    }
+    
+    console.log('Media key:', currentRenameKey);
+    
+    // Create playlist item object for reference
+    currentRenameItem = {
+        title: title,
+        uid: uid,
+        url: mediaUrl
+    };
+    
+    // Store original title
+    if (titleEl && !titleEl.getAttribute('data-original-title')) {
+        titleEl.setAttribute('data-original-title', title);
+    }
+    
+    var originalTitle = titleEl ? (titleEl.getAttribute('data-original-title') || title) : 'Unknown';
+    var currentCustom = getCustomName(currentRenameKey) || '';
+    
+    document.getElementById('rename-original-title').textContent = originalTitle;
+    document.getElementById('rename-input').value = currentCustom;
+    document.getElementById('rename-status').className = '';
+    document.getElementById('rename-status').style.display = 'none';
+    
+    document.getElementById('rename-popup-overlay').classList.add('visible');
+    document.getElementById('rename-input').focus();
+    document.getElementById('rename-input').select();
+    console.log('Popup opened');
+}
+
+// Close rename popup
+function closeRenamePopup() {
+    var overlay = document.getElementById('rename-popup-overlay');
+    if (overlay) {
+        overlay.classList.remove('visible');
+    }
+    currentRenameItem = null;
+    currentRenameKey = null;
+}
+
+// Save the rename
+function saveRename() {
+    if (!currentRenameKey) return;
+    
+    var input = document.getElementById('rename-input');
+    var status = document.getElementById('rename-status');
+    var saveBtn = document.getElementById('rename-save-btn');
+    var newName = input.value.trim();
+    
+    // Show loading
+    status.textContent = 'Saving...';
+    status.className = 'loading';
+    saveBtn.disabled = true;
+    
+    // Update local cache
+    setCustomName(currentRenameKey, newName);
+    
+    // Save to JSONBin
+    savePlaylistNames()
+        .then(function() {
+            status.textContent = '✓ Saved successfully!';
+            status.className = 'success';
+            saveBtn.disabled = false;
+            
+            // Apply the change to the UI
+            applyAllCustomNames();
+            
+            // Close popup after short delay
+            setTimeout(function() {
+                closeRenamePopup();
+            }, 800);
+        })
+        .catch(function(err) {
+            status.textContent = '✕ Failed to save. Try again.';
+            status.className = 'error';
+            saveBtn.disabled = false;
+        });
+}
+
+// Reset to original name
+function resetRename() {
+    if (!currentRenameKey) return;
+    
+    var status = document.getElementById('rename-status');
+    var saveBtn = document.getElementById('rename-save-btn');
+    
+    // Show loading
+    status.textContent = 'Resetting...';
+    status.className = 'loading';
+    saveBtn.disabled = true;
+    
+    // Remove custom name from cache
+    delete playlistCustomNames[currentRenameKey];
+    
+    // Save to JSONBin
+    savePlaylistNames()
+        .then(function() {
+            status.textContent = '✓ Reset to original!';
+            status.className = 'success';
+            saveBtn.disabled = false;
+            document.getElementById('rename-input').value = '';
+            
+            // Apply the change to the UI
+            applyAllCustomNames();
+            
+            // Close popup after short delay
+            setTimeout(function() {
+                closeRenamePopup();
+            }, 800);
+        })
+        .catch(function(err) {
+            status.textContent = '✕ Failed to reset. Try again.';
+            status.className = 'error';
+            saveBtn.disabled = false;
+        });
+}
+
+// Watch for playlist changes
+function initPlaylistRenameObserver() {
+    var queue = document.getElementById('queue');
+    if (!queue) {
+        // Queue not ready yet, try again
+        setTimeout(initPlaylistRenameObserver, 500);
+        return;
+    }
+    
+    // Initial setup
+    addAllRenameButtons();
+    if (playlistNamesLoaded) {
+        applyAllCustomNames();
+    }
+    
+    // Watch for new items added to playlist
+    var observer = new MutationObserver(function(mutations) {
+        mutations.forEach(function(mutation) {
+            mutation.addedNodes.forEach(function(node) {
+                if (node.nodeType === 1 && node.classList && node.classList.contains('queue_entry')) {
+                    addRenameButton(node);
+                    if (playlistNamesLoaded) {
+                        setTimeout(function() {
+                            applyCustomNameToEntry(node);
+                        }, 100);
+                    }
+                }
+            });
+        });
+    });
+    
+    observer.observe(queue, { childList: true });
+    
+    // Also listen for playlist socket events to refresh names
+    if (typeof socket !== 'undefined') {
+        socket.on('playlist', function() {
+            setTimeout(function() {
+                addAllRenameButtons();
+                applyAllCustomNames();
+            }, 500);
+        });
+        
+        socket.on('queue', function() {
+            setTimeout(function() {
+                addAllRenameButtons();
+                applyAllCustomNames();
+            }, 200);
+        });
+        
+        socket.on('delete', function() {
+            setTimeout(function() {
+                addAllRenameButtons();
+                applyAllCustomNames();
+            }, 200);
+        });
+        
+        // Listen for rank changes - add/remove buttons accordingly
+        socket.on('rank', function(rank) {
+            console.log('Rank changed to:', rank);
+            setTimeout(function() {
+                // Remove all existing rename buttons first
+                document.querySelectorAll('.rename-btn').forEach(function(btn) {
+                    btn.remove();
+                });
+                // Re-add buttons (will only add if user has permission)
+                addAllRenameButtons();
+            }, 100);
+        });
+        
+        // Also listen for setUserRank which is used when promoted/demoted
+        socket.on('setUserRank', function(data) {
+            if (typeof CLIENT !== 'undefined' && data.name === CLIENT.name) {
+                console.log('Your rank was changed to:', data.rank);
+                setTimeout(function() {
+                    document.querySelectorAll('.rename-btn').forEach(function(btn) {
+                        btn.remove();
+                    });
+                    addAllRenameButtons();
+                }, 100);
+            }
+        });
+    }
+}
+
+// Initialize the rename system
+function initPlaylistRename() {
+    console.log('Initializing playlist rename system...');
+    
+    // Fetch names from JSONBin
+    fetchPlaylistNames().then(function() {
+        // Start the observer after names are loaded
+        initPlaylistRenameObserver();
+    });
+}
+
+// Start when document is ready
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', function() {
+        setTimeout(initPlaylistRename, 1000);
+    });
+} else {
+    setTimeout(initPlaylistRename, 1000);
+}
+
+// Make functions globally available
+window.openRenamePopup = openRenamePopup;
+window.closeRenamePopup = closeRenamePopup;
+window.saveRename = saveRename;
+window.resetRename = resetRename;
+
+/* ========== HIDE JOIN/LEAVE MESSAGES ========== */
+// CyTube adds join/leave messages with specific classes
+// This CSS hides them completely
+(function() {
+    var hideJoinLeaveCSS = document.createElement('style');
+    hideJoinLeaveCSS.id = 'hide-join-leave-css';
+    hideJoinLeaveCSS.textContent = 
+        '#messagebuffer .server-whisper { display: none !important; }' +
+        '#messagebuffer .chat-shadow { display: none !important; }';
+    document.head.appendChild(hideJoinLeaveCSS);
+})();
+
+/* ========== PLAYLIST SEARCH ========== */
+(function() {
+    function addPlaylistSearch() {
+        var queue = document.getElementById('queue');
+        if (!queue) {
+            setTimeout(addPlaylistSearch, 500);
+            return;
+        }
+        
+        // Add minimal CSS
+        var css = document.createElement('style');
+        css.textContent = `
+            #playlist-search-box {
+                padding: 8px;
+                margin: 8px;
+                background: #252530;
+                border: 1px solid #444;
+                border-radius: 4px;
+                color: #fff;
+                width: calc(100% - 20px);
+                box-sizing: border-box;
+            }
+            .queue_entry.search-hidden {
+                display: none !important;
+            }
+        `;
+        document.head.appendChild(css);
+        
+        // Add search box
+        var searchBox = document.createElement('input');
+        searchBox.type = 'text';
+        searchBox.id = 'playlist-search-box';
+        searchBox.placeholder = '🔍 Search playlist...';
+        
+        queue.parentElement.insertBefore(searchBox, queue);
+        
+        // Search functionality
+        searchBox.addEventListener('input', function() {
+            var query = this.value.toLowerCase().trim();
+            var entries = queue.querySelectorAll('.queue_entry');
+            
+            entries.forEach(function(entry) {
+                var title = entry.querySelector('.qe_title');
+                var text = title ? title.textContent.toLowerCase() : '';
+                
+                if (!query || text.includes(query)) {
+                    entry.classList.remove('search-hidden');
+                } else {
+                    entry.classList.add('search-hidden');
+                }
+            });
+        });
+    }
+    
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', addPlaylistSearch);
+    } else {
+        addPlaylistSearch();
+    }
+})();
