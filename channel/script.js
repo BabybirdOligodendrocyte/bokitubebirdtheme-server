@@ -3432,26 +3432,6 @@ window.resetRename = resetRename;
                 scrollbar-width: auto;
                 scrollbar-color: #666 #1a1a1a;
             }
-            
-            /* Move scroll to current button to better location */
-            #jump-btn {
-                position: absolute;
-                top: 8px;
-                right: 8px;
-                z-index: 10;
-                background: #5a5a00 !important;
-                border: 1px solid #8a8a00 !important;
-                padding: 6px 12px !important;
-                font-size: 12px !important;
-            }
-            #jump-btn:hover {
-                background: #7a7a00 !important;
-            }
-            
-            /* Make playlist container relative for button positioning */
-            #playlistrow {
-                position: relative !important;
-            }
         `;
         document.head.appendChild(css);
         
