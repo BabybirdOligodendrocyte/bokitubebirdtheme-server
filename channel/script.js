@@ -2968,20 +2968,25 @@ socket.on('chatMsg', function(data) {
 // ============================================================================
 // PLAYLIST RENAME SYSTEM (URL-based, slider/pagination compatible)
 // ============================================================================
-// Add this section to your script.js
 
 (function() {
     'use strict';
     
-    const STORAGE_KEY = 'playlist_custom_names_v2';
+    const STORAGE_KEY = 'playlist_custom_names';
     
     // Get custom names from storage
     function getCustomNames() {
         try {
             const stored = localStorage.getItem(STORAGE_KEY);
-            return stored ? JSON.parse(stored) : {};
+            if (stored) {
+                const names = JSON.parse(stored);
+                console.log('[Playlist Rename] Loaded ' + Object.keys(names).length + ' custom names from storage');
+                return names;
+            }
+            console.log('[Playlist Rename] No saved custom names found');
+            return {};
         } catch (e) {
-            console.error('Error loading custom names:', e);
+            console.error('[Playlist Rename] Error loading custom names:', e);
             return {};
         }
     }
@@ -2990,9 +2995,9 @@ socket.on('chatMsg', function(data) {
     function saveCustomNames(names) {
         try {
             localStorage.setItem(STORAGE_KEY, JSON.stringify(names));
-            console.log('Saved custom names:', Object.keys(names).length + ' entries');
+            console.log('[Playlist Rename] Saved ' + Object.keys(names).length + ' custom names to storage');
         } catch (e) {
-            console.error('Error saving custom names:', e);
+            console.error('[Playlist Rename] Error saving custom names:', e);
         }
     }
     
@@ -3001,6 +3006,7 @@ socket.on('chatMsg', function(data) {
         // Method 1: Check the qe_title link
         const titleLink = entry.querySelector('a.qe_title');
         if (titleLink && titleLink.href) {
+            console.debug('[Playlist Rename] Found URL from title link:', titleLink.href);
             return titleLink.href;
         }
         
@@ -3008,16 +3014,23 @@ socket.on('chatMsg', function(data) {
         if (entry.dataset && entry.dataset.media) {
             try {
                 const media = JSON.parse(entry.dataset.media);
-                if (media.id) return media.id;
-            } catch (e) {}
+                if (media.id) {
+                    console.debug('[Playlist Rename] Found URL from data.media.id:', media.id);
+                    return media.id;
+                }
+            } catch (e) {
+                console.debug('[Playlist Rename] Error parsing data.media:', e);
+            }
         }
         
         // Method 3: Extract from any link in the entry
         const anyLink = entry.querySelector('a[href*="http"]');
         if (anyLink && anyLink.href) {
+            console.debug('[Playlist Rename] Found URL from any link:', anyLink.href);
             return anyLink.href;
         }
         
+        console.warn('[Playlist Rename] Could not find URL for entry');
         return null;
     }
     
@@ -3028,17 +3041,23 @@ socket.on('chatMsg', function(data) {
         // For direct file URLs, use filename
         const filename = url.split('/').pop().split('?')[0];
         if (filename.match(/\.(mp4|webm|mkv|avi|mov)$/i)) {
-            return 'url_' + filename;
+            const key = 'url_' + filename;
+            console.debug('[Playlist Rename] Generated key from filename:', key);
+            return key;
         }
         
         // For YouTube, use video ID
         const ytMatch = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([a-zA-Z0-9_-]{11})/);
         if (ytMatch) {
-            return 'yt_' + ytMatch[1];
+            const key = 'yt_' + ytMatch[1];
+            console.debug('[Playlist Rename] Generated key from YouTube ID:', key);
+            return key;
         }
         
         // For other services, hash the URL
-        return 'url_' + filename;
+        const key = 'url_' + filename;
+        console.debug('[Playlist Rename] Generated key from URL:', key);
+        return key;
     }
     
     // Get media key from entry element
@@ -3052,13 +3071,19 @@ socket.on('chatMsg', function(data) {
         const customNames = getCustomNames();
         const mediaKey = getMediaKeyFromEntry(entry);
         
-        if (!mediaKey) return false;
+        if (!mediaKey) {
+            console.debug('[Playlist Rename] Could not get media key for entry');
+            return false;
+        }
         
         const customName = customNames[mediaKey];
         if (!customName) return false;
         
         const titleElement = entry.querySelector('.qe_title');
-        if (!titleElement) return false;
+        if (!titleElement) {
+            console.debug('[Playlist Rename] No title element found in entry');
+            return false;
+        }
         
         // Store original title if not already stored
         if (!titleElement.dataset.originalTitle) {
@@ -3070,6 +3095,7 @@ socket.on('chatMsg', function(data) {
         titleElement.title = 'Custom: ' + customName + '\nOriginal: ' + titleElement.dataset.originalTitle;
         entry.dataset.hasCustomName = 'true';
         
+        console.log('[Playlist Rename] Applied custom name "' + customName + '" to entry with key: ' + mediaKey);
         return true;
     }
     
@@ -3267,15 +3293,33 @@ socket.on('chatMsg', function(data) {
     function init() {
         const queue = document.getElementById('queue');
         if (!queue) {
+            console.log('[Playlist Rename] Waiting for queue element...');
             setTimeout(init, 500);
             return;
         }
         
-        console.log('Initializing playlist rename system...');
+        console.log('[Playlist Rename] Initializing rename system...');
+        
+        // Export functions for debugging BEFORE doing anything else
+        window.playlistRename = {
+            getCustomNames: getCustomNames,
+            saveCustomNames: saveCustomNames,
+            applyAll: applyAllCustomNames,
+            clearAll: function() {
+                if (confirm('Clear all custom playlist names?')) {
+                    localStorage.removeItem(STORAGE_KEY);
+                    console.log('[Playlist Rename] Cleared all custom names');
+                    location.reload();
+                }
+            }
+        };
         
         // Add buttons and apply names initially
-        addRenameButtons();
-        applyAllCustomNames();
+        setTimeout(function() {
+            console.log('[Playlist Rename] Adding rename buttons and applying custom names...');
+            addRenameButtons();
+            applyAllCustomNames();
+        }, 1000);
         
         // Watch for playlist changes (new entries added, pagination, etc.)
         const observer = new MutationObserver(function(mutations) {
@@ -3296,6 +3340,7 @@ socket.on('chatMsg', function(data) {
             if (shouldUpdate) {
                 // Small delay to let DOM settle
                 setTimeout(function() {
+                    console.log('[Playlist Rename] Playlist changed, updating...');
                     addRenameButtons();
                     applyAllCustomNames();
                 }, 100);
@@ -3308,10 +3353,19 @@ socket.on('chatMsg', function(data) {
         });
         
         // Also re-apply names periodically (catches slider/pagination changes)
-        setInterval(applyAllCustomNames, 2000);
+        setInterval(function() {
+            applyAllCustomNames();
+        }, 2000);
         
-        console.log('Playlist rename system initialized! Custom names: ' + Object.keys(getCustomNames()).length);
+        const customNames = getCustomNames();
+        console.log('[Playlist Rename] ✓ System initialized! Loaded ' + Object.keys(customNames).length + ' custom names');
     }
+    
+    // Export early for debugging
+    window.playlistRename = {
+        getCustomNames: getCustomNames,
+        status: 'loading'
+    };
     
     // Start initialization
     if (document.readyState === 'loading') {
@@ -3319,17 +3373,4 @@ socket.on('chatMsg', function(data) {
     } else {
         init();
     }
-    
-    // Export for debugging
-    window.playlistRename = {
-        getCustomNames: getCustomNames,
-        saveCustomNames: saveCustomNames,
-        applyAll: applyAllCustomNames,
-        clearAll: function() {
-            if (confirm('Clear all custom playlist names?')) {
-                localStorage.removeItem(STORAGE_KEY);
-                location.reload();
-            }
-        }
-    };
 })();
