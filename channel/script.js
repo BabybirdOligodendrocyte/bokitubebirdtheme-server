@@ -3507,18 +3507,26 @@ window.resetRename = resetRename;
             box-sizing: border-box !important;
         }
         
-        /* Keep chat at its normal width but shift it right slightly */
-        /* This hides just the unused space off the right edge */
-        #rightcontent {
-            position: relative !important;
-            right: -10px !important; /* Shift only 10px to the right */
-            width: calc(12% + 10px) !important; /* Make it 10px wider to compensate */
-            overflow-x: hidden !important;
+        /* LOCK CHAT TO VIDEO EDGE - no gap between them */
+        #content-wrap {
+            display: flex !important;
+            flex-direction: row !important;
+            gap: 0 !important;
+            width: 100vw !important;
         }
         
-        /* Ensure body doesn't create horizontal scrollbar */
-        body {
-            overflow-x: hidden !important;
+        /* Video column - exactly 88% */
+        #leftcontent {
+            width: 88% !important;
+            flex-shrink: 0 !important;
+            box-sizing: border-box !important;
+        }
+        
+        /* Chat column - takes remaining space, starts right at video edge */
+        #rightcontent {
+            flex: 1 !important;
+            min-width: 0 !important;
+            box-sizing: border-box !important;
         }
     `;
     document.head.appendChild(chatFixCSS);
