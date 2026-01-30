@@ -3506,6 +3506,32 @@ window.resetRename = resetRename;
             width: 100% !important;
             box-sizing: border-box !important;
         }
+        
+        /* Fix layout to prevent chat/video overlap */
+        /* Use flex container to properly space columns */
+        #content-wrap {
+            display: flex !important;
+            flex-direction: row !important;
+            justify-content: space-between !important;
+            gap: 0 !important;
+            width: 100% !important;
+        }
+        
+        /* Left content (video) - strictly 88% */
+        #leftcontent {
+            width: var(--leftcontentvw, 88%) !important;
+            max-width: var(--leftcontentvw, 88%) !important;
+            flex-shrink: 0 !important;
+            box-sizing: border-box !important;
+        }
+        
+        /* Right content (chat) - fills remaining space */
+        #rightcontent {
+            flex: 1 !important;
+            min-width: 0 !important;
+            box-sizing: border-box !important;
+            overflow-x: hidden !important;
+        }
     `;
     document.head.appendChild(chatFixCSS);
     
