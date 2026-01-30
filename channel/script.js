@@ -2981,9 +2981,31 @@ function applyCustomNameToEntry(entryElement) {
         indicator.textContent = '✎';
         indicator.title = 'Custom name';
         titleElement.parentNode.insertBefore(indicator, titleElement.nextSibling);
+        
+        // Update "Currently Playing" if this is the active item
+        if (entryElement.classList.contains('queue_active')) {
+            updateCurrentlyPlaying(customName);
+        }
     } else {
         titleElement.textContent = originalTitle;
         titleElement.title = '';
+        
+        // Update "Currently Playing" with original name if this is the active item
+        if (entryElement.classList.contains('queue_active')) {
+            updateCurrentlyPlaying(originalTitle);
+        }
+    }
+}
+
+// Update the "Currently Playing" display with custom name
+function updateCurrentlyPlaying(customName) {
+    var currentTitle = document.getElementById('currenttitle');
+    if (currentTitle && customName) {
+        // Store original if not already stored
+        if (!currentTitle.getAttribute('data-original-title')) {
+            currentTitle.setAttribute('data-original-title', currentTitle.textContent);
+        }
+        currentTitle.textContent = customName;
     }
 }
 
@@ -3299,10 +3321,26 @@ function initPlaylistRenameObserver() {
                     }
                 }
             });
+            
+            // Check if active class changed (new video started)
+            mutation.target.querySelectorAll('.queue_entry').forEach(function(entry) {
+                if (entry.classList.contains('queue_active')) {
+                    var titleEl = entry.querySelector('.qe_title');
+                    if (titleEl) {
+                        var customName = titleEl.textContent;
+                        updateCurrentlyPlaying(customName);
+                    }
+                }
+            });
         });
     });
     
-    observer.observe(queue, { childList: true });
+    observer.observe(queue, { 
+        childList: true,
+        attributes: true,
+        attributeFilter: ['class'],
+        subtree: true
+    });
     
     // Also listen for playlist socket events to refresh names
     if (typeof socket !== 'undefined') {
@@ -3325,6 +3363,16 @@ function initPlaylistRenameObserver() {
                 addAllRenameButtons();
                 applyAllCustomNames();
             }, 200);
+        });
+        
+        // Listen for changeMedia event (when a new video starts)
+        socket.on('changeMedia', function(data) {
+            setTimeout(function() {
+                var activeEntry = queue.querySelector('.queue_active');
+                if (activeEntry) {
+                    applyCustomNameToEntry(activeEntry);
+                }
+            }, 500);
         });
         
         // Listen for rank changes - add/remove buttons accordingly
