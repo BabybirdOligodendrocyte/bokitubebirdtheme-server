@@ -3462,9 +3462,34 @@ window.resetRename = resetRename;
             display: none !important;
         }
         
-        /* Ensure messages use full width */
+        /* REMOVE REPLY BUTTON - it's broken and takes up space */
+        .reply-button,
+        button.reply-button {
+            display: none !important;
+            width: 0 !important;
+            height: 0 !important;
+            padding: 0 !important;
+            margin: 0 !important;
+        }
+        
+        /* Hide reply icon */
+        .reply-icon {
+            display: none !important;
+        }
+        
+        /* Ensure messages use FULL width */
         #messagebuffer > div {
             width: 100% !important;
+            max-width: 100% !important;
+            display: block !important;
+        }
+        
+        /* Make sure message text uses full width */
+        #messagebuffer > div > span,
+        #messagebuffer > div .username + span {
+            display: inline !important;
+            width: auto !important;
+            max-width: 100% !important;
         }
         
         /* Remove any flex gaps that might cause spacing */
@@ -3479,7 +3504,7 @@ window.resetRename = resetRename;
     `;
     document.head.appendChild(chatFixCSS);
     
-    // Also actively remove join/leave messages from DOM to prevent gaps
+    // Also actively remove problematic elements from DOM to prevent gaps
     if (typeof MutationObserver !== 'undefined') {
         var chatObserver = new MutationObserver(function(mutations) {
             mutations.forEach(function(mutation) {
@@ -3498,11 +3523,21 @@ window.resetRename = resetRename;
                             node.remove();
                         }
                         
-                        // Check children for timestamps and remove them
+                        // Remove reply buttons
+                        if (node.classList && node.classList.contains('reply-button')) {
+                            node.remove();
+                        }
+                        
+                        // Check children for timestamps and reply buttons and remove them
                         if (node.querySelectorAll) {
                             var timestamps = node.querySelectorAll('.timestamp');
                             timestamps.forEach(function(ts) {
                                 ts.remove();
+                            });
+                            
+                            var replyButtons = node.querySelectorAll('.reply-button');
+                            replyButtons.forEach(function(rb) {
+                                rb.remove();
                             });
                         }
                     }
@@ -3517,10 +3552,15 @@ window.resetRename = resetRename;
                 subtree: true
             });
             
-            // Remove any existing timestamps on load
+            // Remove any existing timestamps and reply buttons on load
             var existingTimestamps = messageBuffer.querySelectorAll('.timestamp');
             existingTimestamps.forEach(function(ts) {
                 ts.remove();
+            });
+            
+            var existingReplyButtons = messageBuffer.querySelectorAll('.reply-button');
+            existingReplyButtons.forEach(function(rb) {
+                rb.remove();
             });
         } else {
             // Wait for messagebuffer to exist
@@ -3532,10 +3572,15 @@ window.resetRename = resetRename;
                         subtree: true
                     });
                     
-                    // Remove any existing timestamps
+                    // Remove any existing timestamps and reply buttons
                     var existingTimestamps = messageBuffer.querySelectorAll('.timestamp');
                     existingTimestamps.forEach(function(ts) {
                         ts.remove();
+                    });
+                    
+                    var existingReplyButtons = messageBuffer.querySelectorAll('.reply-button');
+                    existingReplyButtons.forEach(function(rb) {
+                        rb.remove();
                     });
                 }
             }, 1000);
