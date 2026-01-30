@@ -3482,11 +3482,6 @@ window.resetRename = resetRename;
             width: 100% !important;
             max-width: 100% !important;
             display: block !important;
-            padding: 0 !important;
-            padding-left: 2px !important;
-            padding-right: 2px !important;
-            margin: 0 !important;
-            margin-bottom: 2px !important;
             box-sizing: border-box !important;
         }
         
@@ -3496,34 +3491,18 @@ window.resetRename = resetRename;
             display: inline !important;
             width: auto !important;
             max-width: 100% !important;
-            padding: 0 !important;
-            margin: 0 !important;
             word-wrap: break-word !important;
             overflow-wrap: break-word !important;
         }
         
-        /* Remove padding from username spans */
-        #messagebuffer .username,
-        #messagebuffer .styled-username {
-            padding: 0 !important;
-            margin: 0 !important;
-            margin-right: 4px !important;
+        /* Remove any flex gaps that might cause spacing */
+        #messagebuffer > div {
+            margin-bottom: 2px !important;
         }
         
-        /* Ensure messagebuffer itself has minimal padding */
+        /* Ensure messagebuffer uses full width */
         #messagebuffer {
             line-height: normal !important;
-            width: 100% !important;
-            padding: 0 !important;
-            padding-left: 4px !important;
-            padding-right: 4px !important;
-            box-sizing: border-box !important;
-        }
-        
-        /* Make rightcontent (chat column) use full available width */
-        #rightcontent {
-            padding: 0 !important;
-            margin: 0 !important;
             width: 100% !important;
             box-sizing: border-box !important;
         }
