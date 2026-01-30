@@ -3507,29 +3507,17 @@ window.resetRename = resetRename;
             box-sizing: border-box !important;
         }
         
-        /* Fix layout to prevent chat/video overlap */
-        /* Use flex container to properly space columns */
-        #content-wrap {
-            display: flex !important;
-            flex-direction: row !important;
-            justify-content: space-between !important;
-            gap: 0 !important;
-            width: 100% !important;
-        }
-        
-        /* Left content (video) - strictly 88% */
-        #leftcontent {
-            width: var(--leftcontentvw, 88%) !important;
-            max-width: var(--leftcontentvw, 88%) !important;
-            flex-shrink: 0 !important;
-            box-sizing: border-box !important;
-        }
-        
-        /* Right content (chat) - fills remaining space */
+        /* Keep chat at its normal width but shift it right */
+        /* This hides the unused space off the right edge of the screen */
         #rightcontent {
-            flex: 1 !important;
-            min-width: 0 !important;
-            box-sizing: border-box !important;
+            position: relative !important;
+            right: -30px !important; /* Shift 30px to the right, hiding that much off-screen */
+            width: calc(12% + 30px) !important; /* Make it 30px wider to compensate */
+            overflow-x: hidden !important;
+        }
+        
+        /* Ensure body doesn't create horizontal scrollbar from shifted chat */
+        body {
             overflow-x: hidden !important;
         }
     `;
