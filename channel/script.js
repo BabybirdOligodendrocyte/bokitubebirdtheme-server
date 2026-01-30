@@ -3507,27 +3507,129 @@ window.resetRename = resetRename;
             box-sizing: border-box !important;
         }
         
-        /* LOCK CHAT TO VIDEO EDGE - no gap between them */
+        /* Resizable layout system */
         #content-wrap {
             display: flex !important;
-            flex-direction: row !important;
-            gap: 0 !important;
-            width: 100vw !important;
+            position: relative !important;
+            width: 100% !important;
+            height: 100% !important;
         }
         
-        /* Video column - exactly 88% */
         #leftcontent {
-            width: 88% !important;
             flex-shrink: 0 !important;
+            overflow: auto !important;
             box-sizing: border-box !important;
         }
         
-        /* Chat column - takes remaining space, starts right at video edge */
         #rightcontent {
             flex: 1 !important;
-            min-width: 0 !important;
+            overflow: auto !important;
             box-sizing: border-box !important;
         }
+        
+        /* Resize handle between columns */
+        #column-resize-handle {
+            width: 8px !important;
+            background: rgba(100, 100, 100, 0.3) !important;
+            cursor: col-resize !important;
+            flex-shrink: 0 !important;
+            position: relative !important;
+            transition: background 0.2s !important;
+            z-index: 100 !important;
+        }
+        
+        #column-resize-handle:hover {
+            background: rgba(150, 150, 150, 0.6) !important;
+        }
+        
+        #column-resize-handle:active {
+            background: rgba(200, 200, 200, 0.8) !important;
+        }
+        
+        /* Visual indicator on handle */
+        #column-resize-handle::before {
+            content: '⋮' !important;
+            position: absolute !important;
+            top: 50% !important;
+            left: 50% !important;
+            transform: translate(-50%, -50%) !important;
+            color: rgba(255, 255, 255, 0.5) !important;
+            font-size: 20px !important;
+            pointer-events: none !important;
+        }
+    `;
+    document.head.appendChild(chatFixCSS);
+    
+    // Add resize handle and functionality
+    function initResizableColumns() {
+        var contentWrap = document.getElementById('content-wrap');
+        var leftContent = document.getElementById('leftcontent');
+        var rightContent = document.getElementById('rightcontent');
+        
+        if (!contentWrap || !leftContent || !rightContent) {
+            setTimeout(initResizableColumns, 500);
+            return;
+        }
+        
+        // Create resize handle
+        var resizeHandle = document.createElement('div');
+        resizeHandle.id = 'column-resize-handle';
+        resizeHandle.title = 'Drag to resize video/chat';
+        
+        // Insert handle between left and right content
+        contentWrap.insertBefore(resizeHandle, rightContent);
+        
+        // Load saved width or use default
+        var savedWidth = localStorage.getItem('cytube_video_width') || '88%';
+        leftContent.style.width = savedWidth;
+        
+        var isResizing = false;
+        var startX = 0;
+        var startWidth = 0;
+        
+        resizeHandle.addEventListener('mousedown', function(e) {
+            isResizing = true;
+            startX = e.clientX;
+            startWidth = leftContent.offsetWidth;
+            document.body.style.cursor = 'col-resize';
+            document.body.style.userSelect = 'none';
+            e.preventDefault();
+        });
+        
+        document.addEventListener('mousemove', function(e) {
+            if (!isResizing) return;
+            
+            var deltaX = e.clientX - startX;
+            var newWidth = startWidth + deltaX;
+            var containerWidth = contentWrap.offsetWidth;
+            var percentWidth = (newWidth / containerWidth) * 100;
+            
+            // Constrain between 50% and 95%
+            if (percentWidth >= 50 && percentWidth <= 95) {
+                leftContent.style.width = percentWidth + '%';
+            }
+        });
+        
+        document.addEventListener('mouseup', function() {
+            if (isResizing) {
+                isResizing = false;
+                document.body.style.cursor = '';
+                document.body.style.userSelect = '';
+                
+                // Save the width
+                var containerWidth = contentWrap.offsetWidth;
+                var percentWidth = (leftContent.offsetWidth / containerWidth) * 100;
+                localStorage.setItem('cytube_video_width', percentWidth + '%');
+                
+                console.log('[Column Resize] Saved width: ' + percentWidth.toFixed(1) + '%');
+            }
+        });
+        
+        console.log('[Column Resize] Draggable resize handle initialized');
+    }
+    
+    // Initialize after a delay to ensure DOM is ready
+    setTimeout(initResizableColumns, 1000);
     `;
     document.head.appendChild(chatFixCSS);
     
