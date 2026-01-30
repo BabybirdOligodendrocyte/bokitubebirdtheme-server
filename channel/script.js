@@ -3507,16 +3507,16 @@ window.resetRename = resetRename;
             box-sizing: border-box !important;
         }
         
-        /* Keep chat at its normal width but shift it right */
-        /* This hides the unused space off the right edge of the screen */
+        /* Keep chat at its normal width but shift it right slightly */
+        /* This hides just the unused space off the right edge */
         #rightcontent {
             position: relative !important;
-            right: -30px !important; /* Shift 30px to the right, hiding that much off-screen */
-            width: calc(12% + 30px) !important; /* Make it 30px wider to compensate */
+            right: -10px !important; /* Shift only 10px to the right */
+            width: calc(12% + 10px) !important; /* Make it 10px wider to compensate */
             overflow-x: hidden !important;
         }
         
-        /* Ensure body doesn't create horizontal scrollbar from shifted chat */
+        /* Ensure body doesn't create horizontal scrollbar */
         body {
             overflow-x: hidden !important;
         }
