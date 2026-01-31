@@ -2690,6 +2690,9 @@ function formatChatMsg(data, last) {
 
 function scrollReply(target) {
     var source = document.getElementById(target);
+    if (!source) {
+        source = document.getElementById('chat-msg-' + target);
+    }
     if (source) {
         source.scrollIntoView({ behavior: "smooth", block: "center" });
         source.animate({backgroundColor: ["rgba(0,0,0,0)", "rgba(255,255,255,0.3)", "rgba(0,0,0,0)"]}, 1000);
@@ -2698,8 +2701,11 @@ function scrollReply(target) {
 
 // Store the current reply target
 var currentReplyTarget = null;
+var currentReplyUsername = '';
+var currentReplyPreview = '';
 
 function replyToMsg(target) {
+    // Handle both "chat-msg-123" and just "123" formats
     currentReplyTarget = target.replace('chat-msg-', '');
 
     // Get the message info for display
@@ -2708,19 +2714,19 @@ function replyToMsg(target) {
         sourceEl = document.getElementById(target);
     }
 
-    var username = 'Unknown';
-    var msgPreview = '';
+    currentReplyUsername = 'Unknown';
+    currentReplyPreview = '';
     if (sourceEl) {
         var usernameEl = sourceEl.querySelector('.username');
-        if (usernameEl) username = usernameEl.textContent.replace(/:$/, '').trim();
+        if (usernameEl) currentReplyUsername = usernameEl.textContent.replace(/:$/, '').trim();
         var msgSpans = sourceEl.querySelectorAll('span:not(.username):not(.timestamp)');
         if (msgSpans.length > 0) {
-            msgPreview = msgSpans[msgSpans.length - 1].textContent.substring(0, 40);
+            currentReplyPreview = msgSpans[msgSpans.length - 1].textContent.substring(0, 50);
         }
     }
 
     // Show reply indicator
-    showReplyIndicator(username, msgPreview);
+    showReplyIndicator(currentReplyUsername, currentReplyPreview);
 
     // Focus chat input
     var chatline = document.getElementById('chatline');
@@ -2732,9 +2738,9 @@ function showReplyIndicator(username, preview) {
     if (!indicator) {
         indicator = document.createElement('div');
         indicator.id = 'reply-indicator';
-        var chatline = document.getElementById('chatline');
-        if (chatline && chatline.parentElement) {
-            chatline.parentElement.insertBefore(indicator, chatline);
+        var form = document.getElementById('formline');
+        if (form) {
+            form.insertBefore(indicator, form.firstChild);
         }
     }
     indicator.innerHTML = '<span>Replying to <strong>' + username + '</strong>: ' + preview + '...</span><button onclick="cancelReply()">×</button>';
@@ -2743,24 +2749,71 @@ function showReplyIndicator(username, preview) {
 
 function cancelReply() {
     currentReplyTarget = null;
+    currentReplyUsername = '';
+    currentReplyPreview = '';
     var indicator = document.getElementById('reply-indicator');
     if (indicator) indicator.style.display = 'none';
 }
 
-// Intercept message sending to include reply
-(function() {
-    var origEmit = socket.emit.bind(socket);
-    socket.emit = function(event, data) {
-        if (event === 'chatMsg' && currentReplyTarget && data) {
-            if (!data.meta) data.meta = {};
-            data.meta.reply = currentReplyTarget;
-            currentReplyTarget = null;
-            var indicator = document.getElementById('reply-indicator');
-            if (indicator) indicator.style.display = 'none';
+// Initialize reply system - prepend reply marker to message
+function initReplySystem() {
+    var form = document.getElementById('formline');
+    var chatline = document.getElementById('chatline');
+    if (!form || !chatline) {
+        setTimeout(initReplySystem, 500);
+        return;
+    }
+
+    // Function to prepend reply marker
+    function prependReplyMarker() {
+        if (currentReplyTarget && chatline.value.trim()) {
+            // Embed reply info in message using a special format that we'll parse on display
+            // Format: [reply:id:username:preview]actual message
+            var replyMarker = '▶ @' + currentReplyUsername + ': ';
+            if (!chatline.value.startsWith(replyMarker)) {
+                chatline.value = replyMarker + chatline.value;
+            }
+            // Store mapping for this message
+            storeReplyMapping(currentReplyTarget, currentReplyUsername, currentReplyPreview);
+            cancelReply();
         }
-        return origEmit(event, data);
+    }
+
+    // Intercept Enter key to add reply marker before send
+    chatline.addEventListener('keydown', function(e) {
+        if ((e.key === 'Enter' || e.keyCode === 13) && !e.shiftKey) {
+            prependReplyMarker();
+        }
+    }, true);
+
+    // Also hook form submit
+    form.addEventListener('submit', function(e) {
+        prependReplyMarker();
+    }, true);
+}
+
+// Store reply mappings for rendering
+var replyMappings = {};
+
+function storeReplyMapping(targetId, username, preview) {
+    // Store with timestamp as key since we don't know our message ID yet
+    var key = Date.now().toString();
+    replyMappings[key] = {
+        targetId: targetId,
+        username: username,
+        preview: preview
     };
-})();
+    // Clean old mappings (keep last 50)
+    var keys = Object.keys(replyMappings);
+    if (keys.length > 50) {
+        delete replyMappings[keys[0]];
+    }
+}
+
+// Initialize on load
+$(document).ready(function() {
+    setTimeout(initReplySystem, 1000);
+});
 
 // USERNAME STYLING SYSTEM
 var usernameStyleSettings = JSON.parse(localStorage.getItem('usernameStyleSettings')) || {
