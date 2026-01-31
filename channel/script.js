@@ -3215,6 +3215,59 @@ function getReplyColorFromElement(el) {
     return -1;
 }
 
+// Get existing style codes from an element (animation, border, radius)
+// Returns object with animCode, borderCode, radiusCode (or null if not found)
+function getReplyStyleFromElement(el) {
+    if (!el) return null;
+
+    var result = { animCode: '0', borderCode: '0', radiusCode: '0', hasStyle: false };
+
+    // Animation codes: g=glow, p=pulse, s=shimmer, b=breathe, w=rainbow, n=neon, f=flash, l=slide
+    var animClasses = {
+        'reply-anim-glow': 'g',
+        'reply-anim-pulse': 'p',
+        'reply-anim-shimmer': 's',
+        'reply-anim-breathe': 'b',
+        'reply-anim-rainbow': 'w',
+        'reply-anim-neon': 'n',
+        'reply-anim-flash': 'f',
+        'reply-anim-slide': 'l'
+    };
+    for (var cls in animClasses) {
+        if (el.classList.contains(cls)) {
+            result.animCode = animClasses[cls];
+            result.hasStyle = true;
+            break;
+        }
+    }
+
+    // Border style codes: t=thick, d=double, o=dotted, a=dashed
+    var borderClasses = {
+        'reply-border-thick': 't',
+        'reply-border-double': 'd',
+        'reply-border-dotted': 'o',
+        'reply-border-dashed': 'a'
+    };
+    for (var cls in borderClasses) {
+        if (el.classList.contains(cls)) {
+            result.borderCode = borderClasses[cls];
+            result.hasStyle = true;
+            break;
+        }
+    }
+
+    // Border radius codes: r=rounded, p=pill
+    if (el.classList.contains('reply-rounded')) {
+        result.radiusCode = 'r';
+        result.hasStyle = true;
+    } else if (el.classList.contains('reply-pill')) {
+        result.radiusCode = 'p';
+        result.hasStyle = true;
+    }
+
+    return result;
+}
+
 // Find reply-target messages from a specific user (most recent first)
 function findReplyTargetForUser(username) {
     if (!username) return null;
@@ -3354,7 +3407,7 @@ function initReplySystem() {
             // Get or assign a color for this reply thread
             var sourceMsg = document.getElementById('chat-msg-' + currentReplyData.targetId);
             var colorIndex = -1;
-            var existingChainColor = false; // Track if color came from existing chain
+            var existingChainStyle = null; // Track existing chain styling (color + effects)
             var msgId = currentReplyData.targetId || '';
 
             if (sourceMsg) {
@@ -3362,8 +3415,9 @@ function initReplySystem() {
                 // Check if it already has a color (from being replied to OR from being a reply itself)
                 colorIndex = getReplyColorFromElement(sourceMsg);
                 if (colorIndex !== -1) {
-                    // Chain already has a color - preserve it
-                    existingChainColor = true;
+                    // Chain already has a color - preserve it and check for other styles
+                    existingChainStyle = getReplyStyleFromElement(sourceMsg) || { animCode: '0', borderCode: '0', radiusCode: '0', hasStyle: false };
+                    existingChainStyle.colorIndex = colorIndex;
                 } else {
                     // Assign a new color
                     colorIndex = getNextReplyColor();
@@ -3374,18 +3428,28 @@ function initReplySystem() {
                 colorIndex = getNextReplyColor();
             }
 
-            // Build style code if custom styling is enabled
+            // Build style code if custom styling is enabled OR if preserving existing chain style
             // Format: XYZ where X=animation, Y=border style, Z=border radius
             // Uses 0 for "none/default"
             // Color is determined by the main color index (first number in marker)
             var styleCode = '';
             var customColorIndex = colorIndex; // Default to cycling color
+            var animCode = '0';
+            var borderCode = '0';
+            var radiusCode = '0';
 
-            if (replyStyleSettings.enabled) {
-                var animCode = '0';
-                var borderCode = '0';
-                var radiusCode = '0';
-
+            // If chain already has styling, preserve it
+            if (existingChainStyle) {
+                animCode = existingChainStyle.animCode;
+                borderCode = existingChainStyle.borderCode;
+                radiusCode = existingChainStyle.radiusCode;
+                customColorIndex = existingChainStyle.colorIndex;
+                // Build style code if chain has any styling
+                if (existingChainStyle.hasStyle) {
+                    styleCode = ':' + animCode + borderCode + radiusCode;
+                }
+            } else if (replyStyleSettings.enabled) {
+                // New chain - use user's custom styling
                 // Animation codes: g=glow, p=pulse, s=shimmer, b=breathe, w=rainbow, n=neon, f=flash, l=slide
                 var animMap = {glow:'g', pulse:'p', shimmer:'s', breathe:'b', rainbow:'w', neon:'n', flash:'f', slide:'l'};
                 if (replyStyleSettings.animation && animMap[replyStyleSettings.animation]) {
@@ -3404,24 +3468,20 @@ function initReplySystem() {
                     radiusCode = radiusMap[replyStyleSettings.borderRadius];
                 }
 
-                // Only use custom color if this is a NEW chain (not an existing one)
-                // Existing chains keep their color for consistency
-                if (!existingChainColor) {
-                    // Find which preset color the user selected to use as the main color index
-                    var presetColors = ['#8F6409','#0D8F8F','#7B4B9E','#A34D4D','#4A8F4A','#4A6FA5','#9E4B7B','#B37400','#3D9EAA','#6B8F2E','#B36666','#5B5BAA'];
-                    var userColor = (replyStyleSettings.borderColor || '#8F6409').toUpperCase();
-                    var userColorIdx = presetColors.findIndex(function(c) { return c.toUpperCase() === userColor; });
-                    if (userColorIdx >= 0) {
-                        customColorIndex = userColorIdx;
-                    }
+                // Find which preset color the user selected to use as the main color index
+                var presetColors = ['#8F6409','#0D8F8F','#7B4B9E','#A34D4D','#4A8F4A','#4A6FA5','#9E4B7B','#B37400','#3D9EAA','#6B8F2E','#B36666','#5B5BAA'];
+                var userColor = (replyStyleSettings.borderColor || '#8F6409').toUpperCase();
+                var userColorIdx = presetColors.findIndex(function(c) { return c.toUpperCase() === userColor; });
+                if (userColorIdx >= 0) {
+                    customColorIndex = userColorIdx;
                 }
 
                 styleCode = ':' + animCode + borderCode + radiusCode;
             }
 
-            // Create marker - use existing chain color if present, otherwise use custom/cycling color
+            // Create marker - use existing chain style if present, otherwise use custom/cycling
             // Format: ▶colorNum:msgId:styleCode @username:
-            var finalColorIndex = existingChainColor ? colorIndex : (replyStyleSettings.enabled ? customColorIndex : colorIndex);
+            var finalColorIndex = existingChainStyle ? existingChainStyle.colorIndex : (replyStyleSettings.enabled ? customColorIndex : colorIndex);
             var colorNum = finalColorIndex + 1; // 1-indexed for display
             var shortId = msgId.substring(0, 6); // First 6 chars of message ID
             var marker = '▶' + colorNum + ':' + shortId + styleCode + ' @' + currentReplyData.usernameText + ': ';
