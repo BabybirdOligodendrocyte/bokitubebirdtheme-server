@@ -3471,9 +3471,9 @@ function initReplySystem() {
                 var msgIdShort = null;
                 var styleCode = null;
 
-                // Try newest format with style+color: ▶1:abc123:btr0 or ▶1:abc123:btrxFFFFFF @username:
-                // Style code is 4+ chars: anim + border + radius + color (color can be 1 char or x+6 hex)
-                var styledMatch = text.match(/▶(\d):([a-zA-Z0-9]+):([a-z0-9]{3}(?:[0-9ab]|x[A-Fa-f0-9]{6}))\s*@([^:]+):/);
+                // Try format with style: ▶1:abc123:b00a or ▶1:abc123:b00xFFFFFF @username:
+                // Use permissive regex, parse style code in code
+                var styledMatch = text.match(/▶(\d+):([a-zA-Z0-9]+):([a-zA-Z0-9]+)\s+@([^:]+):/);
                 if (styledMatch && styledMatch[1]) {
                     colorIndex = parseInt(styledMatch[1], 10) - 1;
                     if (colorIndex < 0 || colorIndex >= REPLY_COLORS_COUNT) {
@@ -3482,20 +3482,7 @@ function initReplySystem() {
                     msgIdShort = styledMatch[2] || null;
                     styleCode = styledMatch[3] || null;
                     replyToUser = styledMatch[4] ? styledMatch[4].trim() : null;
-                }
-
-                // Fallback: old 3-char style format ▶1:abc123:btr @username:
-                if (colorIndex === -1) {
-                    var oldStyledMatch = text.match(/▶(\d):([a-zA-Z0-9]+):([a-z0-9]{3})\s*@([^:]+):/);
-                    if (oldStyledMatch && oldStyledMatch[1]) {
-                        colorIndex = parseInt(oldStyledMatch[1], 10) - 1;
-                        if (colorIndex < 0 || colorIndex >= REPLY_COLORS_COUNT) {
-                            colorIndex = -1;
-                        }
-                        msgIdShort = oldStyledMatch[2] || null;
-                        styleCode = oldStyledMatch[3] || null;
-                        replyToUser = oldStyledMatch[4] ? oldStyledMatch[4].trim() : null;
-                    }
+                    console.log('[Reply] Matched styled format, styleCode:', styleCode);
                 }
 
                 // Fallback: format without style ▶1:abc123 @username: (color + message ID)
@@ -3572,8 +3559,9 @@ function initReplySystem() {
                     }
                 }
 
-                // Check if style code indicates custom styling (not all zeros)
-                var hasMarkerStyle = styleCode && styleCode.length >= 4 && styleCode !== '0000';
+                // Check if style code indicates custom styling (has any non-zero values)
+                var hasMarkerStyle = styleCode && styleCode.length >= 4 && !/^0+$/.test(styleCode);
+                console.log('[Reply] styleCode:', styleCode, 'hasMarkerStyle:', hasMarkerStyle, 'markerColor:', markerColor);
 
                 // Use marker style if present, otherwise fall back to local settings for own messages
                 var useCustom = hasMarkerStyle || (isOwnMessage && replyStyleSettings.enabled);
