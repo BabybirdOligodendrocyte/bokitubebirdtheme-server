@@ -207,18 +207,20 @@ var usernameStyleSettings = JSON.parse(localStorage.getItem('usernameStyleSettin
     var s = document.createElement('style');
     s.id = 'custom-popup-styles';
     s.textContent = `
-        /* FIX: Button overflow in leftcontrols */
+        /* FIX: Button layout in leftcontrols */
         #leftcontrols {
             display: flex !important;
             flex-wrap: wrap !important;
-            gap: 4px !important;
-            padding: 5px !important;
+            gap: 2px !important;
+            padding: 3px 4px !important;
             align-items: center !important;
             justify-content: flex-start !important;
         }
         #leftcontrols .btn {
-            flex-shrink: 0 !important;
-            margin: 2px !important;
+            flex: 0 1 auto !important;
+            margin: 1px !important;
+            padding: 3px 6px !important;
+            font-size: 11px !important;
         }
         
         #emote-popup-overlay, #textstyle-popup-overlay, #filter-popup-overlay {
@@ -2985,6 +2987,72 @@ function applyAllCustomNames() {
     entries.forEach(function(entry) {
         applyCustomNameToEntry(entry);
     });
+    // Also update the "currently playing" title
+    updateCurrentTitleDisplay();
+}
+
+// Update the "currently playing" title above chat with custom name if available
+var currentTitleObserver = null;
+var isUpdatingTitle = false;
+
+function updateCurrentTitleDisplay() {
+    if (isUpdatingTitle) return; // Prevent recursion
+
+    var currentTitleEl = document.getElementById('currenttitle');
+    if (!currentTitleEl) return;
+
+    // Find the currently playing item in the playlist
+    var activeEntry = document.querySelector('.queue_entry.queue_active');
+    if (!activeEntry) return;
+
+    // Get the media key for this entry
+    var mediaKey = getMediaKeyFromEntry(activeEntry);
+    if (!mediaKey) return;
+
+    // Check for custom name
+    var customName = getCustomName(mediaKey);
+
+    if (customName) {
+        isUpdatingTitle = true;
+        // Store the original (raw) title from the active entry
+        var originalTitle = activeEntry.querySelector('.qe_title');
+        var origText = originalTitle ? (originalTitle.getAttribute('data-original-title') || originalTitle.textContent) : currentTitleEl.textContent;
+
+        currentTitleEl.textContent = customName;
+        currentTitleEl.title = 'Original: ' + origText;
+        currentTitleEl.setAttribute('data-has-custom', 'true');
+        isUpdatingTitle = false;
+    } else {
+        currentTitleEl.removeAttribute('data-has-custom');
+    }
+}
+
+// Watch #currenttitle for changes by Cytube and re-apply custom name
+function initCurrentTitleObserver() {
+    var currentTitleEl = document.getElementById('currenttitle');
+    if (!currentTitleEl) {
+        setTimeout(initCurrentTitleObserver, 500);
+        return;
+    }
+
+    if (currentTitleObserver) return; // Already initialized
+
+    currentTitleObserver = new MutationObserver(function(mutations) {
+        // When Cytube updates the title, re-apply custom name if we have one
+        if (!isUpdatingTitle) {
+            setTimeout(updateCurrentTitleDisplay, 50);
+        }
+    });
+
+    currentTitleObserver.observe(currentTitleEl, {
+        childList: true,
+        characterData: true,
+        subtree: true
+    });
+
+    // Initial update
+    updateCurrentTitleDisplay();
+    console.log('[CustomTitle] Observer initialized');
 }
 
 // Check if current user is a moderator or higher
@@ -3320,6 +3388,19 @@ function initPlaylistRenameObserver() {
         socket.on('delete', function() {
             debouncedPlaylistUpdate(400);
         });
+
+        // Update current title when media changes
+        socket.on('changeMedia', function() {
+            setTimeout(function() {
+                updateCurrentTitleDisplay();
+            }, 300);
+        });
+
+        socket.on('setCurrent', function() {
+            setTimeout(function() {
+                updateCurrentTitleDisplay();
+            }, 300);
+        });
         
         // Listen for rank changes - add/remove buttons accordingly
         socket.on('rank', function(rank) {
@@ -3352,11 +3433,13 @@ function initPlaylistRenameObserver() {
 // Initialize the rename system
 function initPlaylistRename() {
     console.log('Initializing playlist rename system...');
-    
+
     // Fetch names from JSONBin
     fetchPlaylistNames().then(function() {
         // Start the observer after names are loaded
         initPlaylistRenameObserver();
+        // Also start the current title observer
+        initCurrentTitleObserver();
     });
 }
 
@@ -3394,201 +3477,141 @@ window.resetRename = resetRename;
 /* ========== CUSTOM COLUMN RESIZER ========== */
 (function() {
     'use strict';
-    
-    var resizeHandle = null;
+
     var isResizing = false;
     var startX = 0;
     var startWidth = 0;
-    
-    // Add CSS for resizer
+    var leftContent = null;
+    var contentWrap = null;
+    var EDGE_THRESHOLD = 8; // pixels from edge to trigger resize cursor
+
+    // Add CSS for resizer - NO visible element, just layout fixes
     var resizerCSS = document.createElement('style');
     resizerCSS.id = 'column-resizer-css';
     resizerCSS.textContent = `
-        /* Only apply flex layout on desktop */
         @media (min-width: 769px) {
             #content-wrap {
                 display: flex !important;
                 flex-direction: row !important;
                 width: 100% !important;
+                height: calc(100vh - 50px) !important;
                 gap: 0 !important;
+                overflow: hidden !important;
             }
-            
+
             #leftcontent {
                 flex-shrink: 0 !important;
                 box-sizing: border-box !important;
+                height: 100% !important;
+                overflow-y: auto !important;
             }
-            
+
             #rightcontent {
                 flex: 1 !important;
                 min-width: 200px !important;
-                max-width: 50% !important;
                 box-sizing: border-box !important;
                 position: relative !important;
                 right: unset !important;
                 width: auto !important;
+                height: 100% !important;
             }
-            
-            #column-resize-handle {
-                width: 6px !important;
-                background: rgba(100, 100, 100, 0.3) !important;
-                cursor: col-resize !important;
-                flex-shrink: 0 !important;
-                transition: background 0.2s !important;
-                position: relative !important;
-                z-index: 1000 !important;
-            }
-            
-            #column-resize-handle:hover {
-                background: rgba(150, 150, 150, 0.6) !important;
-            }
-            
-            #column-resize-handle:active,
-            #column-resize-handle.resizing {
-                background: rgba(200, 200, 200, 0.8) !important;
-            }
-            
-            #column-resize-handle::after {
-                content: '⋮' !important;
-                position: absolute !important;
-                top: 50% !important;
-                left: 50% !important;
-                transform: translate(-50%, -50%) !important;
-                color: rgba(255, 255, 255, 0.4) !important;
-                font-size: 18px !important;
-                pointer-events: none !important;
-            }
-            
-            body.col-resizing {
+
+            body.col-resizing,
+            body.col-resizing * {
                 cursor: col-resize !important;
                 user-select: none !important;
             }
         }
     `;
     document.head.appendChild(resizerCSS);
-    
+
+    function isNearEdge(e) {
+        if (!leftContent) return false;
+        var rect = leftContent.getBoundingClientRect();
+        var distFromEdge = Math.abs(e.clientX - rect.right);
+        return distFromEdge <= EDGE_THRESHOLD;
+    }
+
     function initResizer() {
-        // Only run on desktop
-        if (window.innerWidth <= 768) {
-            console.log('[Resizer] Skipping - mobile view');
-            return;
-        }
-        
-        var contentWrap = document.getElementById('content-wrap');
-        var leftContent = document.getElementById('leftcontent');
+        if (window.innerWidth <= 768) return;
+
+        contentWrap = document.getElementById('content-wrap');
+        leftContent = document.getElementById('leftcontent');
         var rightContent = document.getElementById('rightcontent');
-        
+
         if (!contentWrap || !leftContent || !rightContent) {
-            console.log('[Resizer] Elements not ready, retrying...');
             setTimeout(initResizer, 500);
             return;
         }
-        
-        // Check if rightcontent is a sibling (desktop mode)
-        if (rightContent.parentElement !== contentWrap) {
-            console.log('[Resizer] Not in desktop layout mode');
-            return;
-        }
-        
-        // Don't add handle twice
-        if (document.getElementById('column-resize-handle')) {
-            console.log('[Resizer] Handle already exists');
-            return;
-        }
-        
-        // Create resize handle
-        resizeHandle = document.createElement('div');
-        resizeHandle.id = 'column-resize-handle';
-        resizeHandle.title = 'Drag to resize video/chat columns';
-        
-        // Insert handle between left and right content
-        contentWrap.insertBefore(resizeHandle, rightContent);
-        
-        // Load saved width or use default
+
+        if (rightContent.parentElement !== contentWrap) return;
+        if (contentWrap.dataset.resizerInit) return;
+        contentWrap.dataset.resizerInit = 'true';
+
+        // Load saved width
         var savedWidth = localStorage.getItem('cytube_column_width');
         if (savedWidth) {
             leftContent.style.width = savedWidth;
-            console.log('[Resizer] Loaded saved width:', savedWidth);
         } else {
             leftContent.style.width = '88%';
-            console.log('[Resizer] Using default width: 88%');
         }
-        
-        // Mouse down on handle
-        resizeHandle.addEventListener('mousedown', function(e) {
-            isResizing = true;
-            startX = e.clientX;
-            startWidth = leftContent.offsetWidth;
-            
-            document.body.classList.add('col-resizing');
-            resizeHandle.classList.add('resizing');
-            
-            e.preventDefault();
-        });
-        
-        // Mouse move
+
+        // Mouse move - detect edge hover and handle resize drag
         document.addEventListener('mousemove', function(e) {
-            if (!isResizing) return;
-            
-            var deltaX = e.clientX - startX;
-            var newWidth = startWidth + deltaX;
-            var containerWidth = contentWrap.offsetWidth;
-            var percentWidth = (newWidth / containerWidth) * 100;
-            
-            // Constrain between 50% and 95%
-            if (percentWidth >= 50 && percentWidth <= 95) {
-                leftContent.style.width = percentWidth + '%';
+            if (isResizing) {
+                var deltaX = e.clientX - startX;
+                var newWidth = startWidth + deltaX;
+                var containerWidth = contentWrap.offsetWidth;
+                var percentWidth = (newWidth / containerWidth) * 100;
+
+                if (percentWidth >= 50 && percentWidth <= 95) {
+                    leftContent.style.width = percentWidth + '%';
+                }
+            } else {
+                // Show resize cursor when near edge
+                if (isNearEdge(e)) {
+                    document.body.style.cursor = 'col-resize';
+                } else if (document.body.style.cursor === 'col-resize') {
+                    document.body.style.cursor = '';
+                }
             }
         });
-        
-        // Mouse up
+
+        // Mouse down - start resize if near edge
+        document.addEventListener('mousedown', function(e) {
+            if (isNearEdge(e)) {
+                isResizing = true;
+                startX = e.clientX;
+                startWidth = leftContent.offsetWidth;
+                document.body.classList.add('col-resizing');
+                e.preventDefault();
+            }
+        });
+
+        // Mouse up - end resize
         document.addEventListener('mouseup', function() {
             if (isResizing) {
                 isResizing = false;
                 document.body.classList.remove('col-resizing');
-                resizeHandle.classList.remove('resizing');
-                
-                // Save the width
+                document.body.style.cursor = '';
+
                 var containerWidth = contentWrap.offsetWidth;
-                var leftWidth = leftContent.offsetWidth;
-                var percentWidth = (leftWidth / containerWidth) * 100;
-                var savedValue = percentWidth.toFixed(1) + '%';
-                
-                localStorage.setItem('cytube_column_width', savedValue);
-                console.log('[Resizer] Saved width:', savedValue);
+                var percentWidth = (leftContent.offsetWidth / containerWidth) * 100;
+                localStorage.setItem('cytube_column_width', percentWidth.toFixed(1) + '%');
             }
         });
-        
-        console.log('[Resizer] ✓ Initialized successfully');
+
+        console.log('[Resizer] Initialized (edge detection mode)');
     }
-    
-    function removeResizer() {
-        var handle = document.getElementById('column-resize-handle');
-        if (handle) {
-            handle.remove();
-            console.log('[Resizer] Removed handle (mobile mode)');
-        }
-    }
-    
-    // Initialize after a delay
-    setTimeout(function() {
-        initResizer();
-    }, 1500);
-    
-    // Handle window resize - reinit if switching between mobile/desktop
+
+    setTimeout(initResizer, 1500);
+
     var currentlyMobile = window.innerWidth <= 768;
     window.addEventListener('resize', function() {
         var nowMobile = window.innerWidth <= 768;
-        
         if (currentlyMobile && !nowMobile) {
-            // Switched to desktop
-            console.log('[Resizer] Switched to desktop mode');
             setTimeout(initResizer, 500);
-        } else if (!currentlyMobile && nowMobile) {
-            // Switched to mobile
-            console.log('[Resizer] Switched to mobile mode');
-            removeResizer();
         }
-        
         currentlyMobile = nowMobile;
     });
 })();

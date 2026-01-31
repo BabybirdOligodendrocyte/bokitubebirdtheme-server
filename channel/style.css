@@ -32,7 +32,22 @@
 }
 
 #wrap { padding: 0; }
-#drinkbarwrap, #resizewrap { display: none; }
+/* Hide ALL resize-related elements from Cytube and jQuery UI */
+#drinkbarwrap, #resizewrap, #videoResize, .column-resize, .ui-resizable-handle,
+.resize-handle, .resizer, .gutter, .splitter, #sizerbar, #column-resize-handle,
+[class*="resize"]:not(body):not(html), [id*="resize"]:not(#chatline),
+[class*="Resize"], [id*="Resize"], [class*="splitter"], [class*="gutter"] {
+    display: none !important;
+    width: 0 !important;
+    max-width: 0 !important;
+    min-width: 0 !important;
+    height: 0 !important;
+    visibility: hidden !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+    position: absolute !important;
+    left: -9999px !important;
+}
 
 #chatwrap > .profile-box {
     height: 100vh !important;
@@ -252,22 +267,22 @@ div.embed-responsive * { max-height: calc(100vh - 50px); }
     background-color: var(--primarycolor);
     display: flex;
     flex-wrap: wrap;
-    gap: 3px;
-    padding: 4px 6px;
-    min-height: 38px;
+    gap: 2px;
+    padding: 3px 4px;
+    min-height: 32px;
     width: 100%;
     box-sizing: border-box;
     align-items: center;
     justify-content: flex-start;
-    overflow: hidden;
 }
 
 #leftcontrols .btn {
-    flex-shrink: 1;
+    flex: 0 1 auto;
     margin: 1px;
-    padding: 4px 8px;
-    font-size: 12px;
+    padding: 3px 6px;
+    font-size: 11px;
     white-space: nowrap;
+    min-width: fit-content;
 }
 
 .btn { background-image: none; background-color: var(--tertiarycolor); }
