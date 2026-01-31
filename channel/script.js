@@ -590,34 +590,16 @@ function hexToRgba(hex, opacity) {
             background: #555 !important;
         }
 
-        /* Impersonation message styling */
+        /* Impersonation message styling - subtle indicator */
         .impersonate-message {
             position: relative !important;
-            animation: impersonate-shake 0.5s ease-in-out infinite !important;
-            border-left: 3px solid #E91E63 !important;
-            padding-left: 8px !important;
-            background: rgba(233, 30, 99, 0.08) !important;
+            opacity: 0.85 !important;
         }
-        .impersonate-badge {
-            display: inline-block !important;
-            background: #E91E63 !important;
-            color: #fff !important;
-            font-size: 10px !important;
-            padding: 2px 6px !important;
-            border-radius: 4px !important;
-            margin-right: 6px !important;
-            font-weight: bold !important;
-            vertical-align: middle !important;
-        }
-        .impersonate-sender {
-            font-size: 10px !important;
-            color: #888 !important;
-            margin-left: 8px !important;
-        }
-        @keyframes impersonate-shake {
-            0%, 100% { transform: translateX(0); }
-            10%, 30%, 50%, 70%, 90% { transform: translateX(-1px); }
-            20%, 40%, 60%, 80% { transform: translateX(1px); }
+        .impersonate-indicator {
+            font-size: 9px !important;
+            color: #666 !important;
+            margin-left: 4px !important;
+            font-style: italic !important;
         }
 
         #emote-popup-tabs {
@@ -5637,25 +5619,25 @@ function styleImpersonateMessages() {
 
         var impersonatedUser = match[1];
 
-        // Add impersonation styling
+        // Add impersonation styling (subtle opacity change)
         $msg.addClass('impersonate-message');
 
-        // Find the message content and modify it
+        // Find the message content and clean up the marker
         var $spans = $msg.find('span');
         $spans.each(function() {
             var $span = $(this);
             var html = $span.html();
             if (html && html.indexOf('🎭[') !== -1) {
-                // Replace the marker with a styled version
-                var newHtml = html.replace(/🎭\[([^\]]+)\]\s*/, '<span class="impersonate-badge">FAKE</span><strong>$1:</strong> ');
+                // Replace the marker with just the username (subtle - no badge)
+                var newHtml = html.replace(/🎭\[([^\]]+)\]\s*/, '<strong>$1:</strong> ');
                 $span.html(newHtml);
             }
         });
 
-        // Add "sent by" indicator
+        // Add subtle indicator at end
         var realSender = $msg.find('.username').first().text().replace(/:$/, '').trim();
         if (realSender && realSender !== impersonatedUser) {
-            $msg.append('<span class="impersonate-sender">(sent by ' + realSender + ')</span>');
+            $msg.append('<span class="impersonate-indicator">- ' + realSender + '</span>');
         }
     });
 }
@@ -5682,15 +5664,19 @@ function initImpersonateObserver() {
 
 // Click username in chat to mention, Shift+Click to impersonate
 function initClickToMention() {
-    $(document).on('click', '#messagebuffer .username', function(e) {
-        var $this = $(this);
-        var username = $this.text().replace(/:$/, '').trim();
+    // Use event delegation that also catches clicks on child elements of .username
+    $(document).on('click', '#messagebuffer .username, #messagebuffer .username *', function(e) {
+        // Find the actual .username element (might be the target or a parent)
+        var $usernameEl = $(e.target).closest('.username');
+        if ($usernameEl.length === 0) return;
+
+        var username = $usernameEl.text().replace(/:$/, '').trim();
 
         if (!username) return;
 
         if (e.shiftKey) {
             // Shift+Click: Open impersonation popup
-            var usernameHtml = $this.html().replace(/:?\s*$/, '');
+            var usernameHtml = $usernameEl.html().replace(/:?\s*$/, '');
             openImpersonatePopup(username, usernameHtml);
         } else {
             // Regular click: Add @mention to chatline (original behavior)
