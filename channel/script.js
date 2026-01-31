@@ -5597,66 +5597,75 @@ function styleImpersonateMessages() {
     $('#messagebuffer > div').each(function() {
         var $msg = $(this);
         // Skip if already processed
-        if ($msg.data('impersonate-checked')) return;
-        $msg.data('impersonate-checked', true);
+        if ($msg.data('impersonate-styled')) return;
 
         // Check for impersonation marker: 🎭[username] message
         var text = $msg.text();
         var match = text.match(/🎭\[([^\]]+)\]/);
-        if (!match) return;
+        if (!match) {
+            return; // Not an impersonation message
+        }
+
+        // Mark as processed
+        $msg.data('impersonate-styled', true);
 
         var impersonatedUser = match[1];
 
-        // Find the impersonated user's styling from their messages in chat
+        // Find the impersonated user's styling from their REAL messages in chat
         var styledUsernameHtml = null;
-        var messageStyleTags = null; // Opening tags for message styling
-        var messageStyleCloseTags = null; // Closing tags
+        var messageStyleTags = null;
+        var messageStyleCloseTags = null;
 
         $('#messagebuffer > div').each(function() {
             var $otherMsg = $(this);
-            if ($otherMsg.data('impersonate-checked')) return; // Skip impersonation messages
+
+            // Skip if this message contains the impersonation marker (it's a fake message)
+            if ($otherMsg.text().indexOf('🎭[') !== -1) return;
 
             // Look for .styled-username or .username that matches
             var $styledName = $otherMsg.find('.styled-username');
             var $plainName = $otherMsg.find('.username');
             var foundUser = false;
+            var $foundNameEl = null;
 
+            // Prefer styled-username if available
             if ($styledName.length > 0) {
                 var nameText = $styledName.text().replace(/:$/, '').trim();
                 if (nameText.toLowerCase() === impersonatedUser.toLowerCase()) {
                     styledUsernameHtml = $styledName.prop('outerHTML');
+                    $foundNameEl = $styledName;
                     foundUser = true;
                 }
             }
-            if (!styledUsernameHtml && $plainName.length > 0) {
+            // Fallback to plain username
+            if (!foundUser && $plainName.length > 0) {
                 var nameText = $plainName.text().replace(/:$/, '').trim();
                 if (nameText.toLowerCase() === impersonatedUser.toLowerCase()) {
                     styledUsernameHtml = $plainName.prop('outerHTML');
+                    $foundNameEl = $plainName;
                     foundUser = true;
                 }
             }
 
             // If we found the user, also get their message styling
-            if (foundUser) {
-                // Find the message content span (not username, not timestamp)
-                var $contentSpans = $otherMsg.find('span').not('.username, .styled-username, .timestamp, [class*="username"]');
-                if ($contentSpans.length > 0) {
-                    // Get the outermost styled span
-                    var $contentSpan = $contentSpans.last();
-                    // Check if it has styling (inline style or classes that indicate styling)
-                    var style = $contentSpan.attr('style');
-                    var classes = $contentSpan.attr('class');
-                    if (style || (classes && classes.length > 0)) {
-                        // Build opening and closing tags
-                        var tagName = $contentSpan.prop('tagName').toLowerCase();
-                        messageStyleTags = '<' + tagName;
-                        if (classes) messageStyleTags += ' class="' + classes + '"';
-                        if (style) messageStyleTags += ' style="' + style + '"';
-                        messageStyleTags += '>';
-                        messageStyleCloseTags = '</' + tagName + '>';
+            if (foundUser && $foundNameEl) {
+                // Find spans that contain message content (have inline styles)
+                var $allSpans = $otherMsg.find('span[style]');
+                $allSpans.each(function() {
+                    var $span = $(this);
+                    // Skip username/timestamp spans
+                    if ($span.hasClass('username') || $span.hasClass('styled-username') ||
+                        $span.hasClass('timestamp') || $span.attr('class')?.includes('username')) {
+                        return;
                     }
-                }
-                return false; // break
+                    var style = $span.attr('style');
+                    if (style && style.length > 0) {
+                        messageStyleTags = '<span style="' + style + '">';
+                        messageStyleCloseTags = '</span>';
+                        return false; // break - use first styled span found
+                    }
+                });
+                return false; // break outer loop
             }
         });
 
@@ -5672,7 +5681,7 @@ function styleImpersonateMessages() {
             var html = $span.html();
             if (html && html.indexOf('🎭[') !== -1) {
                 // Extract the message text (everything after the marker)
-                var msgMatch = html.match(/🎭\[[^\]]+\]\s*(.*)/);
+                var msgMatch = html.match(/🎭\[[^\]]+\]\s*([\s\S]*)/);
                 var messageText = msgMatch ? msgMatch[1] : '';
 
                 // Apply styling: styledUsername + styledMessage
