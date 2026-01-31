@@ -3371,13 +3371,14 @@ function initReplySystem() {
             }
 
             // Build style code if custom styling is enabled
-            // Format: XYZ where X=animation, Y=border style, Z=border radius
+            // Format: XYZC where X=animation, Y=border style, Z=border radius, C=color index
             // Uses 0 for "none/default"
             var styleCode = '';
             if (replyStyleSettings.enabled) {
                 var animCode = '0';
                 var borderCode = '0';
                 var radiusCode = '0';
+                var colorCode = '0';
 
                 // Animation codes: g=glow, p=pulse, s=shimmer, b=breathe, w=rainbow, n=neon, f=flash, l=slide
                 var animMap = {glow:'g', pulse:'p', shimmer:'s', breathe:'b', rainbow:'w', neon:'n', flash:'f', slide:'l'};
@@ -3397,7 +3398,23 @@ function initReplySystem() {
                     radiusCode = radiusMap[replyStyleSettings.borderRadius];
                 }
 
-                styleCode = ':' + animCode + borderCode + radiusCode;
+                // Color code: Find which preset color matches, or use hex encoding
+                // Preset colors array (same order as in Reply tab)
+                var presetColors = ['#8F6409','#0D8F8F','#7B4B9E','#A34D4D','#4A8F4A','#4A6FA5','#9E4B7B','#B37400','#3D9EAA','#6B8F2E','#B36666','#5B5BAA'];
+                var userColor = (replyStyleSettings.borderColor || '#8F6409').toUpperCase();
+                var colorIdx = presetColors.findIndex(function(c) { return c.toUpperCase() === userColor; });
+                if (colorIdx >= 0 && colorIdx <= 9) {
+                    colorCode = String(colorIdx);
+                } else if (colorIdx === 10) {
+                    colorCode = 'a';
+                } else if (colorIdx === 11) {
+                    colorCode = 'b';
+                } else {
+                    // Custom color - encode as 'x' followed by hex (without #)
+                    colorCode = 'x' + userColor.replace('#', '');
+                }
+
+                styleCode = ':' + animCode + borderCode + radiusCode + colorCode;
             }
 
             // Create marker with color, message ID, and style code: ▶1:abc12:btr @username:
@@ -3435,6 +3452,8 @@ function initReplySystem() {
         var animDecode = {g:'glow', p:'pulse', s:'shimmer', b:'breathe', w:'rainbow', n:'neon', f:'flash', l:'slide'};
         var borderDecode = {t:'thick', d:'double', o:'dotted', a:'dashed'};
         var radiusDecode = {r:'rounded', p:'pill'};
+        // Preset colors for decoding color index
+        var presetColors = ['#8F6409','#0D8F8F','#7B4B9E','#A34D4D','#4A8F4A','#4A6FA5','#9E4B7B','#B37400','#3D9EAA','#6B8F2E','#B36666','#5B5BAA'];
 
         $('#messagebuffer > div').each(function() {
             var $msg = $(this);
@@ -3452,8 +3471,9 @@ function initReplySystem() {
                 var msgIdShort = null;
                 var styleCode = null;
 
-                // Try newest format with style: ▶1:abc123:btr @username: (color + message ID + style)
-                var styledMatch = text.match(/▶(\d):([a-zA-Z0-9]+):([a-z0-9]{3})\s*@([^:]+):/);
+                // Try newest format with style+color: ▶1:abc123:btr0 or ▶1:abc123:btrxFFFFFF @username:
+                // Style code is 4+ chars: anim + border + radius + color (color can be 1 char or x+6 hex)
+                var styledMatch = text.match(/▶(\d):([a-zA-Z0-9]+):([a-z0-9]{3}(?:[0-9ab]|x[A-Fa-f0-9]{6}))\s*@([^:]+):/);
                 if (styledMatch && styledMatch[1]) {
                     colorIndex = parseInt(styledMatch[1], 10) - 1;
                     if (colorIndex < 0 || colorIndex >= REPLY_COLORS_COUNT) {
@@ -3462,6 +3482,20 @@ function initReplySystem() {
                     msgIdShort = styledMatch[2] || null;
                     styleCode = styledMatch[3] || null;
                     replyToUser = styledMatch[4] ? styledMatch[4].trim() : null;
+                }
+
+                // Fallback: old 3-char style format ▶1:abc123:btr @username:
+                if (colorIndex === -1) {
+                    var oldStyledMatch = text.match(/▶(\d):([a-zA-Z0-9]+):([a-z0-9]{3})\s*@([^:]+):/);
+                    if (oldStyledMatch && oldStyledMatch[1]) {
+                        colorIndex = parseInt(oldStyledMatch[1], 10) - 1;
+                        if (colorIndex < 0 || colorIndex >= REPLY_COLORS_COUNT) {
+                            colorIndex = -1;
+                        }
+                        msgIdShort = oldStyledMatch[2] || null;
+                        styleCode = oldStyledMatch[3] || null;
+                        replyToUser = oldStyledMatch[4] ? oldStyledMatch[4].trim() : null;
+                    }
                 }
 
                 // Fallback: format without style ▶1:abc123 @username: (color + message ID)
@@ -3513,20 +3547,41 @@ function initReplySystem() {
                 var isOwnMessage = currentUser && msgUsername.toLowerCase() === currentUser.toLowerCase();
 
                 // Decode style from marker (applies to ALL users viewing the message)
-                var markerAnim = null, markerBorder = null, markerRadius = null;
-                if (styleCode && styleCode !== '000') {
+                var markerAnim = null, markerBorder = null, markerRadius = null, markerColor = null;
+                if (styleCode && styleCode.length >= 3) {
                     markerAnim = animDecode[styleCode[0]] || null;
                     markerBorder = borderDecode[styleCode[1]] || null;
                     markerRadius = radiusDecode[styleCode[2]] || null;
+
+                    // Decode color (4th character onwards)
+                    if (styleCode.length >= 4) {
+                        var colorPart = styleCode.substring(3);
+                        if (colorPart[0] === 'x' && colorPart.length === 7) {
+                            // Custom hex color: xFFFFFF
+                            markerColor = '#' + colorPart.substring(1);
+                        } else if (colorPart[0] === 'a') {
+                            markerColor = presetColors[10]; // Salmon
+                        } else if (colorPart[0] === 'b') {
+                            markerColor = presetColors[11]; // Indigo
+                        } else {
+                            var cIdx = parseInt(colorPart[0], 10);
+                            if (!isNaN(cIdx) && cIdx >= 0 && cIdx <= 9) {
+                                markerColor = presetColors[cIdx];
+                            }
+                        }
+                    }
                 }
 
+                // Check if style code indicates custom styling (not all zeros)
+                var hasMarkerStyle = styleCode && styleCode.length >= 4 && styleCode !== '0000';
+
                 // Use marker style if present, otherwise fall back to local settings for own messages
-                var useCustom = (styleCode && styleCode !== '000') ||
-                    (isOwnMessage && replyStyleSettings.enabled);
+                var useCustom = hasMarkerStyle || (isOwnMessage && replyStyleSettings.enabled);
 
                 var animToApply = markerAnim || (isOwnMessage && replyStyleSettings.enabled ? replyStyleSettings.animation : null);
                 var borderToApply = markerBorder || (isOwnMessage && replyStyleSettings.enabled ? replyStyleSettings.borderStyle : null);
                 var radiusToApply = markerRadius || (isOwnMessage && replyStyleSettings.enabled ? replyStyleSettings.borderRadius : null);
+                var colorToApply = markerColor || (isOwnMessage && replyStyleSettings.enabled ? replyStyleSettings.borderColor : null);
 
                 if (useCustom) {
                     $msg.addClass('reply-custom');
@@ -3541,6 +3596,20 @@ function initReplySystem() {
                     // Add border radius class if set
                     if (radiusToApply) {
                         $msg.addClass('reply-' + radiusToApply);
+                    }
+                    // Apply color directly as inline style (so all users see same color)
+                    if (colorToApply) {
+                        var bgColor = colorToApply;
+                        // Convert hex to rgba for background
+                        var r = parseInt(bgColor.slice(1,3), 16);
+                        var g = parseInt(bgColor.slice(3,5), 16);
+                        var b = parseInt(bgColor.slice(5,7), 16);
+                        var bgRgba = 'rgba(' + r + ',' + g + ',' + b + ',0.15)';
+                        $msg[0].style.setProperty('--custom-reply-color', colorToApply);
+                        $msg[0].style.setProperty('--custom-reply-bg', bgRgba);
+                        $msg[0].style.setProperty('--custom-reply-glow-color', colorToApply);
+                        $msg[0].style.borderLeftColor = colorToApply;
+                        $msg[0].style.background = bgRgba;
                     }
                 } else {
                     $msg.addClass('reply-color-' + colorIndex);
@@ -3562,13 +3631,13 @@ function initReplySystem() {
 
                 // Also mark the original message being replied to (for other users)
                 // Pass the decoded styles so original message gets same styling
-                markOriginalMessage(msgIdShort, replyToUser, colorIndex, useCustom, animToApply, borderToApply, radiusToApply);
+                markOriginalMessage(msgIdShort, replyToUser, colorIndex, useCustom, animToApply, borderToApply, radiusToApply, colorToApply);
             }
         });
     }
 
     // Find and mark the original message being replied to
-    function markOriginalMessage(msgIdShort, username, colorIndex, useCustom, animStyle, borderStyle, radiusStyle) {
+    function markOriginalMessage(msgIdShort, username, colorIndex, useCustom, animStyle, borderStyle, radiusStyle, colorStyle) {
         var colorClass = 'reply-color-' + colorIndex;
 
         // Helper to remove all reply color classes from an element
@@ -3594,6 +3663,18 @@ function initReplySystem() {
                 }
                 if (radiusStyle) {
                     msgEl.classList.add('reply-' + radiusStyle);
+                }
+                // Apply color directly as inline style (so all users see same color)
+                if (colorStyle) {
+                    var r = parseInt(colorStyle.slice(1,3), 16);
+                    var g = parseInt(colorStyle.slice(3,5), 16);
+                    var b = parseInt(colorStyle.slice(5,7), 16);
+                    var bgRgba = 'rgba(' + r + ',' + g + ',' + b + ',0.15)';
+                    msgEl.style.setProperty('--custom-reply-color', colorStyle);
+                    msgEl.style.setProperty('--custom-reply-bg', bgRgba);
+                    msgEl.style.setProperty('--custom-reply-glow-color', colorStyle);
+                    msgEl.style.borderLeftColor = colorStyle;
+                    msgEl.style.background = bgRgba;
                 }
             } else {
                 // Only add color class if not already custom styled
