@@ -1822,8 +1822,8 @@ function renderStyleTabContent(tab) {
             '<div class="textstyle-section" style="border-top:1px solid #333;"><button id="textstyle-reset" onclick="resetTextStyle()">↺ Reset to Default</button></div>';
         
         updateStylePreview();
-        
-    } else {
+
+    } else if (tab === 'username') {
         // USERNAME STYLE TAB
         var settings = usernameStyleSettings;
         
