@@ -2979,23 +2979,31 @@ function initReplySystem() {
     // Prepend reply marker before message is sent
     function prependReplyMarker() {
         if (currentReplyData && chatline.value.trim()) {
-            // Create visible text marker that will be sent with the message
-            var marker = '▶ @' + currentReplyData.usernameText + ': ';
-
-            // Only add if not already there
-            if (!chatline.value.startsWith('▶ @')) {
-                chatline.value = marker + chatline.value;
-            }
-
-            // Mark original message as a reply target and assign it a color
+            // Get or assign a color for this reply thread
             var sourceMsg = document.getElementById('chat-msg-' + currentReplyData.targetId);
+            var colorIndex = -1;
+
             if (sourceMsg) {
                 sourceMsg.classList.add('reply-target');
-                // Assign a color if it doesn't have one yet
-                if (getReplyColorFromElement(sourceMsg) === -1) {
-                    var colorIndex = getNextReplyColor();
+                // Check if it already has a color
+                colorIndex = getReplyColorFromElement(sourceMsg);
+                if (colorIndex === -1) {
+                    // Assign a new color
+                    colorIndex = getNextReplyColor();
                     sourceMsg.classList.add('reply-color-' + colorIndex);
                 }
+            } else {
+                // No source message found, assign a color anyway
+                colorIndex = getNextReplyColor();
+            }
+
+            // Create marker with color embedded: ▶1 @username: (1-6 for readability)
+            var colorNum = colorIndex + 1; // 1-indexed for display
+            var marker = '▶' + colorNum + ' @' + currentReplyData.usernameText + ': ';
+
+            // Only add if not already there
+            if (!chatline.value.startsWith('▶')) {
+                chatline.value = marker + chatline.value;
             }
 
             console.log('[Reply] Added marker:', marker);
@@ -3023,26 +3031,35 @@ function initReplySystem() {
             if ($msg.hasClass('is-reply-message') || $msg.data('reply-checked')) return;
             $msg.data('reply-checked', true);
 
-            // Check if message contains reply marker
+            // Check if message contains reply marker (new format ▶1 @ or old format ▶ @)
             var text = $msg.text();
-            if (text.indexOf('▶ @') !== -1 || text.indexOf('▶ @') !== -1) {
+            if (text.indexOf('▶') !== -1 && text.indexOf('@') !== -1) {
                 $msg.addClass('is-reply-message');
 
-                // Extract username from reply marker to find the original message
-                var match = text.match(/▶\s*@([^:]+):/);
                 var colorIndex = -1;
 
-                if (match && match[1]) {
-                    var replyToUser = match[1].trim();
-                    // Find the original message (reply-target) from that user
-                    var originalMsg = findReplyTargetForUser(replyToUser);
-                    if (originalMsg) {
-                        // Use the same color as the original message
-                        colorIndex = getReplyColorFromElement(originalMsg);
+                // Try new format first: ▶1 @username: (color embedded)
+                var newMatch = text.match(/▶(\d)\s*@/);
+                if (newMatch && newMatch[1]) {
+                    colorIndex = parseInt(newMatch[1], 10) - 1; // Convert 1-6 to 0-5
+                    if (colorIndex < 0 || colorIndex >= REPLY_COLORS_COUNT) {
+                        colorIndex = -1; // Invalid, will assign new
                     }
                 }
 
-                // If no color found, assign a new one
+                // Fallback: try to find original message by username (old format)
+                if (colorIndex === -1) {
+                    var oldMatch = text.match(/▶\s*@([^:]+):/);
+                    if (oldMatch && oldMatch[1]) {
+                        var replyToUser = oldMatch[1].trim();
+                        var originalMsg = findReplyTargetForUser(replyToUser);
+                        if (originalMsg) {
+                            colorIndex = getReplyColorFromElement(originalMsg);
+                        }
+                    }
+                }
+
+                // If still no color found, assign a new one
                 if (colorIndex === -1) {
                     colorIndex = getNextReplyColor();
                 }
