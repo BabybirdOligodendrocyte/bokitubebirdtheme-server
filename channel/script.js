@@ -2771,18 +2771,47 @@ function replyToMsg(target) {
         sourceEl = document.getElementById(target);
     }
 
-    if (!sourceEl) return;
+    if (!sourceEl) {
+        console.log('[Reply] Could not find message element:', target);
+        return;
+    }
 
-    // Extract username (with HTML for styling)
+    // Try multiple selectors to find username
     var usernameEl = sourceEl.querySelector('.username');
-    var usernameHtml = usernameEl ? usernameEl.innerHTML.replace(/:$/, '') : 'Unknown';
-    var usernameText = usernameEl ? usernameEl.textContent.replace(/:$/, '').trim() : 'Unknown';
+    if (!usernameEl) usernameEl = sourceEl.querySelector('[class*="username"]');
+    if (!usernameEl) usernameEl = sourceEl.querySelector('span.nick');
+    if (!usernameEl) usernameEl = sourceEl.querySelector('.nick');
 
-    // Extract message text
+    var usernameHtml = 'Unknown';
+    var usernameText = 'Unknown';
+
+    if (usernameEl) {
+        usernameHtml = usernameEl.innerHTML.replace(/:?\s*$/, '');
+        usernameText = usernameEl.textContent.replace(/:?\s*$/, '').trim();
+    } else {
+        // Fallback: try to get username from first strong/bold element
+        var boldEl = sourceEl.querySelector('strong, b');
+        if (boldEl) {
+            usernameText = boldEl.textContent.replace(/:?\s*$/, '').trim();
+            usernameHtml = boldEl.innerHTML.replace(/:?\s*$/, '');
+        }
+    }
+
+    console.log('[Reply] Found username:', usernameText);
+
+    // Extract message text - try multiple approaches
     var msgText = '';
-    var msgSpans = sourceEl.querySelectorAll('span:not(.username):not(.timestamp)');
+    var msgSpans = sourceEl.querySelectorAll('span:not(.username):not(.timestamp):not([class*="username"])');
     if (msgSpans.length > 0) {
         msgText = msgSpans[msgSpans.length - 1].textContent.substring(0, 60);
+    }
+    if (!msgText) {
+        // Fallback: get text content after username
+        var fullText = sourceEl.textContent;
+        var colonIndex = fullText.indexOf(':');
+        if (colonIndex !== -1) {
+            msgText = fullText.substring(colonIndex + 1).trim().substring(0, 60);
+        }
     }
 
     currentReplyData = {
