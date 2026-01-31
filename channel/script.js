@@ -3037,21 +3037,23 @@ function initReplySystem() {
                 $msg.addClass('is-reply-message');
 
                 var colorIndex = -1;
+                var replyToUser = null;
 
                 // Try new format first: ▶1 @username: (color embedded)
-                var newMatch = text.match(/▶(\d)\s*@/);
+                var newMatch = text.match(/▶(\d)\s*@([^:]+):/);
                 if (newMatch && newMatch[1]) {
                     colorIndex = parseInt(newMatch[1], 10) - 1; // Convert 1-6 to 0-5
                     if (colorIndex < 0 || colorIndex >= REPLY_COLORS_COUNT) {
                         colorIndex = -1; // Invalid, will assign new
                     }
+                    replyToUser = newMatch[2] ? newMatch[2].trim() : null;
                 }
 
-                // Fallback: try to find original message by username (old format)
+                // Fallback: try old format ▶ @username:
                 if (colorIndex === -1) {
                     var oldMatch = text.match(/▶\s*@([^:]+):/);
                     if (oldMatch && oldMatch[1]) {
-                        var replyToUser = oldMatch[1].trim();
+                        replyToUser = oldMatch[1].trim();
                         var originalMsg = findReplyTargetForUser(replyToUser);
                         if (originalMsg) {
                             colorIndex = getReplyColorFromElement(originalMsg);
@@ -3065,8 +3067,41 @@ function initReplySystem() {
                 }
 
                 $msg.addClass('reply-color-' + colorIndex);
+
+                // Also mark the original message being replied to (for other users)
+                if (replyToUser) {
+                    markOriginalMessage(replyToUser, colorIndex);
+                }
             }
         });
+    }
+
+    // Find and mark the original message being replied to
+    function markOriginalMessage(username, colorIndex) {
+        if (!username) return;
+        var cleanName = username.toLowerCase().trim();
+        var colorClass = 'reply-color-' + colorIndex;
+
+        // Find the most recent message from this user that doesn't have THIS color yet
+        var messages = document.querySelectorAll('#messagebuffer > div');
+        for (var i = messages.length - 1; i >= 0; i--) {
+            var msg = messages[i];
+            // Skip reply messages
+            if (msg.classList.contains('is-reply-message')) continue;
+
+            var usernameEl = msg.querySelector('.username');
+            if (usernameEl) {
+                var msgUser = usernameEl.textContent.replace(/:?\s*$/, '').trim().toLowerCase();
+                if (msgUser === cleanName) {
+                    // Found a message from this user - mark it if not already marked with this color
+                    if (!msg.classList.contains(colorClass)) {
+                        msg.classList.add('reply-target');
+                        msg.classList.add(colorClass);
+                    }
+                    return; // Only mark the most recent one
+                }
+            }
+        }
     }
 
     // Run on existing messages
