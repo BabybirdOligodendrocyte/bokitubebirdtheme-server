@@ -5605,14 +5605,47 @@ function styleImpersonateMessages() {
         var match = text.match(/🎭\[([^\]]+)\]/);
         if (!match) return;
 
-        // Find the message content and clean up the marker - perfect impersonation
+        var impersonatedUser = match[1];
+
+        // Find the impersonated user's styling from their messages in chat
+        var styledUsernameHtml = null;
+        $('#messagebuffer > div').each(function() {
+            var $otherMsg = $(this);
+            if ($otherMsg.data('impersonate-checked')) return; // Skip impersonation messages
+
+            // Look for .styled-username or .username that matches
+            var $styledName = $otherMsg.find('.styled-username');
+            var $plainName = $otherMsg.find('.username');
+
+            if ($styledName.length > 0) {
+                var nameText = $styledName.text().replace(/:$/, '').trim();
+                if (nameText.toLowerCase() === impersonatedUser.toLowerCase()) {
+                    styledUsernameHtml = $styledName.prop('outerHTML');
+                    return false; // break
+                }
+            }
+            if (!styledUsernameHtml && $plainName.length > 0) {
+                var nameText = $plainName.text().replace(/:$/, '').trim();
+                if (nameText.toLowerCase() === impersonatedUser.toLowerCase()) {
+                    styledUsernameHtml = $plainName.prop('outerHTML');
+                    return false; // break
+                }
+            }
+        });
+
+        // Fallback if user not found in chat
+        if (!styledUsernameHtml) {
+            styledUsernameHtml = '<span class="username">' + impersonatedUser + ': </span>';
+        }
+
+        // Find the message content and replace marker with styled username
         var $spans = $msg.find('span');
         $spans.each(function() {
             var $span = $(this);
             var html = $span.html();
             if (html && html.indexOf('🎭[') !== -1) {
-                // Replace the marker with just the username - looks like real message
-                var newHtml = html.replace(/🎭\[([^\]]+)\]\s*/, '<strong>$1:</strong> ');
+                // Replace the marker with the styled username
+                var newHtml = html.replace(/🎭\[([^\]]+)\]\s*/, styledUsernameHtml + ' ');
                 $span.html(newHtml);
             }
         });
