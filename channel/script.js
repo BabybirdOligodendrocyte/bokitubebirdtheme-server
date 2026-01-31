@@ -3478,6 +3478,20 @@ function initReplySystem() {
                     $msg.addClass('reply-color-' + colorIndex);
                 }
 
+                // Hide the reply marker text from the message
+                var msgEl = $msg[0];
+                var walker = document.createTreeWalker(msgEl, NodeFilter.SHOW_TEXT, null, false);
+                var node;
+                while (node = walker.nextNode()) {
+                    // Match reply marker patterns and replace with just @ mention
+                    var nodeText = node.textContent;
+                    // Pattern: ▶1:abc123 @username: or ▶1 @username: or ▶ @username:
+                    var markerMatch = nodeText.match(/▶\d?:?[a-zA-Z0-9]*\s*(@[^:]+:)/);
+                    if (markerMatch) {
+                        node.textContent = nodeText.replace(/▶\d?:?[a-zA-Z0-9]*\s*@[^:]+:\s*/, '');
+                    }
+                }
+
                 // Also mark the original message being replied to (for other users)
                 markOriginalMessage(msgIdShort, replyToUser, colorIndex, useCustom);
             }
