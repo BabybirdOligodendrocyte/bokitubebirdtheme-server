@@ -219,11 +219,31 @@ var usernameStyleSettings = JSON.parse(localStorage.getItem('usernameStyleSettin
             overflow-y: hidden !important;
             flex-shrink: 0 !important;
         }
+        #leftcontrols::-webkit-scrollbar {
+            display: block !important;
+            height: 6px !important;
+        }
+        #leftcontrols::-webkit-scrollbar-thumb {
+            background: var(--tertiarycolor, #8F6409) !important;
+            border-radius: 3px !important;
+        }
+        #leftcontrols::-webkit-scrollbar-track {
+            background: var(--secondarycolor, #0F0F0F) !important;
+        }
         #leftcontrols .btn {
             flex: 0 0 auto !important;
             margin: 0 !important;
             padding: 5px 10px !important;
             font-size: 12px !important;
+        }
+        /* Hide Name Color button from external scripts */
+        #leftcontrols .btn[style*="green"],
+        #leftcontrols button[style*="green"],
+        .namecolor-btn,
+        #namecolor-btn,
+        button:contains("Name Color"),
+        .btn:contains("Name Color") {
+            display: none !important;
         }
         
         #emote-popup-overlay, #textstyle-popup-overlay, #filter-popup-overlay {
@@ -1741,9 +1761,28 @@ $(document).ready(function() {
     initStyleInterceptor();
     initUsernameStyleInterceptor();
     updateFontBtnIndicator();
-    
+
     // Fix userlist display - with delay to ensure elements exist
     setTimeout(fixUserlistLayout, 1500);
+
+    // Hide Name Color button from external scripts (runs periodically to catch late additions)
+    function hideNameColorBtn() {
+        $('#leftcontrols .btn, #leftcontrols button').each(function() {
+            var text = $(this).text().toLowerCase();
+            if (text.indexOf('name') !== -1 && text.indexOf('color') !== -1) {
+                $(this).hide();
+            }
+            // Also hide any green-styled buttons in leftcontrols
+            if ($(this).css('background-color') === 'rgb(0, 128, 0)' ||
+                $(this).css('background-color') === 'green' ||
+                $(this).attr('style')?.includes('green')) {
+                $(this).hide();
+            }
+        });
+    }
+    hideNameColorBtn();
+    setTimeout(hideNameColorBtn, 2000);
+    setTimeout(hideNameColorBtn, 5000);
 });
 
 function fixUserlistLayout() {
