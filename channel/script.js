@@ -5649,20 +5649,32 @@ function styleImpersonateMessages() {
 
             // If we found the user, also get their message styling
             if (foundUser && $foundNameEl) {
-                // Find spans that contain message content (have inline styles)
-                var $allSpans = $otherMsg.find('span[style]');
-                $allSpans.each(function() {
+                // Find the message content styling
+                // Look at all spans and find ones with style that aren't username/timestamp
+                $otherMsg.find('span').each(function() {
                     var $span = $(this);
-                    // Skip username/timestamp spans
-                    if ($span.hasClass('username') || $span.hasClass('styled-username') ||
-                        $span.hasClass('timestamp') || $span.attr('class')?.includes('username')) {
+                    var spanClass = $span.attr('class') || '';
+
+                    // Skip username-related spans
+                    if (spanClass.indexOf('username') !== -1 ||
+                        spanClass.indexOf('timestamp') !== -1 ||
+                        $span.hasClass('username') ||
+                        $span.hasClass('styled-username') ||
+                        $span.hasClass('timestamp')) {
+                        return; // continue to next span
+                    }
+
+                    // Skip if this span is inside a username element
+                    if ($span.closest('.username, .styled-username').length > 0) {
                         return;
                     }
+
+                    // Check for inline style
                     var style = $span.attr('style');
                     if (style && style.length > 0) {
                         messageStyleTags = '<span style="' + style + '">';
                         messageStyleCloseTags = '</span>';
-                        return false; // break - use first styled span found
+                        return false; // break
                     }
                 });
                 return false; // break outer loop
