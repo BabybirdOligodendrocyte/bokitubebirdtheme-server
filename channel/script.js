@@ -5696,15 +5696,14 @@ function sendImpersonateMessage() {
     var msgTags = cssToTags(currentImpersonateMsgStyle, currentImpersonateMsgClasses);
 
     // Build the formatted message with tags
-    // Format: [uname]{tags}USERNAME{/tags}[/uname] {msgTags}message{/msgTags}
+    // Format: {userTags}USERNAME:{/userTags} {msgTags}message{/msgTags}
     var formattedMsg = '';
 
-    // Add username part with [uname] wrapper if there's styling
+    // Add styled username as text (combining username tags around "name: ")
     if (usernameTags.open) {
-        formattedMsg = '[uname]' + usernameTags.open + currentImpersonateTarget + usernameTags.close + '[/uname] ';
+        formattedMsg = usernameTags.open + currentImpersonateTarget + ':' + usernameTags.close + ' ';
     } else {
-        // No username styling - just use [uname] with plain name
-        formattedMsg = '[uname]' + currentImpersonateTarget + '[/uname] ';
+        formattedMsg = currentImpersonateTarget + ': ';
     }
 
     // Add message with styling tags
