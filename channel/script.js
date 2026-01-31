@@ -3435,13 +3435,28 @@ window.resetRename = resetRename;
             }
             
             #column-resize-handle {
-                width: 8px !important;
-                background: transparent !important;
-                cursor: col-resize !important;
+                width: 0 !important;
+                height: 100% !important;
+                background: none !important;
+                background-color: transparent !important;
+                border: none !important;
+                box-shadow: none !important;
+                outline: none !important;
                 flex-shrink: 0 !important;
                 position: relative !important;
                 z-index: 1000 !important;
-                margin: 0 -4px !important;
+            }
+
+            #column-resize-handle::before {
+                content: '' !important;
+                display: block !important;
+                position: absolute !important;
+                top: 0 !important;
+                left: -6px !important;
+                width: 12px !important;
+                height: 100% !important;
+                cursor: col-resize !important;
+                background: transparent !important;
             }
 
             body.col-resizing {
