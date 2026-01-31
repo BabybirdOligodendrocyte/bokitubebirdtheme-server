@@ -32,10 +32,21 @@
 }
 
 #wrap { padding: 0; }
-#drinkbarwrap, #resizewrap, #videoResize, .column-resize, [class*="resize"], [id*="resize"]:not(#chatline) {
+/* Hide ALL resize-related elements from Cytube and jQuery UI */
+#drinkbarwrap, #resizewrap, #videoResize, .column-resize, .ui-resizable-handle,
+.resize-handle, .resizer, .gutter, .splitter, #sizerbar, #column-resize-handle,
+[class*="resize"]:not(body):not(html), [id*="resize"]:not(#chatline),
+[class*="Resize"], [id*="Resize"], [class*="splitter"], [class*="gutter"] {
     display: none !important;
     width: 0 !important;
+    max-width: 0 !important;
+    min-width: 0 !important;
+    height: 0 !important;
     visibility: hidden !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+    position: absolute !important;
+    left: -9999px !important;
 }
 
 #chatwrap > .profile-box {

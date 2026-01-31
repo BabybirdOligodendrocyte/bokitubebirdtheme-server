@@ -2992,7 +2992,12 @@ function applyAllCustomNames() {
 }
 
 // Update the "currently playing" title above chat with custom name if available
+var currentTitleObserver = null;
+var isUpdatingTitle = false;
+
 function updateCurrentTitleDisplay() {
+    if (isUpdatingTitle) return; // Prevent recursion
+
     var currentTitleEl = document.getElementById('currenttitle');
     if (!currentTitleEl) return;
 
@@ -3007,21 +3012,47 @@ function updateCurrentTitleDisplay() {
     // Check for custom name
     var customName = getCustomName(mediaKey);
 
-    // Store original title if not already stored
-    if (!currentTitleEl.getAttribute('data-original-title')) {
-        currentTitleEl.setAttribute('data-original-title', currentTitleEl.textContent);
+    if (customName) {
+        isUpdatingTitle = true;
+        // Store the original (raw) title from the active entry
+        var originalTitle = activeEntry.querySelector('.qe_title');
+        var origText = originalTitle ? (originalTitle.getAttribute('data-original-title') || originalTitle.textContent) : currentTitleEl.textContent;
+
+        currentTitleEl.textContent = customName;
+        currentTitleEl.title = 'Original: ' + origText;
+        currentTitleEl.setAttribute('data-has-custom', 'true');
+        isUpdatingTitle = false;
+    } else {
+        currentTitleEl.removeAttribute('data-has-custom');
+    }
+}
+
+// Watch #currenttitle for changes by Cytube and re-apply custom name
+function initCurrentTitleObserver() {
+    var currentTitleEl = document.getElementById('currenttitle');
+    if (!currentTitleEl) {
+        setTimeout(initCurrentTitleObserver, 500);
+        return;
     }
 
-    if (customName) {
-        currentTitleEl.textContent = customName;
-        currentTitleEl.title = 'Original: ' + currentTitleEl.getAttribute('data-original-title');
-    } else {
-        // Keep showing whatever Cytube set (might be updated by Cytube)
-        var origTitle = currentTitleEl.getAttribute('data-original-title');
-        if (origTitle && currentTitleEl.textContent === origTitle) {
-            // Already showing original, nothing to do
+    if (currentTitleObserver) return; // Already initialized
+
+    currentTitleObserver = new MutationObserver(function(mutations) {
+        // When Cytube updates the title, re-apply custom name if we have one
+        if (!isUpdatingTitle) {
+            setTimeout(updateCurrentTitleDisplay, 50);
         }
-    }
+    });
+
+    currentTitleObserver.observe(currentTitleEl, {
+        childList: true,
+        characterData: true,
+        subtree: true
+    });
+
+    // Initial update
+    updateCurrentTitleDisplay();
+    console.log('[CustomTitle] Observer initialized');
 }
 
 // Check if current user is a moderator or higher
@@ -3402,11 +3433,13 @@ function initPlaylistRenameObserver() {
 // Initialize the rename system
 function initPlaylistRename() {
     console.log('Initializing playlist rename system...');
-    
+
     // Fetch names from JSONBin
     fetchPlaylistNames().then(function() {
         // Start the observer after names are loaded
         initPlaylistRenameObserver();
+        // Also start the current title observer
+        initCurrentTitleObserver();
     });
 }
 
