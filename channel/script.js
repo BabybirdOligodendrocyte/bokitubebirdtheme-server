@@ -724,18 +724,59 @@ var usernameStyleSettings = JSON.parse(localStorage.getItem('usernameStyleSettin
         }
         body.compact-mode .timestamp { font-size: 9px !important; }
 
-        /* Quote reply styling */
-        .quote-reply {
+        /* Reply button styling */
+        .reply-button {
+            background: transparent !important;
+            border: none !important;
+            color: #666 !important;
+            cursor: pointer !important;
+            padding: 2px 6px !important;
+            font-size: 12px !important;
+            opacity: 0 !important;
+            transition: opacity 0.2s !important;
+            margin-left: 8px !important;
+        }
+        .reply-button::before { content: '↩️'; }
+        .reply-button:hover { color: var(--tertiarycolor, #8F6409) !important; }
+        #messagebuffer > div:hover .reply-button { opacity: 1 !important; }
+
+        /* Reply indicator above chat input */
+        #reply-indicator {
+            display: none;
             background: #252530 !important;
             border-left: 3px solid var(--tertiarycolor, #8F6409) !important;
+            padding: 6px 10px !important;
+            margin: 4px 8px !important;
+            border-radius: 4px !important;
+            font-size: 12px !important;
+            color: #aaa !important;
+            justify-content: space-between !important;
+            align-items: center !important;
+        }
+        #reply-indicator button {
+            background: transparent !important;
+            border: none !important;
+            color: #888 !important;
+            cursor: pointer !important;
+            font-size: 16px !important;
+            padding: 0 4px !important;
+        }
+        #reply-indicator button:hover { color: #fff !important; }
+
+        /* Inline reply display in messages */
+        .reply {
+            background: #1a1a22 !important;
+            border-left: 2px solid var(--tertiarycolor, #8F6409) !important;
             padding: 4px 8px !important;
             margin-bottom: 4px !important;
-            font-size: 12px !important;
+            font-size: 11px !important;
             color: #888 !important;
             border-radius: 4px !important;
             cursor: pointer !important;
         }
-        .quote-reply:hover { background: #303040 !important; }
+        .reply:hover { background: #252530 !important; }
+        .reply-header { font-weight: bold !important; color: #aaa !important; }
+        .reply-msg { color: #777 !important; overflow: hidden !important; text-overflow: ellipsis !important; white-space: nowrap !important; max-width: 200px !important; }
 
         /* Mention highlight */
         .mention-highlight {
@@ -2655,12 +2696,71 @@ function scrollReply(target) {
     }
 }
 
+// Store the current reply target
+var currentReplyTarget = null;
+
 function replyToMsg(target) {
-    socket.once("chatMsg", function(data) {
-        data.meta.reply = target;
-        return data;
-    });
+    currentReplyTarget = target.replace('chat-msg-', '');
+
+    // Get the message info for display
+    var sourceEl = document.getElementById('chat-msg-' + currentReplyTarget);
+    if (!sourceEl) {
+        sourceEl = document.getElementById(target);
+    }
+
+    var username = 'Unknown';
+    var msgPreview = '';
+    if (sourceEl) {
+        var usernameEl = sourceEl.querySelector('.username');
+        if (usernameEl) username = usernameEl.textContent.replace(/:$/, '').trim();
+        var msgSpans = sourceEl.querySelectorAll('span:not(.username):not(.timestamp)');
+        if (msgSpans.length > 0) {
+            msgPreview = msgSpans[msgSpans.length - 1].textContent.substring(0, 40);
+        }
+    }
+
+    // Show reply indicator
+    showReplyIndicator(username, msgPreview);
+
+    // Focus chat input
+    var chatline = document.getElementById('chatline');
+    if (chatline) chatline.focus();
 }
+
+function showReplyIndicator(username, preview) {
+    var indicator = document.getElementById('reply-indicator');
+    if (!indicator) {
+        indicator = document.createElement('div');
+        indicator.id = 'reply-indicator';
+        var chatline = document.getElementById('chatline');
+        if (chatline && chatline.parentElement) {
+            chatline.parentElement.insertBefore(indicator, chatline);
+        }
+    }
+    indicator.innerHTML = '<span>Replying to <strong>' + username + '</strong>: ' + preview + '...</span><button onclick="cancelReply()">×</button>';
+    indicator.style.display = 'flex';
+}
+
+function cancelReply() {
+    currentReplyTarget = null;
+    var indicator = document.getElementById('reply-indicator');
+    if (indicator) indicator.style.display = 'none';
+}
+
+// Intercept message sending to include reply
+(function() {
+    var origEmit = socket.emit.bind(socket);
+    socket.emit = function(event, data) {
+        if (event === 'chatMsg' && currentReplyTarget && data) {
+            if (!data.meta) data.meta = {};
+            data.meta.reply = currentReplyTarget;
+            currentReplyTarget = null;
+            var indicator = document.getElementById('reply-indicator');
+            if (indicator) indicator.style.display = 'none';
+        }
+        return origEmit(event, data);
+    };
+})();
 
 // USERNAME STYLING SYSTEM
 var usernameStyleSettings = JSON.parse(localStorage.getItem('usernameStyleSettings')) || {
@@ -3994,13 +4094,9 @@ window.resetRename = resetRename;
 (function() {
     var hideJoinLeaveCSS = document.createElement('style');
     hideJoinLeaveCSS.id = 'hide-join-leave-css';
-    hideJoinLeaveCSS.textContent = 
+    hideJoinLeaveCSS.textContent =
         '#messagebuffer .server-whisper { display: none !important; }' +
-        '#messagebuffer .chat-shadow { display: none !important; }' +
-        /* Remove timestamps */ +
-        '#messagebuffer .timestamp { display: none !important; }' +
-        /* Remove reply buttons */ +
-        '.reply-button { display: none !important; }';
+        '#messagebuffer .chat-shadow { display: none !important; }';
     document.head.appendChild(hideJoinLeaveCSS);
 })();
 
@@ -4329,21 +4425,7 @@ function removeFromIgnoreList(username) {
     localStorage.setItem('ignoredUsers', JSON.stringify(ignoredUsers));
 }
 
-// Quote reply functionality
-function initQuoteReply() {
-    // Find existing reply buttons and enhance them
-    $(document).on('click', '.reply-btn', function() {
-        var msgDiv = $(this).closest('#messagebuffer > div');
-        var username = msgDiv.find('.username').text().replace(/:$/, '').trim();
-        var msgText = msgDiv.find('.chat-message, span:not(.username):not(.timestamp)').text().trim().substring(0, 50);
-
-        var chatline = document.getElementById('chatline');
-        if (chatline) {
-            chatline.value = '[Replying to ' + username + ': "' + msgText + '..."] ';
-            chatline.focus();
-        }
-    });
-}
+// Quote reply is now handled by replyToMsg function with socket interception
 
 // Keyboard shortcuts
 function initKeyboardShortcuts() {
@@ -4486,7 +4568,6 @@ $(document).ready(function() {
         initClickToMention();
         initMentionNotifications();
         initIgnoreList();
-        initQuoteReply();
         initKeyboardShortcuts();
         addSettingsButton();
 
