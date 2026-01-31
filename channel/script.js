@@ -207,22 +207,23 @@ var usernameStyleSettings = JSON.parse(localStorage.getItem('usernameStyleSettin
     var s = document.createElement('style');
     s.id = 'custom-popup-styles';
     s.textContent = `
-        /* FIX: Button layout in leftcontrols */
+        /* FIX: Button layout in leftcontrols - horizontal scroll */
         #leftcontrols {
             display: flex !important;
-            flex-wrap: wrap !important;
-            gap: 2px !important;
-            padding: 4px !important;
+            flex-wrap: nowrap !important;
+            gap: 3px !important;
+            padding: 6px 8px !important;
             align-items: center !important;
             justify-content: flex-start !important;
-            overflow: visible !important;
-            max-height: none !important;
+            overflow-x: auto !important;
+            overflow-y: hidden !important;
+            flex-shrink: 0 !important;
         }
         #leftcontrols .btn {
             flex: 0 0 auto !important;
-            margin: 2px !important;
-            padding: 4px 8px !important;
-            font-size: 11px !important;
+            margin: 0 !important;
+            padding: 5px 10px !important;
+            font-size: 12px !important;
         }
         
         #emote-popup-overlay, #textstyle-popup-overlay, #filter-popup-overlay {
@@ -3020,14 +3021,8 @@ function updateCurrentTitleDisplay() {
         var originalTitle = activeEntry.querySelector('.qe_title');
         var origText = originalTitle ? (originalTitle.getAttribute('data-original-title') || originalTitle.textContent) : currentTitleEl.textContent;
 
-        // Check if there's a "Currently Playing:" prefix we need to preserve
-        var currentText = currentTitleEl.textContent;
-        var prefix = '';
-        if (currentText.indexOf('Currently Playing:') === 0) {
-            prefix = 'Currently Playing: ';
-        }
-
-        currentTitleEl.textContent = prefix + customName;
+        // Always show "Currently Playing:" prefix with custom name
+        currentTitleEl.textContent = 'Currently Playing: ' + customName;
         currentTitleEl.title = 'Original: ' + origText;
         currentTitleEl.setAttribute('data-has-custom', 'true');
         isUpdatingTitle = false;
@@ -3396,6 +3391,19 @@ function initPlaylistRenameObserver() {
 
         socket.on('delete', function() {
             debouncedPlaylistUpdate(400);
+        });
+
+        // Refresh emote panel when emotes are updated
+        socket.on('emoteList', function() {
+            console.log('[Emotes] Channel emotes updated, count:', CHANNEL.emotes ? CHANNEL.emotes.length : 0);
+            // Re-render if popup is open
+            var popup = document.getElementById('emote-popup-overlay');
+            if (popup && popup.classList.contains('visible')) {
+                var activeTab = document.querySelector('.emote-tab.active');
+                if (activeTab && activeTab.dataset.tab !== 'gif') {
+                    renderEmotes(activeTab.dataset.tab, document.querySelector('#emote-popup-search input').value);
+                }
+            }
         });
 
         // Update current title when media changes
