@@ -5626,14 +5626,15 @@ function styleImpersonateMessages() {
             var $styledName = $otherMsg.find('.styled-username');
             var $plainName = $otherMsg.find('.username');
             var foundUser = false;
-            var $foundNameEl = null;
 
             // Prefer styled-username if available
             if ($styledName.length > 0) {
                 var nameText = $styledName.text().replace(/:$/, '').trim();
                 if (nameText.toLowerCase() === impersonatedUser.toLowerCase()) {
-                    styledUsernameHtml = $styledName.prop('outerHTML');
-                    $foundNameEl = $styledName;
+                    // Only update username HTML if we don't have it yet
+                    if (!styledUsernameHtml) {
+                        styledUsernameHtml = $styledName.prop('outerHTML');
+                    }
                     foundUser = true;
                 }
             }
@@ -5641,14 +5642,15 @@ function styleImpersonateMessages() {
             if (!foundUser && $plainName.length > 0) {
                 var nameText = $plainName.text().replace(/:$/, '').trim();
                 if (nameText.toLowerCase() === impersonatedUser.toLowerCase()) {
-                    styledUsernameHtml = $plainName.prop('outerHTML');
-                    $foundNameEl = $plainName;
+                    if (!styledUsernameHtml) {
+                        styledUsernameHtml = $plainName.prop('outerHTML');
+                    }
                     foundUser = true;
                 }
             }
 
-            // If we found the user, also get their message styling
-            if (foundUser && $foundNameEl) {
+            // If we found the user, try to get their message styling
+            if (foundUser) {
                 // Find the message content styling
                 // Look at all spans and find ones with style that aren't username/timestamp
                 $otherMsg.find('span').each(function() {
@@ -5674,10 +5676,15 @@ function styleImpersonateMessages() {
                     if (style && style.length > 0) {
                         messageStyleTags = '<span style="' + style + '">';
                         messageStyleCloseTags = '</span>';
-                        return false; // break
+                        return false; // break inner loop
                     }
                 });
-                return false; // break outer loop
+
+                // Only stop searching if we found BOTH username and message styling
+                if (styledUsernameHtml && messageStyleTags) {
+                    return false; // break outer loop
+                }
+                // Otherwise continue to find a message with styling
             }
         });
 
