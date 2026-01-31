@@ -3488,10 +3488,19 @@ function initReplySystem() {
     function markOriginalMessage(msgIdShort, username, colorIndex, useCustom) {
         var colorClass = 'reply-color-' + colorIndex;
 
+        // Helper to remove all reply color classes from an element
+        function removeColorClasses(msgEl) {
+            for (var i = 0; i < 12; i++) {
+                msgEl.classList.remove('reply-color-' + i);
+            }
+        }
+
         // Helper to apply custom classes to a message element
         function applyCustomClasses(msgEl) {
             msgEl.classList.add('reply-target');
             if (useCustom) {
+                // Remove any existing color classes - custom overrides them
+                removeColorClasses(msgEl);
                 msgEl.classList.add('reply-custom');
                 if (replyStyleSettings.animation) {
                     msgEl.classList.add('reply-anim-' + replyStyleSettings.animation);
@@ -3503,7 +3512,10 @@ function initReplySystem() {
                     msgEl.classList.add('reply-' + replyStyleSettings.borderRadius);
                 }
             } else {
-                msgEl.classList.add(colorClass);
+                // Only add color class if not already custom styled
+                if (!msgEl.classList.contains('reply-custom')) {
+                    msgEl.classList.add(colorClass);
+                }
             }
         }
 
@@ -3515,7 +3527,8 @@ function initReplySystem() {
                 var fullId = msg.id.replace('chat-msg-', '');
                 // Check if the ID starts with our short ID
                 if (fullId.substring(0, msgIdShort.length) === msgIdShort) {
-                    if (!msg.classList.contains('reply-target')) {
+                    // Always apply if useCustom, otherwise only if not already styled
+                    if (useCustom || !msg.classList.contains('reply-target')) {
                         applyCustomClasses(msg);
                     }
                     return; // Found exact match by ID
@@ -3535,7 +3548,8 @@ function initReplySystem() {
             if (usernameEl) {
                 var msgUser = usernameEl.textContent.replace(/:?\s*$/, '').trim().toLowerCase();
                 if (msgUser === cleanName) {
-                    if (!msg.classList.contains('reply-target')) {
+                    // Always apply if useCustom, otherwise only if not already styled
+                    if (useCustom || !msg.classList.contains('reply-target')) {
                         applyCustomClasses(msg);
                     }
                     return;
