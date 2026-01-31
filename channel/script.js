@@ -3410,22 +3410,26 @@ window.resetRename = resetRename;
                 display: flex !important;
                 flex-direction: row !important;
                 width: 100% !important;
+                height: calc(100vh - 50px) !important;
                 gap: 0 !important;
+                overflow: hidden !important;
             }
-            
+
             #leftcontent {
                 flex-shrink: 0 !important;
                 box-sizing: border-box !important;
+                height: 100% !important;
+                overflow-y: auto !important;
             }
-            
+
             #rightcontent {
                 flex: 1 !important;
                 min-width: 200px !important;
-                max-width: 50% !important;
                 box-sizing: border-box !important;
                 position: relative !important;
                 right: unset !important;
                 width: auto !important;
+                height: 100% !important;
             }
             
             #column-resize-handle {
