@@ -236,14 +236,27 @@ var usernameStyleSettings = JSON.parse(localStorage.getItem('usernameStyleSettin
             padding: 5px 10px !important;
             font-size: 12px !important;
         }
-        /* Hide Name Color button from external scripts */
-        #leftcontrols .btn[style*="green"],
-        #leftcontrols button[style*="green"],
-        .namecolor-btn,
-        #namecolor-btn,
-        button:contains("Name Color"),
-        .btn:contains("Name Color") {
+        /* Hide Name Color button from external scripts - aggressive targeting */
+        .btn-success,
+        .btn[style*="green"],
+        button[style*="green"],
+        .btn[style*="#28a745"],
+        button[style*="#28a745"],
+        .btn[style*="rgb(40, 167, 69)"],
+        button[style*="rgb(40, 167, 69)"],
+        #chatheader .btn-success,
+        #chatheader .btn[style*="green"],
+        #rightcontent .btn-success,
+        #rightcontent > .btn-success,
+        #usercount + .btn,
+        #usercount ~ .btn {
             display: none !important;
+            visibility: hidden !important;
+            width: 0 !important;
+            height: 0 !important;
+            overflow: hidden !important;
+            position: absolute !important;
+            left: -9999px !important;
         }
         
         #emote-popup-overlay, #textstyle-popup-overlay, #filter-popup-overlay {
@@ -1767,33 +1780,57 @@ $(document).ready(function() {
 
     // Hide Name Color button from external scripts (search everywhere, runs periodically)
     function hideNameColorBtn() {
-        // Search ALL buttons on the page
-        $('button, .btn, [role="button"]').each(function() {
-            var text = $(this).text().trim().toLowerCase();
-            // Hide if text contains "name color"
-            if (text === 'name color' || text === 'namecolor' ||
+        // Search ALL elements that could be buttons
+        $('button, .btn, [role="button"], input[type="button"], a.btn').each(function() {
+            var $el = $(this);
+            var text = $el.text().trim().toLowerCase();
+
+            // Hide if text contains "name color" in any form
+            if (text === 'name color' || text === 'namecolor' || text === 'name  color' ||
                 (text.indexOf('name') !== -1 && text.indexOf('color') !== -1)) {
-                $(this).remove();
+                $el.remove();
+                return;
             }
-        });
-        // Also target by green background anywhere
-        $('#rightcontent button, #rightcontent .btn, #chatheader button, #chatheader .btn').each(function() {
-            var bg = $(this).css('background-color');
-            if (bg === 'rgb(0, 128, 0)' || bg === 'green' || bg === 'rgb(40, 167, 69)' ||
-                $(this).attr('style')?.includes('green') ||
-                $(this).hasClass('btn-success')) {
-                $(this).remove();
+
+            // Check for green backgrounds (multiple formats)
+            var bg = $el.css('background-color');
+            var style = $el.attr('style') || '';
+            var isGreen = bg === 'rgb(0, 128, 0)' ||
+                          bg === 'rgb(40, 167, 69)' ||
+                          bg === 'rgb(34, 139, 34)' ||
+                          bg === 'rgb(50, 205, 50)' ||
+                          bg.indexOf('0, 128, 0') !== -1 ||
+                          bg.indexOf('40, 167, 69') !== -1 ||
+                          style.toLowerCase().indexOf('green') !== -1 ||
+                          style.indexOf('#28a745') !== -1 ||
+                          style.indexOf('#008000') !== -1 ||
+                          $el.hasClass('btn-success');
+
+            // Only remove green buttons that are NOT in leftcontrols (keep theme buttons)
+            if (isGreen && !$el.closest('#leftcontrols').length) {
+                $el.remove();
             }
         });
     }
+
+    // Run immediately and repeatedly
     hideNameColorBtn();
+    setTimeout(hideNameColorBtn, 500);
     setTimeout(hideNameColorBtn, 1000);
     setTimeout(hideNameColorBtn, 2000);
-    setTimeout(hideNameColorBtn, 4000);
-    // Also observe for dynamically added buttons
-    var btnObserver = new MutationObserver(function() { hideNameColorBtn(); });
+    setTimeout(hideNameColorBtn, 3000);
+    setTimeout(hideNameColorBtn, 5000);
+
+    // Keep observer running longer (30 seconds)
+    var btnObserver = new MutationObserver(function() {
+        setTimeout(hideNameColorBtn, 50);
+    });
     btnObserver.observe(document.body, { childList: true, subtree: true });
-    setTimeout(function() { btnObserver.disconnect(); }, 10000); // Stop after 10s
+    setTimeout(function() { btnObserver.disconnect(); }, 30000);
+
+    // Also run periodically every 5 seconds for first minute
+    var hideInterval = setInterval(hideNameColorBtn, 5000);
+    setTimeout(function() { clearInterval(hideInterval); }, 60000);
 });
 
 function fixUserlistLayout() {
