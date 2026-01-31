@@ -808,10 +808,32 @@ var usernameStyleSettings = JSON.parse(localStorage.getItem('usernameStyleSettin
             background: rgba(143, 100, 9, 0.05) !important;
         }
 
-        /* Message that is being replied to */
+        /* Message that is being replied to (original message) */
         .reply-target {
-            border-left: 2px solid rgba(143, 100, 9, 0.5) !important;
-            margin-left: -2px !important;
+            border-left: 3px solid var(--tertiarycolor, #8F6409) !important;
+            margin-left: -3px !important;
+            padding-left: 10px !important;
+            background: rgba(143, 100, 9, 0.1) !important;
+            position: relative !important;
+        }
+
+        /* Message that IS a reply (starts with ▶) */
+        .is-reply-message {
+            border-left: 3px solid var(--tertiarycolor, #8F6409) !important;
+            margin-left: -3px !important;
+            padding-left: 10px !important;
+            background: rgba(143, 100, 9, 0.15) !important;
+            position: relative !important;
+        }
+        /* Connecting line from reply to original */
+        .is-reply-message::before {
+            content: '↳' !important;
+            position: absolute !important;
+            left: -1px !important;
+            top: -2px !important;
+            font-size: 14px !important;
+            color: var(--tertiarycolor, #8F6409) !important;
+            transform: translateX(-50%) !important;
         }
 
         /* Legacy reply styling */
@@ -2909,6 +2931,39 @@ function initReplySystem() {
     form.addEventListener('submit', function(e) {
         prependReplyMarker();
     }, true);
+
+    // Watch for new messages and style reply messages
+    function styleReplyMessages() {
+        $('#messagebuffer > div').each(function() {
+            var $msg = $(this);
+            // Check if already processed
+            if ($msg.hasClass('is-reply-message') || $msg.data('reply-checked')) return;
+            $msg.data('reply-checked', true);
+
+            // Check if message contains reply marker
+            var text = $msg.text();
+            if (text.indexOf('▶ @') !== -1 || text.indexOf('▶ @') !== -1) {
+                $msg.addClass('is-reply-message');
+            }
+        });
+    }
+
+    // Run on existing messages
+    styleReplyMessages();
+
+    // Watch for new messages
+    var replyObserver = new MutationObserver(function(mutations) {
+        mutations.forEach(function(mutation) {
+            if (mutation.addedNodes.length) {
+                setTimeout(styleReplyMessages, 50);
+            }
+        });
+    });
+
+    var msgBuffer = document.getElementById('messagebuffer');
+    if (msgBuffer) {
+        replyObserver.observe(msgBuffer, { childList: true });
+    }
 }
 
 // Initialize on load
