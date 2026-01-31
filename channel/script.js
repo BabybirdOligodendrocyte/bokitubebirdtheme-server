@@ -477,6 +477,149 @@ function hexToRgba(hex, opacity) {
             justify-content: center !important;
         }
         .popup-close:hover { background: #f66 !important; }
+
+        /* Impersonation popup styles */
+        #impersonate-popup-overlay {
+            display: none !important;
+            position: fixed !important;
+            top: 0 !important;
+            left: 0 !important;
+            right: 0 !important;
+            bottom: 0 !important;
+            width: 100vw !important;
+            height: 100vh !important;
+            background: rgba(0,0,0,0.7) !important;
+            z-index: 999999 !important;
+            margin: 0 !important;
+            padding: 0 !important;
+        }
+        #impersonate-popup-overlay.visible {
+            display: flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+        }
+        #impersonate-popup {
+            position: fixed !important;
+            top: 50% !important;
+            left: 50% !important;
+            transform: translate(-50%, -50%) !important;
+            background: #1e1e24 !important;
+            border: 2px solid #555 !important;
+            border-radius: 12px !important;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.9) !important;
+            width: 380px !important;
+            max-width: 95vw !important;
+        }
+        #impersonate-popup-header {
+            display: flex !important;
+            justify-content: space-between !important;
+            align-items: center !important;
+            padding: 14px 18px !important;
+            background: #2d2d35 !important;
+            border-radius: 10px 10px 0 0 !important;
+            cursor: move !important;
+        }
+        #impersonate-popup-header span {
+            color: #fff !important;
+            font-weight: bold !important;
+            font-size: 16px !important;
+        }
+        #impersonate-popup-body {
+            padding: 16px !important;
+        }
+        #impersonate-target-display {
+            background: #252530 !important;
+            padding: 12px !important;
+            border-radius: 8px !important;
+            margin-bottom: 12px !important;
+            color: #ccc !important;
+            font-size: 14px !important;
+        }
+        #impersonate-target-display .target-label {
+            color: #888 !important;
+            font-size: 12px !important;
+            margin-bottom: 4px !important;
+        }
+        #impersonate-target-display .target-name {
+            color: #fff !important;
+            font-weight: bold !important;
+            font-size: 15px !important;
+        }
+        #impersonate-message-input {
+            width: 100% !important;
+            padding: 12px !important;
+            background: #333 !important;
+            border: 1px solid #555 !important;
+            border-radius: 8px !important;
+            color: #fff !important;
+            font-size: 14px !important;
+            box-sizing: border-box !important;
+            resize: vertical !important;
+            min-height: 60px !important;
+        }
+        #impersonate-message-input:focus {
+            outline: none !important;
+            border-color: #8F6409 !important;
+        }
+        #impersonate-popup-actions {
+            display: flex !important;
+            gap: 10px !important;
+            margin-top: 14px !important;
+        }
+        #impersonate-popup-actions button {
+            flex: 1 !important;
+            padding: 12px !important;
+            border: none !important;
+            border-radius: 8px !important;
+            cursor: pointer !important;
+            font-size: 14px !important;
+            font-weight: bold !important;
+        }
+        #impersonate-send-btn {
+            background: #8F6409 !important;
+            color: #fff !important;
+        }
+        #impersonate-send-btn:hover {
+            background: #A67A0A !important;
+        }
+        #impersonate-cancel-btn {
+            background: #444 !important;
+            color: #ccc !important;
+        }
+        #impersonate-cancel-btn:hover {
+            background: #555 !important;
+        }
+
+        /* Impersonation message styling */
+        .impersonate-message {
+            position: relative !important;
+            animation: impersonate-shake 0.5s ease-in-out infinite !important;
+            border-left: 3px solid #E91E63 !important;
+            padding-left: 8px !important;
+            background: rgba(233, 30, 99, 0.08) !important;
+        }
+        .impersonate-badge {
+            display: inline-block !important;
+            background: #E91E63 !important;
+            color: #fff !important;
+            font-size: 10px !important;
+            padding: 2px 6px !important;
+            border-radius: 4px !important;
+            margin-right: 6px !important;
+            font-weight: bold !important;
+            vertical-align: middle !important;
+        }
+        .impersonate-sender {
+            font-size: 10px !important;
+            color: #888 !important;
+            margin-left: 8px !important;
+        }
+        @keyframes impersonate-shake {
+            0%, 100% { transform: translateX(0); }
+            10%, 30%, 50%, 70%, 90% { transform: translateX(-1px); }
+            20%, 40%, 60%, 80% { transform: translateX(1px); }
+        }
+
         #emote-popup-tabs {
             display: flex !important;
             background: #252530 !important;
@@ -5362,14 +5505,163 @@ function initMentionAutocomplete() {
     }
 }
 
-// Click username in chat to mention
+/* ========== IMPERSONATION SYSTEM ========== */
+// Store current impersonation target
+var currentImpersonateTarget = null;
+var currentImpersonateUsernameHtml = null;
+
+// Create the impersonation popup
+function createImpersonatePopup() {
+    if (document.getElementById('impersonate-popup-overlay')) return;
+
+    var o = document.createElement('div');
+    o.id = 'impersonate-popup-overlay';
+    o.onclick = function(e) { if (e.target === o) closeImpersonatePopup(); };
+
+    var p = document.createElement('div');
+    p.id = 'impersonate-popup';
+    p.innerHTML = '<div id="impersonate-popup-header"><span>🎭 Send As...</span><button class="popup-close" onclick="closeImpersonatePopup()">×</button></div>' +
+        '<div id="impersonate-popup-body">' +
+        '<div id="impersonate-target-display"><div class="target-label">Impersonating:</div><div class="target-name" id="impersonate-target-name"></div></div>' +
+        '<textarea id="impersonate-message-input" placeholder="Type your message..."></textarea>' +
+        '<div id="impersonate-popup-actions">' +
+        '<button id="impersonate-cancel-btn" onclick="closeImpersonatePopup()">Cancel</button>' +
+        '<button id="impersonate-send-btn" onclick="sendImpersonateMessage()">Send</button>' +
+        '</div></div>';
+
+    o.appendChild(p);
+    document.body.appendChild(o);
+    makeDraggable(p, document.getElementById('impersonate-popup-header'));
+
+    // Enter key to send
+    document.getElementById('impersonate-message-input').addEventListener('keydown', function(e) {
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            sendImpersonateMessage();
+        }
+    });
+}
+
+function openImpersonatePopup(username, usernameHtml) {
+    createImpersonatePopup();
+    currentImpersonateTarget = username;
+    currentImpersonateUsernameHtml = usernameHtml || username;
+
+    document.getElementById('impersonate-target-name').innerHTML = currentImpersonateUsernameHtml;
+    document.getElementById('impersonate-message-input').value = '';
+    document.getElementById('impersonate-popup-overlay').classList.add('visible');
+
+    setTimeout(function() {
+        document.getElementById('impersonate-message-input').focus();
+    }, 100);
+}
+
+function closeImpersonatePopup() {
+    var o = document.getElementById('impersonate-popup-overlay');
+    if (o) o.classList.remove('visible');
+    currentImpersonateTarget = null;
+    currentImpersonateUsernameHtml = null;
+}
+
+function sendImpersonateMessage() {
+    var input = document.getElementById('impersonate-message-input');
+    var message = input.value.trim();
+
+    if (!message || !currentImpersonateTarget) {
+        closeImpersonatePopup();
+        return;
+    }
+
+    // Format: 🎭[username] message
+    // This format is visible to everyone and clearly marks the message as fake
+    var formattedMsg = '🎭[' + currentImpersonateTarget + '] ' + message;
+
+    // Send via Cytube's socket
+    if (typeof socket !== 'undefined' && socket.emit) {
+        socket.emit('chatMsg', { msg: formattedMsg });
+    } else {
+        // Fallback: put in chatline and submit
+        var chatline = document.getElementById('chatline');
+        if (chatline) {
+            chatline.value = formattedMsg;
+            var form = document.getElementById('chatform');
+            if (form) {
+                form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+            }
+        }
+    }
+
+    closeImpersonatePopup();
+}
+
+// Style impersonation messages when they appear
+function styleImpersonateMessages() {
+    $('#messagebuffer > div').each(function() {
+        var $msg = $(this);
+        // Skip if already processed
+        if ($msg.data('impersonate-checked')) return;
+        $msg.data('impersonate-checked', true);
+
+        // Check for impersonation marker: 🎭[username] message
+        var text = $msg.text();
+        var match = text.match(/🎭\[([^\]]+)\]/);
+        if (!match) return;
+
+        var impersonatedUser = match[1];
+
+        // Add impersonation styling
+        $msg.addClass('impersonate-message');
+
+        // Find the message content and modify it
+        var $spans = $msg.find('span');
+        $spans.each(function() {
+            var $span = $(this);
+            var html = $span.html();
+            if (html && html.indexOf('🎭[') !== -1) {
+                // Replace the marker with a styled version
+                var newHtml = html.replace(/🎭\[([^\]]+)\]\s*/, '<span class="impersonate-badge">FAKE</span><strong>$1:</strong> ');
+                $span.html(newHtml);
+            }
+        });
+
+        // Add "sent by" indicator
+        var realSender = $msg.find('.username').first().text().replace(/:$/, '').trim();
+        if (realSender && realSender !== impersonatedUser) {
+            $msg.append('<span class="impersonate-sender">(sent by ' + realSender + ')</span>');
+        }
+    });
+}
+
+// Initialize impersonation message styling observer
+function initImpersonateObserver() {
+    // Initial styling
+    styleImpersonateMessages();
+
+    // Watch for new messages
+    var observer = new MutationObserver(function(mutations) {
+        mutations.forEach(function(mutation) {
+            if (mutation.addedNodes.length > 0) {
+                setTimeout(styleImpersonateMessages, 50);
+            }
+        });
+    });
+
+    var msgBuffer = document.getElementById('messagebuffer');
+    if (msgBuffer) {
+        observer.observe(msgBuffer, { childList: true });
+    }
+}
+
+// Click username in chat - opens impersonation popup
 function initClickToMention() {
     $(document).on('click', '#messagebuffer .username', function(e) {
-        var username = $(this).text().replace(/:$/, '').trim();
-        var chatline = document.getElementById('chatline');
-        if (chatline && username) {
-            chatline.value += '@' + username + ' ';
-            chatline.focus();
+        var $this = $(this);
+        var username = $this.text().replace(/:$/, '').trim();
+        var usernameHtml = $this.html().replace(/:?\s*$/, '');
+
+        if (username) {
+            // Open impersonation popup instead of just mentioning
+            openImpersonatePopup(username, usernameHtml);
         }
     });
 }
@@ -5452,6 +5744,7 @@ function initKeyboardShortcuts() {
         if (e.key === 'Escape') {
             closeEmotePopup();
             closeTextStylePopup();
+            closeImpersonatePopup();
             var settingsPanel = document.getElementById('settings-panel');
             if (settingsPanel) settingsPanel.classList.remove('visible');
             if (theaterMode) toggleTheaterMode();
@@ -5587,6 +5880,7 @@ $(document).ready(function() {
         initMentionNotifications();
         initIgnoreList();
         initKeyboardShortcuts();
+        initImpersonateObserver();
         addSettingsButton();
 
         // Apply saved settings
