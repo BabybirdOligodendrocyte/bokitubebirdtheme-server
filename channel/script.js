@@ -728,54 +728,107 @@ var usernameStyleSettings = JSON.parse(localStorage.getItem('usernameStyleSettin
         .reply-button {
             background: transparent !important;
             border: none !important;
-            color: #666 !important;
+            color: #555 !important;
             cursor: pointer !important;
             padding: 2px 6px !important;
-            font-size: 12px !important;
+            font-size: 14px !important;
             opacity: 0 !important;
             transition: opacity 0.2s !important;
             margin-left: 8px !important;
+            vertical-align: middle !important;
         }
-        .reply-button::before { content: '↩️'; }
+        .reply-button::before { content: '↩'; }
         .reply-button:hover { color: var(--tertiarycolor, #8F6409) !important; }
         #messagebuffer > div:hover .reply-button { opacity: 1 !important; }
 
         /* Reply indicator above chat input */
         #reply-indicator {
             display: none;
-            background: #252530 !important;
+            background: linear-gradient(90deg, rgba(143,100,9,0.2) 0%, rgba(30,30,36,0.9) 100%) !important;
             border-left: 3px solid var(--tertiarycolor, #8F6409) !important;
-            padding: 6px 10px !important;
-            margin: 4px 8px !important;
-            border-radius: 4px !important;
-            font-size: 12px !important;
-            color: #aaa !important;
+            padding: 8px 12px !important;
+            margin: 0 !important;
+            font-size: 13px !important;
+            color: #ccc !important;
             justify-content: space-between !important;
             align-items: center !important;
+            gap: 10px !important;
         }
-        #reply-indicator button {
+        .reply-indicator-content {
+            display: flex !important;
+            align-items: center !important;
+            gap: 8px !important;
+            cursor: pointer !important;
+            flex: 1 !important;
+            overflow: hidden !important;
+        }
+        .reply-indicator-content:hover { color: #fff !important; }
+        .reply-indicator-icon { color: var(--tertiarycolor, #8F6409) !important; font-size: 16px !important; }
+        .reply-indicator-user { font-weight: bold !important; }
+        .reply-indicator-msg { color: #888 !important; overflow: hidden !important; text-overflow: ellipsis !important; white-space: nowrap !important; }
+        .reply-indicator-close {
             background: transparent !important;
             border: none !important;
-            color: #888 !important;
+            color: #666 !important;
             cursor: pointer !important;
-            font-size: 16px !important;
+            font-size: 18px !important;
             padding: 0 4px !important;
+            line-height: 1 !important;
         }
-        #reply-indicator button:hover { color: #fff !important; }
+        .reply-indicator-close:hover { color: #fff !important; }
+
+        /* Highlight source message when replying */
+        .reply-source-highlight {
+            background: rgba(143, 100, 9, 0.15) !important;
+            border-left: 3px solid var(--tertiarycolor, #8F6409) !important;
+            margin-left: -3px !important;
+        }
 
         /* Inline reply display in messages */
-        .reply {
-            background: #1a1a22 !important;
+        .inline-reply {
+            display: flex !important;
+            align-items: center !important;
+            gap: 6px !important;
+            background: rgba(143, 100, 9, 0.1) !important;
             border-left: 2px solid var(--tertiarycolor, #8F6409) !important;
             padding: 4px 8px !important;
             margin-bottom: 4px !important;
-            font-size: 11px !important;
-            color: #888 !important;
+            font-size: 12px !important;
+            border-radius: 4px !important;
+            cursor: pointer !important;
+            transition: background 0.2s !important;
+        }
+        .inline-reply:hover { background: rgba(143, 100, 9, 0.25) !important; }
+        .inline-reply-icon { color: var(--tertiarycolor, #8F6409) !important; }
+        .inline-reply-user { font-weight: bold !important; color: #bbb !important; }
+        .inline-reply-msg { color: #777 !important; overflow: hidden !important; text-overflow: ellipsis !important; white-space: nowrap !important; flex: 1 !important; }
+
+        /* Message that has a reply attached */
+        .has-reply {
+            background: rgba(143, 100, 9, 0.05) !important;
+        }
+
+        /* Message that is being replied to */
+        .reply-target {
+            border-left: 2px solid rgba(143, 100, 9, 0.5) !important;
+            margin-left: -2px !important;
+        }
+
+        /* Legacy reply styling */
+        .reply {
+            display: flex !important;
+            align-items: center !important;
+            gap: 6px !important;
+            background: rgba(143, 100, 9, 0.1) !important;
+            border-left: 2px solid var(--tertiarycolor, #8F6409) !important;
+            padding: 4px 8px !important;
+            margin-bottom: 4px !important;
+            font-size: 12px !important;
             border-radius: 4px !important;
             cursor: pointer !important;
         }
-        .reply:hover { background: #252530 !important; }
-        .reply-header { font-weight: bold !important; color: #aaa !important; }
+        .reply:hover { background: rgba(143, 100, 9, 0.25) !important; }
+        .reply-header { font-weight: bold !important; color: #bbb !important; }
         .reply-msg { color: #777 !important; overflow: hidden !important; text-overflow: ellipsis !important; white-space: nowrap !important; max-width: 200px !important; }
 
         /* Mention highlight */
@@ -2695,45 +2748,64 @@ function scrollReply(target) {
     }
     if (source) {
         source.scrollIntoView({ behavior: "smooth", block: "center" });
-        source.animate({backgroundColor: ["rgba(0,0,0,0)", "rgba(255,255,255,0.3)", "rgba(0,0,0,0)"]}, 1000);
+        // Highlight effect
+        source.style.transition = 'background-color 0.3s';
+        source.style.backgroundColor = 'rgba(143, 100, 9, 0.4)';
+        setTimeout(function() {
+            source.style.backgroundColor = '';
+        }, 1500);
     }
 }
 
 // Store the current reply target
 var currentReplyTarget = null;
-var currentReplyUsername = '';
-var currentReplyPreview = '';
+var currentReplyData = null;
 
 function replyToMsg(target) {
     // Handle both "chat-msg-123" and just "123" formats
     currentReplyTarget = target.replace('chat-msg-', '');
 
-    // Get the message info for display
+    // Get the message element
     var sourceEl = document.getElementById('chat-msg-' + currentReplyTarget);
     if (!sourceEl) {
         sourceEl = document.getElementById(target);
     }
 
-    currentReplyUsername = 'Unknown';
-    currentReplyPreview = '';
-    if (sourceEl) {
-        var usernameEl = sourceEl.querySelector('.username');
-        if (usernameEl) currentReplyUsername = usernameEl.textContent.replace(/:$/, '').trim();
-        var msgSpans = sourceEl.querySelectorAll('span:not(.username):not(.timestamp)');
-        if (msgSpans.length > 0) {
-            currentReplyPreview = msgSpans[msgSpans.length - 1].textContent.substring(0, 50);
-        }
+    if (!sourceEl) return;
+
+    // Extract username (with HTML for styling)
+    var usernameEl = sourceEl.querySelector('.username');
+    var usernameHtml = usernameEl ? usernameEl.innerHTML.replace(/:$/, '') : 'Unknown';
+    var usernameText = usernameEl ? usernameEl.textContent.replace(/:$/, '').trim() : 'Unknown';
+
+    // Extract message text
+    var msgText = '';
+    var msgSpans = sourceEl.querySelectorAll('span:not(.username):not(.timestamp)');
+    if (msgSpans.length > 0) {
+        msgText = msgSpans[msgSpans.length - 1].textContent.substring(0, 60);
     }
 
+    currentReplyData = {
+        targetId: currentReplyTarget,
+        usernameHtml: usernameHtml,
+        usernameText: usernameText,
+        msgPreview: msgText
+    };
+
+    // Highlight the original message
+    sourceEl.classList.add('reply-source-highlight');
+
     // Show reply indicator
-    showReplyIndicator(currentReplyUsername, currentReplyPreview);
+    showReplyIndicator();
 
     // Focus chat input
     var chatline = document.getElementById('chatline');
     if (chatline) chatline.focus();
 }
 
-function showReplyIndicator(username, preview) {
+function showReplyIndicator() {
+    if (!currentReplyData) return;
+
     var indicator = document.getElementById('reply-indicator');
     if (!indicator) {
         indicator = document.createElement('div');
@@ -2743,19 +2815,31 @@ function showReplyIndicator(username, preview) {
             form.insertBefore(indicator, form.firstChild);
         }
     }
-    indicator.innerHTML = '<span>Replying to <strong>' + username + '</strong>: ' + preview + '...</span><button onclick="cancelReply()">×</button>';
+    indicator.innerHTML = '<div class="reply-indicator-content" onclick="scrollReply(\'' + currentReplyData.targetId + '\')">' +
+        '<span class="reply-indicator-icon">↩</span>' +
+        '<span class="reply-indicator-user">' + currentReplyData.usernameHtml + '</span>' +
+        '<span class="reply-indicator-msg">' + currentReplyData.msgPreview + '</span>' +
+        '</div><button class="reply-indicator-close" onclick="cancelReply()">×</button>';
     indicator.style.display = 'flex';
 }
 
 function cancelReply() {
+    // Remove highlight from source message
+    if (currentReplyTarget) {
+        var sourceEl = document.getElementById('chat-msg-' + currentReplyTarget);
+        if (sourceEl) sourceEl.classList.remove('reply-source-highlight');
+    }
+
     currentReplyTarget = null;
-    currentReplyUsername = '';
-    currentReplyPreview = '';
+    currentReplyData = null;
     var indicator = document.getElementById('reply-indicator');
     if (indicator) indicator.style.display = 'none';
 }
 
-// Initialize reply system - prepend reply marker to message
+// Pending reply to attach to next sent message
+var pendingReply = null;
+
+// Initialize reply system
 function initReplySystem() {
     var form = document.getElementById('formline');
     var chatline = document.getElementById('chatline');
@@ -2764,49 +2848,76 @@ function initReplySystem() {
         return;
     }
 
-    // Function to prepend reply marker
-    function prependReplyMarker() {
-        if (currentReplyTarget && chatline.value.trim()) {
-            // Embed reply info in message using a special format that we'll parse on display
-            // Format: [reply:id:username:preview]actual message
-            var replyMarker = '▶ @' + currentReplyUsername + ': ';
-            if (!chatline.value.startsWith(replyMarker)) {
-                chatline.value = replyMarker + chatline.value;
-            }
-            // Store mapping for this message
-            storeReplyMapping(currentReplyTarget, currentReplyUsername, currentReplyPreview);
+    // Store reply data before message is sent
+    function captureReply() {
+        if (currentReplyData && chatline.value.trim()) {
+            pendingReply = {
+                targetId: currentReplyData.targetId,
+                usernameHtml: currentReplyData.usernameHtml,
+                usernameText: currentReplyData.usernameText,
+                msgPreview: currentReplyData.msgPreview
+            };
             cancelReply();
         }
     }
 
-    // Intercept Enter key to add reply marker before send
+    // Intercept Enter key
     chatline.addEventListener('keydown', function(e) {
         if ((e.key === 'Enter' || e.keyCode === 13) && !e.shiftKey) {
-            prependReplyMarker();
+            captureReply();
         }
     }, true);
 
-    // Also hook form submit
+    // Hook form submit
     form.addEventListener('submit', function(e) {
-        prependReplyMarker();
+        captureReply();
     }, true);
+
+    // Watch for new messages to attach reply display
+    var msgObserver = new MutationObserver(function(mutations) {
+        mutations.forEach(function(mutation) {
+            mutation.addedNodes.forEach(function(node) {
+                if (node.nodeType === 1 && node.classList && node.closest && node.closest('#messagebuffer')) {
+                    // Check if this is our message and we have a pending reply
+                    if (pendingReply) {
+                        var myUsername = (typeof CLIENT !== 'undefined' && CLIENT.name) ? CLIENT.name : '';
+                        var msgUsername = node.querySelector('.username');
+                        if (msgUsername && msgUsername.textContent.replace(/:$/, '').trim() === myUsername) {
+                            // This is our message - attach the reply
+                            attachReplyToMessage(node, pendingReply);
+                            pendingReply = null;
+                        }
+                    }
+                }
+            });
+        });
+    });
+
+    var msgBuffer = document.getElementById('messagebuffer');
+    if (msgBuffer) {
+        msgObserver.observe(msgBuffer, { childList: true, subtree: false });
+    }
 }
 
-// Store reply mappings for rendering
-var replyMappings = {};
+function attachReplyToMessage(msgElement, replyData) {
+    // Create reply quote box
+    var replyBox = document.createElement('div');
+    replyBox.className = 'inline-reply';
+    replyBox.onclick = function() { scrollReply(replyData.targetId); };
+    replyBox.innerHTML = '<span class="inline-reply-icon">↩</span>' +
+        '<span class="inline-reply-user">' + replyData.usernameHtml + '</span>' +
+        '<span class="inline-reply-msg">' + replyData.msgPreview + '</span>';
 
-function storeReplyMapping(targetId, username, preview) {
-    // Store with timestamp as key since we don't know our message ID yet
-    var key = Date.now().toString();
-    replyMappings[key] = {
-        targetId: targetId,
-        username: username,
-        preview: preview
-    };
-    // Clean old mappings (keep last 50)
-    var keys = Object.keys(replyMappings);
-    if (keys.length > 50) {
-        delete replyMappings[keys[0]];
+    // Insert at the beginning of the message
+    msgElement.insertBefore(replyBox, msgElement.firstChild);
+
+    // Add class to show this is a reply
+    msgElement.classList.add('has-reply');
+
+    // Also highlight the original message subtly
+    var sourceMsg = document.getElementById('chat-msg-' + replyData.targetId);
+    if (sourceMsg) {
+        sourceMsg.classList.add('reply-target');
     }
 }
 
