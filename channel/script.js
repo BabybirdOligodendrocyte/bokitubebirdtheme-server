@@ -212,14 +212,16 @@ var usernameStyleSettings = JSON.parse(localStorage.getItem('usernameStyleSettin
             display: flex !important;
             flex-wrap: wrap !important;
             gap: 2px !important;
-            padding: 3px 4px !important;
+            padding: 4px !important;
             align-items: center !important;
             justify-content: flex-start !important;
+            overflow: visible !important;
+            max-height: none !important;
         }
         #leftcontrols .btn {
-            flex: 0 1 auto !important;
-            margin: 1px !important;
-            padding: 3px 6px !important;
+            flex: 0 0 auto !important;
+            margin: 2px !important;
+            padding: 4px 8px !important;
             font-size: 11px !important;
         }
         
@@ -3018,7 +3020,14 @@ function updateCurrentTitleDisplay() {
         var originalTitle = activeEntry.querySelector('.qe_title');
         var origText = originalTitle ? (originalTitle.getAttribute('data-original-title') || originalTitle.textContent) : currentTitleEl.textContent;
 
-        currentTitleEl.textContent = customName;
+        // Check if there's a "Currently Playing:" prefix we need to preserve
+        var currentText = currentTitleEl.textContent;
+        var prefix = '';
+        if (currentText.indexOf('Currently Playing:') === 0) {
+            prefix = 'Currently Playing: ';
+        }
+
+        currentTitleEl.textContent = prefix + customName;
         currentTitleEl.title = 'Original: ' + origText;
         currentTitleEl.setAttribute('data-has-custom', 'true');
         isUpdatingTitle = false;
