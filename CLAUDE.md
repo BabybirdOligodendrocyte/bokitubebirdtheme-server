@@ -154,6 +154,32 @@ var faviconUrl = "<favicon URL>";         // Custom favicon
 var scrollingBannerEnabled = false;       // Enable/disable banner
 ```
 
+## Current Channel Configuration
+
+The active Cytube channel uses the following internal CSS configuration:
+
+```css
+:root {
+    --leftcontentvw: 88%;                 /* Wider video (88% vs default 78.4vw) */
+    --bannerimg: url("INSERT YOUR IMAGE HERE");
+    --dialogbgimageurl: url("INSERT YOUR IMAGE HERE");
+    --bgimageurl: url("https://images.alphacoders.com/834/834417.png");
+    --primarycolor: #000000;              /* Black */
+    --secondarycolor: #0F0F0F;            /* Very dark gray */
+    --tertiarycolor: #8F6409;             /* Gold/amber accent */
+}
+```
+
+**Animation keyframes** are also defined in the internal CSS:
+- `shake` - Horizontal shake effect (-3px to +3px)
+- `pulse` - Scale and opacity pulse (1.0 to 1.05, opacity 0.7-1.0)
+- `bounce` - Vertical bounce (-5px)
+- `wave` - Vertical movement with rotation
+- `flicker` - Opacity flicker (0.5 to 1.0)
+- `spin` - 360-degree rotation
+
+**Note:** The closing brace `}` for `:root` appears to be missing in the current config. This should be added before the `@keyframes` declarations.
+
 ## Important Patterns
 
 ### Popup System
