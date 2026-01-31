@@ -3331,6 +3331,34 @@ function scrollReply(target) {
     }
 }
 
+// Add reply buttons to existing messages (for messages that existed before joining)
+function addReplyButtonsToExistingMessages() {
+    $('#messagebuffer > div').each(function() {
+        var $msg = $(this);
+        // Skip if already has a reply button
+        if ($msg.find('.reply-button').length > 0) return;
+        // Skip special message types
+        if ($msg.hasClass('action') || $msg.hasClass('drink') || $msg.hasClass('greentext') || $msg.hasClass('spoiler')) return;
+        // Skip if no username (system messages)
+        var $username = $msg.find('.username');
+        if ($username.length === 0) return;
+
+        // Generate ID if not present
+        var msgId = $msg.attr('id');
+        if (!msgId || !msgId.startsWith('chat-msg-')) {
+            var username = $username.text().replace(/:$/, '').trim();
+            var msgText = $msg.text();
+            var timestamp = Date.now().toString();
+            msgId = 'chat-msg-' + md5(username + msgText + timestamp);
+            $msg.attr('id', msgId);
+        }
+
+        var id = msgId.replace('chat-msg-', '');
+        var replyBtn = '<button class="reply-button" onclick="replyToMsg(\'' + id + '\')"><i class="reply-icon"></i></button>';
+        $msg.append(replyBtn);
+    });
+}
+
 // Store the current reply target
 var currentReplyTarget = null;
 var currentReplyData = null;
@@ -5652,16 +5680,25 @@ function initImpersonateObserver() {
     }
 }
 
-// Click username in chat - opens impersonation popup
+// Click username in chat to mention, Shift+Click to impersonate
 function initClickToMention() {
     $(document).on('click', '#messagebuffer .username', function(e) {
         var $this = $(this);
         var username = $this.text().replace(/:$/, '').trim();
-        var usernameHtml = $this.html().replace(/:?\s*$/, '');
 
-        if (username) {
-            // Open impersonation popup instead of just mentioning
+        if (!username) return;
+
+        if (e.shiftKey) {
+            // Shift+Click: Open impersonation popup
+            var usernameHtml = $this.html().replace(/:?\s*$/, '');
             openImpersonatePopup(username, usernameHtml);
+        } else {
+            // Regular click: Add @mention to chatline (original behavior)
+            var chatline = document.getElementById('chatline');
+            if (chatline) {
+                chatline.value += '@' + username + ' ';
+                chatline.focus();
+            }
         }
     });
 }
@@ -5881,6 +5918,7 @@ $(document).ready(function() {
         initIgnoreList();
         initKeyboardShortcuts();
         initImpersonateObserver();
+        addReplyButtonsToExistingMessages();
         addSettingsButton();
 
         // Apply saved settings
