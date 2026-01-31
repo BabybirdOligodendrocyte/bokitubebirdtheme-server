@@ -5635,11 +5635,20 @@ function cssToTags(style, classes) {
         }
     }
 
-    // --- ANIMATION DETECTION (from classes) ---
+    // --- ANIMATION DETECTION (from classes OR style) ---
+    var animDetected = false;
     if (classes) {
         var animMatch = classes.match(/text-(shake|pulse|bounce|wave|flicker|spin)/);
         if (animMatch) {
             open += '[' + animMatch[1] + ']'; close = '[/]' + close;
+            animDetected = true;
+        }
+    }
+    // Also check for animation in style attribute (e.g., "animation:bounce 0.6s")
+    if (!animDetected && style) {
+        var styleAnimMatch = style.match(/animation\s*:\s*(shake|pulse|bounce|wave|flicker|spin)/i);
+        if (styleAnimMatch) {
+            open += '[' + styleAnimMatch[1].toLowerCase() + ']'; close = '[/]' + close;
         }
     }
 
@@ -5742,6 +5751,10 @@ function sendImpersonateMessage() {
     // Build the formatted message with tags
     // Format: {userTags}USERNAME:{/userTags} {msgTags}message{/msgTags}
     var formattedMsg = '';
+
+    // Debug: show what tags were generated
+    console.log('Username tags:', usernameTags);
+    console.log('Message tags:', msgTags);
 
     // Add styled username as text (combining username tags around "name: ")
     if (usernameTags.open) {
