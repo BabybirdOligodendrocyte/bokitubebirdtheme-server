@@ -836,6 +836,43 @@ var usernameStyleSettings = JSON.parse(localStorage.getItem('usernameStyleSettin
             transform: translateX(-50%) !important;
         }
 
+        /* Reply color cycling - 6 colors that complement the dark theme */
+        .is-reply-message.reply-color-0, .reply-target.reply-color-0 {
+            border-left-color: #8F6409 !important;
+            background: rgba(143, 100, 9, 0.15) !important;
+        }
+        .is-reply-message.reply-color-0::before { color: #8F6409 !important; }
+
+        .is-reply-message.reply-color-1, .reply-target.reply-color-1 {
+            border-left-color: #0D8F8F !important;
+            background: rgba(13, 143, 143, 0.15) !important;
+        }
+        .is-reply-message.reply-color-1::before { color: #0D8F8F !important; }
+
+        .is-reply-message.reply-color-2, .reply-target.reply-color-2 {
+            border-left-color: #7B4B9E !important;
+            background: rgba(123, 75, 158, 0.15) !important;
+        }
+        .is-reply-message.reply-color-2::before { color: #7B4B9E !important; }
+
+        .is-reply-message.reply-color-3, .reply-target.reply-color-3 {
+            border-left-color: #A34D4D !important;
+            background: rgba(163, 77, 77, 0.15) !important;
+        }
+        .is-reply-message.reply-color-3::before { color: #A34D4D !important; }
+
+        .is-reply-message.reply-color-4, .reply-target.reply-color-4 {
+            border-left-color: #4A8F4A !important;
+            background: rgba(74, 143, 74, 0.15) !important;
+        }
+        .is-reply-message.reply-color-4::before { color: #4A8F4A !important; }
+
+        .is-reply-message.reply-color-5, .reply-target.reply-color-5 {
+            border-left-color: #4A6FA5 !important;
+            background: rgba(74, 111, 165, 0.15) !important;
+        }
+        .is-reply-message.reply-color-5::before { color: #4A6FA5 !important; }
+
         /* Legacy reply styling */
         .reply {
             display: flex !important;
@@ -2783,6 +2820,22 @@ function scrollReply(target) {
 var currentReplyTarget = null;
 var currentReplyData = null;
 
+// Color cycling for replies - track which users get which colors
+var replyColorMap = {}; // Maps username -> color index
+var replyColorCounter = 0; // Cycles through 0-5
+var REPLY_COLORS_COUNT = 6;
+
+// Get or assign a color for a username
+function getReplyColorForUser(username) {
+    if (!username) return 0;
+    var cleanName = username.toLowerCase().trim();
+    if (typeof replyColorMap[cleanName] === 'undefined') {
+        replyColorMap[cleanName] = replyColorCounter;
+        replyColorCounter = (replyColorCounter + 1) % REPLY_COLORS_COUNT;
+    }
+    return replyColorMap[cleanName];
+}
+
 function replyToMsg(target) {
     // Handle both "chat-msg-123" and just "123" formats
     currentReplyTarget = target.replace('chat-msg-', '');
@@ -2909,10 +2962,13 @@ function initReplySystem() {
                 chatline.value = marker + chatline.value;
             }
 
-            // Mark original message
+            // Mark original message with matching color
             var sourceMsg = document.getElementById('chat-msg-' + currentReplyData.targetId);
             if (sourceMsg) {
                 sourceMsg.classList.add('reply-target');
+                // Add color class matching the reply color for this user
+                var colorIndex = getReplyColorForUser(currentReplyData.usernameText);
+                sourceMsg.classList.add('reply-color-' + colorIndex);
             }
 
             console.log('[Reply] Added marker:', marker);
@@ -2932,7 +2988,7 @@ function initReplySystem() {
         prependReplyMarker();
     }, true);
 
-    // Watch for new messages and style reply messages
+    // Watch for new messages and style reply messages with color cycling
     function styleReplyMessages() {
         $('#messagebuffer > div').each(function() {
             var $msg = $(this);
@@ -2944,6 +3000,15 @@ function initReplySystem() {
             var text = $msg.text();
             if (text.indexOf('▶ @') !== -1 || text.indexOf('▶ @') !== -1) {
                 $msg.addClass('is-reply-message');
+
+                // Extract username from reply marker to assign color
+                // Format: "▶ @username:" or similar
+                var match = text.match(/▶\s*@([^:]+):/);
+                if (match && match[1]) {
+                    var replyToUser = match[1].trim();
+                    var colorIndex = getReplyColorForUser(replyToUser);
+                    $msg.addClass('reply-color-' + colorIndex);
+                }
             }
         });
     }
