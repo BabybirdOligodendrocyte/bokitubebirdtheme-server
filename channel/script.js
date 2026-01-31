@@ -836,7 +836,7 @@ var usernameStyleSettings = JSON.parse(localStorage.getItem('usernameStyleSettin
             transform: translateX(-50%) !important;
         }
 
-        /* Reply color cycling - 6 colors that complement the dark theme */
+        /* Reply color cycling - 12 colors that complement the dark theme */
         .is-reply-message.reply-color-0, .reply-target.reply-color-0 {
             border-left-color: #8F6409 !important;
             background: rgba(143, 100, 9, 0.15) !important;
@@ -872,6 +872,42 @@ var usernameStyleSettings = JSON.parse(localStorage.getItem('usernameStyleSettin
             background: rgba(74, 111, 165, 0.15) !important;
         }
         .is-reply-message.reply-color-5::before { color: #4A6FA5 !important; }
+
+        .is-reply-message.reply-color-6, .reply-target.reply-color-6 {
+            border-left-color: #9E4B7B !important;
+            background: rgba(158, 75, 123, 0.15) !important;
+        }
+        .is-reply-message.reply-color-6::before { color: #9E4B7B !important; }
+
+        .is-reply-message.reply-color-7, .reply-target.reply-color-7 {
+            border-left-color: #B37400 !important;
+            background: rgba(179, 116, 0, 0.15) !important;
+        }
+        .is-reply-message.reply-color-7::before { color: #B37400 !important; }
+
+        .is-reply-message.reply-color-8, .reply-target.reply-color-8 {
+            border-left-color: #3D9EAA !important;
+            background: rgba(61, 158, 170, 0.15) !important;
+        }
+        .is-reply-message.reply-color-8::before { color: #3D9EAA !important; }
+
+        .is-reply-message.reply-color-9, .reply-target.reply-color-9 {
+            border-left-color: #6B8F2E !important;
+            background: rgba(107, 143, 46, 0.15) !important;
+        }
+        .is-reply-message.reply-color-9::before { color: #6B8F2E !important; }
+
+        .is-reply-message.reply-color-10, .reply-target.reply-color-10 {
+            border-left-color: #B36666 !important;
+            background: rgba(179, 102, 102, 0.15) !important;
+        }
+        .is-reply-message.reply-color-10::before { color: #B36666 !important; }
+
+        .is-reply-message.reply-color-11, .reply-target.reply-color-11 {
+            border-left-color: #5B5BAA !important;
+            background: rgba(91, 91, 170, 0.15) !important;
+        }
+        .is-reply-message.reply-color-11::before { color: #5B5BAA !important; }
 
         /* Legacy reply styling */
         .reply {
@@ -2822,8 +2858,8 @@ var currentReplyData = null;
 
 // Color cycling for replies - colors are assigned to ORIGINAL messages being replied to
 // All replies to the same message share the same color
-var replyColorCounter = 0; // Cycles through 0-5
-var REPLY_COLORS_COUNT = 6;
+var replyColorCounter = 0; // Cycles through 0-11
+var REPLY_COLORS_COUNT = 12;
 
 // Get the next color in the cycle
 function getNextReplyColor() {
