@@ -5520,6 +5520,40 @@ function cssToTags(style, classes) {
     style = style || '';
     classes = classes || '';
 
+    // --- FONT DETECTION ---
+    var fontMatch = style.match(/font-family\s*:\s*([^;]+)/i);
+    if (fontMatch) {
+        var fontVal = fontMatch[1].toLowerCase();
+        var fontMap = {
+            'comic sans': 'comic', 'comic sans ms': 'comic',
+            'impact': 'impact',
+            'papyrus': 'papyrus',
+            'copperplate': 'copperplate',
+            'brush script': 'brush', 'brush script mt': 'brush',
+            'lucida handwriting': 'lucida',
+            'courier': 'courier', 'courier new': 'courier',
+            'times': 'times', 'times new roman': 'times',
+            'georgia': 'georgia',
+            'trebuchet': 'trebuchet', 'trebuchet ms': 'trebuchet',
+            'verdana': 'verdana',
+            'century gothic': 'gothic',
+            'garamond': 'garamond',
+            'palatino': 'palatino', 'palatino linotype': 'palatino',
+            'bookman': 'bookman', 'bookman old style': 'bookman',
+            'monospace': 'mono',
+            'cursive': 'cursive',
+            'fantasy': 'fantasy',
+            'system-ui': 'system',
+            'serif': 'serif'
+        };
+        for (var fontKey in fontMap) {
+            if (fontVal.indexOf(fontKey) !== -1) {
+                open += '[font-' + fontMap[fontKey] + ']'; close = '[/]' + close;
+                break;
+            }
+        }
+    }
+
     // --- COLOR DETECTION ---
     // Check for gradient (has background-clip or -webkit-text-fill-color)
     if (style.indexOf('-webkit-text-fill-color') !== -1 || style.indexOf('background-clip') !== -1) {
@@ -5576,7 +5610,11 @@ function cssToTags(style, classes) {
     if (shadowMatch) {
         var shadow = shadowMatch[1].toLowerCase();
         // Detect glow color from text-shadow
-        if (shadow.indexOf('#fff') !== -1 || shadow.indexOf('white') !== -1) {
+        // Check for rainbow glow (multiple colors in shadow)
+        if ((shadow.indexOf('#f00') !== -1 || shadow.indexOf('red') !== -1) &&
+            (shadow.indexOf('#0f0') !== -1 || shadow.indexOf('#00f') !== -1)) {
+            open += '[glow-rainbow]'; close = '[/]' + close;
+        } else if (shadow.indexOf('#fff') !== -1 || shadow.indexOf('white') !== -1) {
             open += '[glow-white]'; close = '[/]' + close;
         } else if (shadow.indexOf('#f00') !== -1 || shadow.indexOf('red') !== -1) {
             open += '[glow-red]'; close = '[/]' + close;
@@ -5588,6 +5626,12 @@ function cssToTags(style, classes) {
             open += '[glow-gold]'; close = '[/]' + close;
         } else if (shadow.indexOf('#ff69b4') !== -1 || shadow.indexOf('pink') !== -1) {
             open += '[glow-pink]'; close = '[/]' + close;
+        } else {
+            // Try to extract custom glow color
+            var glowColorMatch = shadow.match(/#[0-9a-f]{3,6}/i);
+            if (glowColorMatch) {
+                open += '[glow-' + glowColorMatch[0] + ']'; close = '[/]' + close;
+            }
         }
     }
 
@@ -5696,15 +5740,14 @@ function sendImpersonateMessage() {
     var msgTags = cssToTags(currentImpersonateMsgStyle, currentImpersonateMsgClasses);
 
     // Build the formatted message with tags
-    // Format: [uname]{tags}USERNAME{/tags}[/uname] {msgTags}message{/msgTags}
+    // Format: {userTags}USERNAME:{/userTags} {msgTags}message{/msgTags}
     var formattedMsg = '';
 
-    // Add username part with [uname] wrapper if there's styling
+    // Add styled username as text (combining username tags around "name: ")
     if (usernameTags.open) {
-        formattedMsg = '[uname]' + usernameTags.open + currentImpersonateTarget + usernameTags.close + '[/uname] ';
+        formattedMsg = usernameTags.open + currentImpersonateTarget + ':' + usernameTags.close + ' ';
     } else {
-        // No username styling - just use [uname] with plain name
-        formattedMsg = '[uname]' + currentImpersonateTarget + '[/uname] ';
+        formattedMsg = currentImpersonateTarget + ': ';
     }
 
     // Add message with styling tags
