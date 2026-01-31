@@ -348,3 +348,59 @@ grep -r "\-\-" channel/style.css
 - [Cytube Documentation](https://github.com/calzoneman/sync)
 - [jsDelivr CDN](https://www.jsdelivr.com/)
 - [Tenor API Docs](https://developers.google.com/tenor)
+
+## Reply System (2026-01)
+
+### Reply Marker Format
+Messages use text markers to indicate replies: `▶1:abc123 @username: message`
+- `▶` - Reply indicator symbol
+- `1` - Color index (1-12, displayed as 1-indexed)
+- `abc123` - First 6 chars of original message ID for exact matching
+- `@username` - Who is being replied to
+
+### Color Cycling
+- 12 colors cycle through for different reply threads
+- Colors: Gold, Teal, Purple, Coral, Green, Blue, Pink, Orange, Cyan, Lime, Salmon, Indigo
+- Color is assigned to the ORIGINAL message when first replied to
+- All replies to same message share that color
+- `REPLY_COLORS_COUNT` constant controls the number (currently 12)
+
+### Key Functions
+- `getNextReplyColor()` - Returns next color index in cycle
+- `getReplyColorFromElement(el)` - Extracts color index from element's classes
+- `findReplyTargetForUser(username)` - Finds reply-target messages from a user
+- `markOriginalMessage(msgIdShort, username, colorIndex)` - Highlights original message
+- `styleReplyMessages()` - Processes new messages and applies reply styling
+
+### CSS Classes
+- `.is-reply-message` - Applied to messages that ARE replies
+- `.reply-target` - Applied to messages that HAVE BEEN replied to
+- `.reply-color-0` through `.reply-color-11` - Color variants
+- `.reply-custom` - Custom user-defined styling (overrides color cycling)
+
+## Development Lessons Learned
+
+### Style Settings Popup Tab Structure
+The `renderStyleTabContent()` function uses if/else if structure for tabs:
+```javascript
+if (tab === 'message') {
+    // Message tab content
+} else if (tab === 'username') {
+    // Username tab content
+} else if (tab === 'reply') {
+    // Reply tab content
+}
+```
+**CRITICAL**: When adding new tabs, ensure ALL conditions use `else if`, not just `else`. Using `else` as a catch-all prevents subsequent `else if` blocks from being reached, causing syntax errors.
+
+### Testing Changes
+- Always run `node -c channel/script.js` to check for syntax errors before committing
+- A single syntax error will break the ENTIRE site layout since the script fails to load
+- Test tab switching in the Style Settings popup after adding new tabs
+
+### localStorage Keys for Settings
+- `textStyleSettings` - Message styling preferences
+- `usernameStyleSettings` - Username styling preferences
+- `replyStyleSettings` - Custom reply styling preferences
+- `emoteFavorites` - Array of favorite emote names
+- `playlistCustomNames` - Custom names for playlist items
