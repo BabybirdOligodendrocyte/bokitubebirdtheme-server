@@ -3473,7 +3473,7 @@ function initReplySystem() {
 
                 // Try format with style: ▶1:abc123:b00a or ▶1:abc123:b00xFFFFFF @username:
                 // Use permissive regex, parse style code in code
-                var styledMatch = text.match(/▶(\d+):([a-zA-Z0-9]+):([a-zA-Z0-9]+)\s+@([^:]+):/);
+                var styledMatch = text.match(/▶(\d+):([a-zA-Z0-9]+):([a-zA-Z0-9]+)\s*@([^:]+):/);
                 if (styledMatch && styledMatch[1]) {
                     colorIndex = parseInt(styledMatch[1], 10) - 1;
                     if (colorIndex < 0 || colorIndex >= REPLY_COLORS_COUNT) {
@@ -3482,7 +3482,7 @@ function initReplySystem() {
                     msgIdShort = styledMatch[2] || null;
                     styleCode = styledMatch[3] || null;
                     replyToUser = styledMatch[4] ? styledMatch[4].trim() : null;
-                    console.log('[Reply] Matched styled format, styleCode:', styleCode);
+                    console.log('[Reply] Parsed styleCode:', styleCode, 'from message');
                 }
 
                 // Fallback: format without style ▶1:abc123 @username: (color + message ID)
