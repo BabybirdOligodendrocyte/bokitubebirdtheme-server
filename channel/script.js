@@ -5641,29 +5641,52 @@ function initImpersonateObserver() {
 
 // Click username in chat to mention, Shift+Click to impersonate
 function initClickToMention() {
-    // Use event delegation that also catches clicks on child elements of .username
-    $(document).on('click', '#messagebuffer .username, #messagebuffer .username *', function(e) {
-        // Find the actual .username element (might be the target or a parent)
-        var $usernameEl = $(e.target).closest('.username');
-        if ($usernameEl.length === 0) return;
+    // Use native event listener on document for reliability
+    document.addEventListener('click', function(e) {
+        var target = e.target;
 
-        var username = $usernameEl.text().replace(/:$/, '').trim();
+        // Walk up the DOM to find username element
+        var usernameEl = null;
+        var el = target;
+        while (el && el !== document.body) {
+            if (el.classList && (el.classList.contains('username') || el.classList.contains('styled-username'))) {
+                usernameEl = el;
+                break;
+            }
+            el = el.parentElement;
+        }
 
+        if (!usernameEl) return;
+
+        // Make sure it's in the messagebuffer
+        var inMessageBuffer = false;
+        el = usernameEl;
+        while (el && el !== document.body) {
+            if (el.id === 'messagebuffer') {
+                inMessageBuffer = true;
+                break;
+            }
+            el = el.parentElement;
+        }
+        if (!inMessageBuffer) return;
+
+        var username = usernameEl.textContent.replace(/:$/, '').trim();
         if (!username) return;
 
         if (e.shiftKey) {
             // Shift+Click: Open impersonation popup
-            var usernameHtml = $usernameEl.html().replace(/:?\s*$/, '');
-            openImpersonatePopup(username, usernameHtml);
+            e.preventDefault();
+            e.stopPropagation();
+            openImpersonatePopup(username, usernameEl.innerHTML.replace(/:?\s*$/, ''));
         } else {
-            // Regular click: Add @mention to chatline (original behavior)
+            // Regular click: Add @mention to chatline
             var chatline = document.getElementById('chatline');
             if (chatline) {
                 chatline.value += '@' + username + ' ';
                 chatline.focus();
             }
         }
-    });
+    }, true); // Use capture phase
 }
 
 // Mention notifications
