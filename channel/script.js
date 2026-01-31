@@ -5573,22 +5573,12 @@ function sendImpersonateMessage() {
         return;
     }
 
-    // Encode username HTML and message style as base64 to preserve special chars
-    var usernameB64 = '';
-    var styleB64 = '';
-    try {
-        if (currentImpersonateUsernameHtml) {
-            usernameB64 = btoa(unescape(encodeURIComponent(currentImpersonateUsernameHtml)));
-        }
-        if (currentImpersonateMsgStyle) {
-            styleB64 = btoa(unescape(encodeURIComponent(currentImpersonateMsgStyle)));
-        }
-    } catch(e) {
-        console.log('Impersonate encoding error:', e);
-    }
+    // URL-encode the styles to preserve special chars (shorter than base64)
+    var usernameStyleEnc = encodeURIComponent(currentImpersonateUsernameHtml || '');
+    var msgStyleEnc = encodeURIComponent(currentImpersonateMsgStyle || '');
 
-    // Format: 🎭[username|usernameHtmlB64|msgStyleB64] message
-    var formattedMsg = '🎭[' + currentImpersonateTarget + '|' + usernameB64 + '|' + styleB64 + '] ' + message;
+    // Format: 🎭[username|usernameStyle|msgStyle] message
+    var formattedMsg = '🎭[' + currentImpersonateTarget + '|' + usernameStyleEnc + '|' + msgStyleEnc + '] ' + message;
 
     // Send via Cytube's socket
     if (typeof socket !== 'undefined' && socket.emit) {
@@ -5615,7 +5605,7 @@ function styleImpersonateMessages() {
         // Skip if already processed
         if ($msg.data('impersonate-styled')) return;
 
-        // Check for impersonation marker: 🎭[username|usernameB64|styleB64] message
+        // Check for impersonation marker
         var text = $msg.text();
         if (text.indexOf('🎭[') === -1) return;
 
@@ -5629,7 +5619,7 @@ function styleImpersonateMessages() {
             var html = $span.html();
             if (!html || html.indexOf('🎭[') === -1) return;
 
-            // Parse: 🎭[username|usernameB64|styleB64] message
+            // Parse: 🎭[username|usernameStyle|msgStyle] message
             var markerMatch = html.match(/🎭\[([^|\]]+)\|([^|\]]*)\|([^\]]*)\]\s*([\s\S]*)/);
             if (!markerMatch) {
                 // Fallback for old format: 🎭[username] message
@@ -5644,29 +5634,37 @@ function styleImpersonateMessages() {
             }
 
             var username = markerMatch[1];
-            var usernameB64 = markerMatch[2];
-            var styleB64 = markerMatch[3];
+            var usernameStyleEnc = markerMatch[2];
+            var msgStyleEnc = markerMatch[3];
             var messageText = markerMatch[4];
 
-            // Decode username HTML
-            var styledUsernameHtml = '<span class="username">' + username + ': </span>';
-            if (usernameB64) {
+            // Decode username style
+            var usernameStyle = '';
+            if (usernameStyleEnc) {
                 try {
-                    styledUsernameHtml = decodeURIComponent(escape(atob(usernameB64)));
-                } catch(e) {
-                    console.log('Failed to decode username:', e);
-                }
+                    usernameStyle = decodeURIComponent(usernameStyleEnc);
+                } catch(e) {}
             }
 
             // Decode message style
-            var styledMessage = messageText;
-            if (styleB64) {
+            var msgStyle = '';
+            if (msgStyleEnc) {
                 try {
-                    var style = decodeURIComponent(escape(atob(styleB64)));
-                    styledMessage = '<span style="' + style + '">' + messageText + '</span>';
-                } catch(e) {
-                    console.log('Failed to decode style:', e);
-                }
+                    msgStyle = decodeURIComponent(msgStyleEnc);
+                } catch(e) {}
+            }
+
+            // Build styled username
+            var styledUsernameHtml = '<span class="username"';
+            if (usernameStyle) {
+                styledUsernameHtml += ' style="' + usernameStyle + '"';
+            }
+            styledUsernameHtml += '>' + username + ': </span>';
+
+            // Build styled message
+            var styledMessage = messageText;
+            if (msgStyle) {
+                styledMessage = '<span style="' + msgStyle + '">' + messageText + '</span>';
             }
 
             var newHtml = styledUsernameHtml + ' ' + styledMessage;
@@ -5734,6 +5732,14 @@ function initClickToMention() {
             e.preventDefault();
             e.stopPropagation();
 
+            // Get username style (from the element itself or child spans)
+            var usernameStyle = usernameEl.getAttribute('style') || '';
+            if (!usernameStyle) {
+                // Check for styled spans inside
+                var styledChild = usernameEl.querySelector('span[style]');
+                if (styledChild) usernameStyle = styledChild.getAttribute('style') || '';
+            }
+
             // Find the parent message element to get message styling
             var msgEl = usernameEl.parentElement;
             while (msgEl && msgEl.id !== 'messagebuffer' && !msgEl.id.startsWith('chat-msg-')) {
@@ -5741,7 +5747,7 @@ function initClickToMention() {
             }
 
             // Extract message styling from THIS specific message
-            var msgStyle = null;
+            var msgStyle = '';
             if (msgEl && msgEl.id !== 'messagebuffer') {
                 var spans = msgEl.querySelectorAll('span[style]');
                 for (var i = 0; i < spans.length; i++) {
@@ -5760,7 +5766,7 @@ function initClickToMention() {
                 }
             }
 
-            openImpersonatePopup(username, usernameEl.outerHTML, msgStyle);
+            openImpersonatePopup(username, usernameStyle, msgStyle);
         } else {
             // Regular click: Add @mention to chatline
             var chatline = document.getElementById('chatline');
