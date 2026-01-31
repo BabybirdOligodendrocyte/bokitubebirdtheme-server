@@ -32,7 +32,11 @@
 }
 
 #wrap { padding: 0; }
-#drinkbarwrap, #resizewrap { display: none; }
+#drinkbarwrap, #resizewrap, #videoResize, .column-resize, [class*="resize"], [id*="resize"]:not(#chatline) {
+    display: none !important;
+    width: 0 !important;
+    visibility: hidden !important;
+}
 
 #chatwrap > .profile-box {
     height: 100vh !important;

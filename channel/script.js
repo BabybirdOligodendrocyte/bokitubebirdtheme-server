@@ -2987,6 +2987,41 @@ function applyAllCustomNames() {
     entries.forEach(function(entry) {
         applyCustomNameToEntry(entry);
     });
+    // Also update the "currently playing" title
+    updateCurrentTitleDisplay();
+}
+
+// Update the "currently playing" title above chat with custom name if available
+function updateCurrentTitleDisplay() {
+    var currentTitleEl = document.getElementById('currenttitle');
+    if (!currentTitleEl) return;
+
+    // Find the currently playing item in the playlist
+    var activeEntry = document.querySelector('.queue_entry.queue_active');
+    if (!activeEntry) return;
+
+    // Get the media key for this entry
+    var mediaKey = getMediaKeyFromEntry(activeEntry);
+    if (!mediaKey) return;
+
+    // Check for custom name
+    var customName = getCustomName(mediaKey);
+
+    // Store original title if not already stored
+    if (!currentTitleEl.getAttribute('data-original-title')) {
+        currentTitleEl.setAttribute('data-original-title', currentTitleEl.textContent);
+    }
+
+    if (customName) {
+        currentTitleEl.textContent = customName;
+        currentTitleEl.title = 'Original: ' + currentTitleEl.getAttribute('data-original-title');
+    } else {
+        // Keep showing whatever Cytube set (might be updated by Cytube)
+        var origTitle = currentTitleEl.getAttribute('data-original-title');
+        if (origTitle && currentTitleEl.textContent === origTitle) {
+            // Already showing original, nothing to do
+        }
+    }
 }
 
 // Check if current user is a moderator or higher
@@ -3321,6 +3356,19 @@ function initPlaylistRenameObserver() {
 
         socket.on('delete', function() {
             debouncedPlaylistUpdate(400);
+        });
+
+        // Update current title when media changes
+        socket.on('changeMedia', function() {
+            setTimeout(function() {
+                updateCurrentTitleDisplay();
+            }, 300);
+        });
+
+        socket.on('setCurrent', function() {
+            setTimeout(function() {
+                updateCurrentTitleDisplay();
+            }, 300);
         });
         
         // Listen for rank changes - add/remove buttons accordingly
