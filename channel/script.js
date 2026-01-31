@@ -237,14 +237,6 @@ var usernameStyleSettings = JSON.parse(localStorage.getItem('usernameStyleSettin
     bold: false
 };
 
-// Reply style settings (custom override for user's replies)
-var replyStyleSettings = JSON.parse(localStorage.getItem('replyStyleSettings')) || {
-    enabled: false,
-    borderColor: null,      // Custom border-left color
-    bgColor: null,          // Custom background color
-    bgOpacity: 15           // Background opacity (0-100)
-};
-
 // Inject popup CSS with !important to override any conflicts
 (function() {
     var s = document.createElement('style');
@@ -916,13 +908,6 @@ var replyStyleSettings = JSON.parse(localStorage.getItem('replyStyleSettings')) 
             background: rgba(91, 91, 170, 0.15) !important;
         }
         .is-reply-message.reply-color-11::before { color: #5B5BAA !important; }
-
-        /* Custom reply styling (user override) */
-        .is-reply-message.reply-custom, .reply-target.reply-custom {
-            border-left-color: var(--custom-reply-color, #8F6409) !important;
-            background: var(--custom-reply-bg, rgba(143, 100, 9, 0.15)) !important;
-        }
-        .is-reply-message.reply-custom::before { color: var(--custom-reply-color, #8F6409) !important; }
 
         /* Legacy reply styling */
         .reply {
@@ -1740,7 +1725,7 @@ function createTextStylePopup() {
     var p = document.createElement('div');
     p.id = 'textstyle-popup';
     p.innerHTML = '<div class="popup-header" id="textstyle-popup-header"><span>✨ Style Settings</span><button class="popup-close" onclick="closeTextStylePopup()">×</button></div>' +
-        '<div id="textstyle-tabs"><button class="style-tab active" data-tab="message" onclick="switchStyleTab(\'message\')">💬 Message</button><button class="style-tab" data-tab="username" onclick="switchStyleTab(\'username\')">👤 Username</button><button class="style-tab" data-tab="reply" onclick="switchStyleTab(\'reply\')">↩ Reply</button></div>' +
+        '<div id="textstyle-tabs"><button class="style-tab active" data-tab="message" onclick="switchStyleTab(\'message\')">💬 Message</button><button class="style-tab" data-tab="username" onclick="switchStyleTab(\'username\')">👤 Username</button></div>' +
         '<div id="textstyle-tab-content"></div>';
     o.appendChild(p);
     document.body.appendChild(o);
@@ -1822,8 +1807,8 @@ function renderStyleTabContent(tab) {
             '<div class="textstyle-section" style="border-top:1px solid #333;"><button id="textstyle-reset" onclick="resetTextStyle()">↺ Reset to Default</button></div>';
         
         updateStylePreview();
-
-    } else if (tab === 'username') {
+        
+    } else {
         // USERNAME STYLE TAB
         var settings = usernameStyleSettings;
         
@@ -1869,125 +1854,8 @@ function renderStyleTabContent(tab) {
             '<div class="textstyle-section" style="border-top:1px solid #333;"><button onclick="resetUsernameStyle()" style="width:100%;padding:12px;background:#422;border:1px solid #633;border-radius:6px;color:#f88;cursor:pointer;">↺ Reset to Default</button></div>';
         
         updateUsernamePreview();
-    } else if (tab === 'reply') {
-        // REPLY STYLE TAB
-        var settings = replyStyleSettings;
-
-        // Preset colors for reply styling (same 12 colors as cycling)
-        var replyColors = [
-            {name: 'Gold', hex: '#8F6409'},
-            {name: 'Teal', hex: '#0D8F8F'},
-            {name: 'Purple', hex: '#7B4B9E'},
-            {name: 'Coral', hex: '#A34D4D'},
-            {name: 'Green', hex: '#4A8F4A'},
-            {name: 'Blue', hex: '#4A6FA5'},
-            {name: 'Pink', hex: '#9E4B7B'},
-            {name: 'Orange', hex: '#B37400'},
-            {name: 'Cyan', hex: '#3D9EAA'},
-            {name: 'Lime', hex: '#6B8F2E'},
-            {name: 'Salmon', hex: '#B36666'},
-            {name: 'Indigo', hex: '#5B5BAA'}
-        ];
-
-        var colorBtns = replyColors.map(function(c) {
-            var act = settings.borderColor === c.hex ? ' active' : '';
-            return '<button class="textstyle-btn reply-color-btn' + act + '" data-color="' + c.hex + '" style="background:' + c.hex + ';color:#fff;text-shadow:0 0 2px #000" onclick="selectReplyBorderColor(\'' + c.hex + '\')">' + c.name + '</button>';
-        }).join('');
-
-        container.innerHTML = '<div class="textstyle-info"><p style="margin:0">Customize how YOUR replies appear. This overrides the cycling colors for messages you send.</p></div>' +
-            '<div class="textstyle-popup-scroll">' +
-            '<div class="textstyle-section"><h4>Enable Custom Reply Style</h4><button id="reply-style-toggle" class="textstyle-btn' + (settings.enabled ? ' active' : '') + '" onclick="toggleReplyStyleEnabled()" style="width:100%">' + (settings.enabled ? '✓ Enabled - Your replies use custom style' : '✗ Disabled - Using default color cycling') + '</button></div>' +
-            '<div class="textstyle-section"><h4>Border Color (left edge)</h4><div class="textstyle-grid">' + colorBtns + '</div>' +
-            '<div class="custom-color-row"><label>Custom: </label><input type="color" id="reply-border-picker" value="' + (settings.borderColor || '#8F6409') + '" onchange="selectReplyBorderColor(this.value)"><span style="margin-left:8px;color:#888">' + (settings.borderColor || 'Default') + '</span></div></div>' +
-            '<div class="textstyle-section"><h4>Background Color</h4>' +
-            '<div class="custom-color-row"><label>Color: </label><input type="color" id="reply-bg-picker" value="' + (settings.bgColor || '#8F6409') + '" onchange="selectReplyBgColor(this.value)"><span style="margin-left:8px;color:#888">' + (settings.bgColor || 'Same as border') + '</span></div>' +
-            '<div class="custom-color-row" style="margin-top:8px"><label>Opacity: </label><input type="range" id="reply-bg-opacity" min="5" max="50" value="' + (settings.bgOpacity || 15) + '" oninput="updateReplyBgOpacity(this.value)" style="flex:1"><span id="reply-opacity-value" style="margin-left:8px;color:#888;min-width:40px">' + (settings.bgOpacity || 15) + '%</span></div></div>' +
-            '<div class="textstyle-section"><h4>Preview</h4><div id="reply-style-preview" style="padding:12px;background:#111;border-radius:6px;"><div class="reply-preview-msg" style="border-left:3px solid ' + (settings.borderColor || '#8F6409') + ';background:' + hexToRgba(settings.bgColor || settings.borderColor || '#8F6409', settings.bgOpacity || 15) + ';padding:8px 12px;border-radius:4px;"><span style="color:#888">▶1:abc123 @user:</span> <span style="color:#ccc">Your reply message here</span></div></div></div>' +
-            '</div>' +
-            '<div class="textstyle-section" style="border-top:1px solid #333;"><button onclick="resetReplyStyle()" style="width:100%;padding:12px;background:#422;border:1px solid #633;border-radius:6px;color:#f88;cursor:pointer;">↺ Reset to Default</button></div>';
     }
 }
-
-// Helper function to convert hex to rgba
-function hexToRgba(hex, opacity) {
-    if (!hex) return 'rgba(143, 100, 9, 0.15)';
-    hex = hex.replace('#', '');
-    var r = parseInt(hex.substring(0, 2), 16);
-    var g = parseInt(hex.substring(2, 4), 16);
-    var b = parseInt(hex.substring(4, 6), 16);
-    return 'rgba(' + r + ', ' + g + ', ' + b + ', ' + (opacity / 100) + ')';
-}
-
-// Reply style functions
-function toggleReplyStyleEnabled() {
-    replyStyleSettings.enabled = !replyStyleSettings.enabled;
-    saveReplyStyleSettings();
-    renderStyleTabContent('reply');
-    applyCustomReplyCSS();
-}
-
-function selectReplyBorderColor(color) {
-    replyStyleSettings.borderColor = color;
-    if (!replyStyleSettings.bgColor) {
-        // If no custom bg, use border color for bg too
-    }
-    saveReplyStyleSettings();
-    renderStyleTabContent('reply');
-    applyCustomReplyCSS();
-}
-
-function selectReplyBgColor(color) {
-    replyStyleSettings.bgColor = color;
-    saveReplyStyleSettings();
-    renderStyleTabContent('reply');
-    applyCustomReplyCSS();
-}
-
-function updateReplyBgOpacity(value) {
-    replyStyleSettings.bgOpacity = parseInt(value, 10);
-    document.getElementById('reply-opacity-value').textContent = value + '%';
-    saveReplyStyleSettings();
-    // Update preview without full re-render
-    var preview = document.querySelector('.reply-preview-msg');
-    if (preview) {
-        preview.style.background = hexToRgba(replyStyleSettings.bgColor || replyStyleSettings.borderColor || '#8F6409', replyStyleSettings.bgOpacity);
-    }
-    applyCustomReplyCSS();
-}
-
-function resetReplyStyle() {
-    replyStyleSettings = {
-        enabled: false,
-        borderColor: null,
-        bgColor: null,
-        bgOpacity: 15
-    };
-    saveReplyStyleSettings();
-    renderStyleTabContent('reply');
-    applyCustomReplyCSS();
-}
-
-function saveReplyStyleSettings() {
-    localStorage.setItem('replyStyleSettings', JSON.stringify(replyStyleSettings));
-}
-
-// Apply custom reply CSS variables
-function applyCustomReplyCSS() {
-    var root = document.documentElement;
-    if (replyStyleSettings.enabled && replyStyleSettings.borderColor) {
-        root.style.setProperty('--custom-reply-color', replyStyleSettings.borderColor);
-        var bgColor = replyStyleSettings.bgColor || replyStyleSettings.borderColor;
-        root.style.setProperty('--custom-reply-bg', hexToRgba(bgColor, replyStyleSettings.bgOpacity || 15));
-    } else {
-        root.style.removeProperty('--custom-reply-color');
-        root.style.removeProperty('--custom-reply-bg');
-    }
-}
-
-// Initialize custom reply CSS on load
-$(document).ready(function() {
-    applyCustomReplyCSS();
-});
 
 function openTextStylePopup() {
     createTextStylePopup();
@@ -3251,16 +3119,7 @@ function initReplySystem() {
                     colorIndex = getNextReplyColor();
                 }
 
-                // Check if this is the current user's message and they have custom reply styling
-                var msgUsername = $msg.find('.username').text().replace(/:?\s*$/, '').trim();
-                var currentUser = (typeof CLIENT !== 'undefined' && CLIENT.name) ? CLIENT.name : null;
-                var useCustomStyle = replyStyleSettings.enabled && currentUser && msgUsername.toLowerCase() === currentUser.toLowerCase();
-
-                if (useCustomStyle) {
-                    $msg.addClass('reply-custom');
-                } else {
-                    $msg.addClass('reply-color-' + colorIndex);
-                }
+                $msg.addClass('reply-color-' + colorIndex);
 
                 // Also mark the original message being replied to (for other users)
                 markOriginalMessage(msgIdShort, replyToUser, colorIndex);
