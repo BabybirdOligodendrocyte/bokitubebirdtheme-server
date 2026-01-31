@@ -365,18 +365,62 @@ Messages use text markers to indicate replies: `▶1:abc123 @username: message`
 - All replies to same message share that color
 - `REPLY_COLORS_COUNT` constant controls the number (currently 12)
 
+### Custom Reply Styling
+Users can override the default color cycling with custom styling via the Reply tab in Style Settings:
+
+**Settings stored in `replyStyleSettings` object:**
+```javascript
+{
+    enabled: false,           // Toggle custom styling on/off
+    borderColor: null,        // Custom border color (hex)
+    bgColor: null,            // Custom background color (hex)
+    bgOpacity: 15,            // Background opacity (5-50)
+    animation: null,          // Animation effect
+    borderStyle: null,        // Border style variant
+    borderRadius: null,       // Border shape
+    glowColor: null,          // Custom glow color
+    glowIntensity: 10         // Glow intensity (5-30px)
+}
+```
+
+**Animation Effects:**
+- `glow` - Static glow around message
+- `pulse` - Subtle scale/opacity pulse
+- `shimmer` - Horizontal shimmer effect
+- `breathe` - Expanding/contracting glow
+- `rainbow` - Cycling rainbow border
+- `neon` - Pulsing neon glow
+- `flash` - Subtle brightness flash
+- `slide` - Subtle horizontal movement
+
+**Border Styles:** `thick`, `double`, `dotted`, `dashed`
+**Border Shapes:** `rounded`, `pill`
+
+**CSS Variables for Custom Styling:**
+- `--custom-reply-color` - Border color
+- `--custom-reply-bg` - Background color with opacity
+- `--custom-reply-glow-color` - Glow color for animations
+- `--custom-reply-glow-intensity` - Glow size in pixels
+
 ### Key Functions
 - `getNextReplyColor()` - Returns next color index in cycle
 - `getReplyColorFromElement(el)` - Extracts color index from element's classes
 - `findReplyTargetForUser(username)` - Finds reply-target messages from a user
-- `markOriginalMessage(msgIdShort, username, colorIndex)` - Highlights original message
+- `markOriginalMessage(msgIdShort, username, colorIndex, useCustom)` - Highlights original message
 - `styleReplyMessages()` - Processes new messages and applies reply styling
+- `selectReplyAnimation(anim)` - Set animation effect
+- `selectReplyBorderStyle(style)` - Set border style
+- `selectReplyBorderRadius(radius)` - Set border shape
+- `applyCustomReplyCSS()` - Apply CSS variables to document root
 
 ### CSS Classes
 - `.is-reply-message` - Applied to messages that ARE replies
 - `.reply-target` - Applied to messages that HAVE BEEN replied to
 - `.reply-color-0` through `.reply-color-11` - Color variants
 - `.reply-custom` - Custom user-defined styling (overrides color cycling)
+- `.reply-anim-*` - Animation classes (glow, pulse, shimmer, breathe, rainbow, neon, flash, slide)
+- `.reply-border-*` - Border style classes (thick, double, dotted, dashed)
+- `.reply-rounded`, `.reply-pill` - Border shape classes
 
 ## Development Lessons Learned
 
