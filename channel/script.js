@@ -2820,20 +2820,45 @@ function scrollReply(target) {
 var currentReplyTarget = null;
 var currentReplyData = null;
 
-// Color cycling for replies - track which users get which colors
-var replyColorMap = {}; // Maps username -> color index
+// Color cycling for replies - colors are assigned to ORIGINAL messages being replied to
+// All replies to the same message share the same color
 var replyColorCounter = 0; // Cycles through 0-5
 var REPLY_COLORS_COUNT = 6;
 
-// Get or assign a color for a username
-function getReplyColorForUser(username) {
-    if (!username) return 0;
-    var cleanName = username.toLowerCase().trim();
-    if (typeof replyColorMap[cleanName] === 'undefined') {
-        replyColorMap[cleanName] = replyColorCounter;
-        replyColorCounter = (replyColorCounter + 1) % REPLY_COLORS_COUNT;
+// Get the next color in the cycle
+function getNextReplyColor() {
+    var color = replyColorCounter;
+    replyColorCounter = (replyColorCounter + 1) % REPLY_COLORS_COUNT;
+    return color;
+}
+
+// Get the color class from an element (returns number or -1 if none)
+function getReplyColorFromElement(el) {
+    if (!el) return -1;
+    for (var i = 0; i < REPLY_COLORS_COUNT; i++) {
+        if (el.classList.contains('reply-color-' + i)) {
+            return i;
+        }
     }
-    return replyColorMap[cleanName];
+    return -1;
+}
+
+// Find reply-target messages from a specific user (most recent first)
+function findReplyTargetForUser(username) {
+    if (!username) return null;
+    var cleanName = username.toLowerCase().trim();
+    var targets = document.querySelectorAll('.reply-target');
+    for (var i = targets.length - 1; i >= 0; i--) {
+        var target = targets[i];
+        var usernameEl = target.querySelector('.username');
+        if (usernameEl) {
+            var targetUser = usernameEl.textContent.replace(/:?\s*$/, '').trim().toLowerCase();
+            if (targetUser === cleanName) {
+                return target;
+            }
+        }
+    }
+    return null;
 }
 
 function replyToMsg(target) {
@@ -2954,21 +2979,31 @@ function initReplySystem() {
     // Prepend reply marker before message is sent
     function prependReplyMarker() {
         if (currentReplyData && chatline.value.trim()) {
-            // Create visible text marker that will be sent with the message
-            var marker = '▶ @' + currentReplyData.usernameText + ': ';
-
-            // Only add if not already there
-            if (!chatline.value.startsWith('▶ @')) {
-                chatline.value = marker + chatline.value;
-            }
-
-            // Mark original message with matching color
+            // Get or assign a color for this reply thread
             var sourceMsg = document.getElementById('chat-msg-' + currentReplyData.targetId);
+            var colorIndex = -1;
+
             if (sourceMsg) {
                 sourceMsg.classList.add('reply-target');
-                // Add color class matching the reply color for this user
-                var colorIndex = getReplyColorForUser(currentReplyData.usernameText);
-                sourceMsg.classList.add('reply-color-' + colorIndex);
+                // Check if it already has a color
+                colorIndex = getReplyColorFromElement(sourceMsg);
+                if (colorIndex === -1) {
+                    // Assign a new color
+                    colorIndex = getNextReplyColor();
+                    sourceMsg.classList.add('reply-color-' + colorIndex);
+                }
+            } else {
+                // No source message found, assign a color anyway
+                colorIndex = getNextReplyColor();
+            }
+
+            // Create marker with color embedded: ▶1 @username: (1-6 for readability)
+            var colorNum = colorIndex + 1; // 1-indexed for display
+            var marker = '▶' + colorNum + ' @' + currentReplyData.usernameText + ': ';
+
+            // Only add if not already there
+            if (!chatline.value.startsWith('▶')) {
+                chatline.value = marker + chatline.value;
             }
 
             console.log('[Reply] Added marker:', marker);
@@ -2996,19 +3031,40 @@ function initReplySystem() {
             if ($msg.hasClass('is-reply-message') || $msg.data('reply-checked')) return;
             $msg.data('reply-checked', true);
 
-            // Check if message contains reply marker
+            // Check if message contains reply marker (new format ▶1 @ or old format ▶ @)
             var text = $msg.text();
-            if (text.indexOf('▶ @') !== -1 || text.indexOf('▶ @') !== -1) {
+            if (text.indexOf('▶') !== -1 && text.indexOf('@') !== -1) {
                 $msg.addClass('is-reply-message');
 
-                // Extract username from reply marker to assign color
-                // Format: "▶ @username:" or similar
-                var match = text.match(/▶\s*@([^:]+):/);
-                if (match && match[1]) {
-                    var replyToUser = match[1].trim();
-                    var colorIndex = getReplyColorForUser(replyToUser);
-                    $msg.addClass('reply-color-' + colorIndex);
+                var colorIndex = -1;
+
+                // Try new format first: ▶1 @username: (color embedded)
+                var newMatch = text.match(/▶(\d)\s*@/);
+                if (newMatch && newMatch[1]) {
+                    colorIndex = parseInt(newMatch[1], 10) - 1; // Convert 1-6 to 0-5
+                    if (colorIndex < 0 || colorIndex >= REPLY_COLORS_COUNT) {
+                        colorIndex = -1; // Invalid, will assign new
+                    }
                 }
+
+                // Fallback: try to find original message by username (old format)
+                if (colorIndex === -1) {
+                    var oldMatch = text.match(/▶\s*@([^:]+):/);
+                    if (oldMatch && oldMatch[1]) {
+                        var replyToUser = oldMatch[1].trim();
+                        var originalMsg = findReplyTargetForUser(replyToUser);
+                        if (originalMsg) {
+                            colorIndex = getReplyColorFromElement(originalMsg);
+                        }
+                    }
+                }
+
+                // If still no color found, assign a new one
+                if (colorIndex === -1) {
+                    colorIndex = getNextReplyColor();
+                }
+
+                $msg.addClass('reply-color-' + colorIndex);
             }
         });
     }
