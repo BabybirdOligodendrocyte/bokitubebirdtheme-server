@@ -3549,7 +3549,7 @@ function initReplySystem() {
 
                 // Fallback: format without style ▶1:abc123 @username: (color + message ID)
                 if (colorIndex === -1) {
-                    var idMatch = text.match(/▶(\d):([a-zA-Z0-9]+)\s*@([^:]+):/);
+                    var idMatch = text.match(/▶(\d+):([a-zA-Z0-9]+)\s*@([^:]+):/);
                     if (idMatch && idMatch[1]) {
                         colorIndex = parseInt(idMatch[1], 10) - 1;
                         if (colorIndex < 0 || colorIndex >= REPLY_COLORS_COUNT) {
@@ -3562,7 +3562,7 @@ function initReplySystem() {
 
                 // Fallback: format without ID ▶1 @username:
                 if (colorIndex === -1) {
-                    var newMatch = text.match(/▶(\d)\s*@([^:]+):/);
+                    var newMatch = text.match(/▶(\d+)\s*@([^:]+):/);
                     if (newMatch && newMatch[1]) {
                         colorIndex = parseInt(newMatch[1], 10) - 1;
                         if (colorIndex < 0 || colorIndex >= REPLY_COLORS_COUNT) {
@@ -3621,6 +3621,9 @@ function initReplySystem() {
                     colorToApply = presetColors[colorIndex];
                 }
 
+                // Always add the color class for chain detection (even with custom styling)
+                $msg.addClass('reply-color-' + colorIndex);
+
                 if (useCustom) {
                     $msg.addClass('reply-custom');
                     // Add animation class if set
@@ -3647,8 +3650,6 @@ function initReplySystem() {
                         $msg[0].style.borderLeftColor = colorToApply;
                         $msg[0].style.background = bgRgba;
                     }
-                } else {
-                    $msg.addClass('reply-color-' + colorIndex);
                 }
 
                 // Hide the reply marker text from the message
@@ -3658,10 +3659,11 @@ function initReplySystem() {
                 while (node = walker.nextNode()) {
                     // Match reply marker patterns and replace
                     var nodeText = node.textContent;
-                    // Pattern: ▶1:abc123:btr @username: or ▶1:abc123 @username: or ▶1 @username: or ▶ @username:
-                    var markerMatch = nodeText.match(/▶\d?:?[a-zA-Z0-9]*:?[a-z0-9]*\s*@[^:]+:/);
+                    // Pattern: ▶11:abc123:btr @username: or ▶1:abc123 @username: or ▶1 @username: or ▶ @username:
+                    // Use \d+ to match 1 or 2 digit color numbers (1-12)
+                    var markerMatch = nodeText.match(/▶\d*:?[a-zA-Z0-9]*:?[a-zA-Z0-9]*\s*@[^:]+:/);
                     if (markerMatch) {
-                        node.textContent = nodeText.replace(/▶\d?:?[a-zA-Z0-9]*:?[a-z0-9]*\s*@[^:]+:\s*/, '');
+                        node.textContent = nodeText.replace(/▶\d*:?[a-zA-Z0-9]*:?[a-zA-Z0-9]*\s*@[^:]+:\s*/, '');
                     }
                 }
 
@@ -3686,9 +3688,10 @@ function initReplySystem() {
         // Helper to apply custom classes to a message element
         function applyCustomClasses(msgEl) {
             msgEl.classList.add('reply-target');
+            // Always add color class for chain detection (even with custom styling)
+            msgEl.classList.add(colorClass);
+
             if (useCustom) {
-                // Remove any existing color classes - custom overrides them
-                removeColorClasses(msgEl);
                 msgEl.classList.add('reply-custom');
                 // Use passed-in styles (from marker) which are visible to all users
                 if (animStyle) {
@@ -3711,11 +3714,6 @@ function initReplySystem() {
                     msgEl.style.setProperty('--custom-reply-glow-color', colorStyle);
                     msgEl.style.borderLeftColor = colorStyle;
                     msgEl.style.background = bgRgba;
-                }
-            } else {
-                // Only add color class if not already custom styled
-                if (!msgEl.classList.contains('reply-custom')) {
-                    msgEl.classList.add(colorClass);
                 }
             }
         }
