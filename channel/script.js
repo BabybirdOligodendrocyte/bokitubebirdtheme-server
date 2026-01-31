@@ -1765,24 +1765,35 @@ $(document).ready(function() {
     // Fix userlist display - with delay to ensure elements exist
     setTimeout(fixUserlistLayout, 1500);
 
-    // Hide Name Color button from external scripts (runs periodically to catch late additions)
+    // Hide Name Color button from external scripts (search everywhere, runs periodically)
     function hideNameColorBtn() {
-        $('#leftcontrols .btn, #leftcontrols button').each(function() {
-            var text = $(this).text().toLowerCase();
-            if (text.indexOf('name') !== -1 && text.indexOf('color') !== -1) {
-                $(this).hide();
+        // Search ALL buttons on the page
+        $('button, .btn, [role="button"]').each(function() {
+            var text = $(this).text().trim().toLowerCase();
+            // Hide if text contains "name color"
+            if (text === 'name color' || text === 'namecolor' ||
+                (text.indexOf('name') !== -1 && text.indexOf('color') !== -1)) {
+                $(this).remove();
             }
-            // Also hide any green-styled buttons in leftcontrols
-            if ($(this).css('background-color') === 'rgb(0, 128, 0)' ||
-                $(this).css('background-color') === 'green' ||
-                $(this).attr('style')?.includes('green')) {
-                $(this).hide();
+        });
+        // Also target by green background anywhere
+        $('#rightcontent button, #rightcontent .btn, #chatheader button, #chatheader .btn').each(function() {
+            var bg = $(this).css('background-color');
+            if (bg === 'rgb(0, 128, 0)' || bg === 'green' || bg === 'rgb(40, 167, 69)' ||
+                $(this).attr('style')?.includes('green') ||
+                $(this).hasClass('btn-success')) {
+                $(this).remove();
             }
         });
     }
     hideNameColorBtn();
+    setTimeout(hideNameColorBtn, 1000);
     setTimeout(hideNameColorBtn, 2000);
-    setTimeout(hideNameColorBtn, 5000);
+    setTimeout(hideNameColorBtn, 4000);
+    // Also observe for dynamically added buttons
+    var btnObserver = new MutationObserver(function() { hideNameColorBtn(); });
+    btnObserver.observe(document.body, { childList: true, subtree: true });
+    setTimeout(function() { btnObserver.disconnect(); }, 10000); // Stop after 10s
 });
 
 function fixUserlistLayout() {

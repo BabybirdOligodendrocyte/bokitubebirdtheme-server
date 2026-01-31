@@ -281,7 +281,15 @@ div.embed-responsive * { max-height: calc(100vh - 50px); }
 }
 
 #leftcontrols::-webkit-scrollbar {
-    height: 4px;
+    display: block !important;
+    height: 6px !important;
+}
+
+/* Ensure form allows full width buttons */
+#rightcontent > form {
+    width: 100% !important;
+    max-width: 100% !important;
+    overflow: visible !important;
 }
 
 #leftcontrols::-webkit-scrollbar-thumb {
