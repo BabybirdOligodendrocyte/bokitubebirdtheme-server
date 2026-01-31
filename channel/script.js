@@ -5504,10 +5504,119 @@ function initMentionAutocomplete() {
 }
 
 /* ========== IMPERSONATION SYSTEM ========== */
-// Store current impersonation target
+// Store current impersonation target and captured styles
 var currentImpersonateTarget = null;
-var currentImpersonateUsernameHtml = null;
-var currentImpersonateMsgStyle = null; // Style from clicked message
+var currentImpersonateUsernameStyle = null; // CSS from username element
+var currentImpersonateMsgStyle = null; // CSS from message body
+var currentImpersonateUsernameClasses = null; // Classes for animations
+
+// Convert inline CSS style to BBCode tags
+// Returns { open: '[tag1][tag2]', close: '[/][/]' }
+function cssToTags(style, classes) {
+    if (!style && !classes) return { open: '', close: '' };
+
+    var open = '';
+    var close = '';
+    style = style || '';
+    classes = classes || '';
+
+    // --- COLOR DETECTION ---
+    // Check for gradient (has background-clip or -webkit-text-fill-color)
+    if (style.indexOf('-webkit-text-fill-color') !== -1 || style.indexOf('background-clip') !== -1) {
+        // Detect which gradient based on colors
+        if (style.indexOf('#ff0000') !== -1 && style.indexOf('#ff7700') !== -1) {
+            open += '[rainbow]'; close = '[/]' + close;
+        } else if (style.indexOf('#ff0000') !== -1 && style.indexOf('#ffaa00') !== -1) {
+            open += '[fire]'; close = '[/]' + close;
+        } else if (style.indexOf('#00ffff') !== -1 && style.indexOf('#0088ff') !== -1) {
+            open += '[ocean]'; close = '[/]' + close;
+        } else if (style.indexOf('#ff6b6b') !== -1 && style.indexOf('#ffa500') !== -1) {
+            open += '[sunset]'; close = '[/]' + close;
+        } else if (style.indexOf('#ff00ff') !== -1 && style.indexOf('#00ffff') !== -1) {
+            open += '[neon]'; close = '[/]' + close;
+        } else if (style.indexOf('#228b22') !== -1 || style.indexOf('#32cd32') !== -1) {
+            open += '[forest]'; close = '[/]' + close;
+        } else if (style.indexOf('#ffd700') !== -1 && style.indexOf('#ffec8b') !== -1) {
+            open += '[gold]'; close = '[/]' + close;
+        } else if (style.indexOf('#e0ffff') !== -1 || style.indexOf('#87ceeb') !== -1) {
+            open += '[ice]'; close = '[/]' + close;
+        }
+    } else {
+        // Check for solid colors
+        var colorMatch = style.match(/(?:^|;)\s*color\s*:\s*([^;]+)/i);
+        if (colorMatch) {
+            var color = colorMatch[1].trim().toLowerCase();
+            // Map color values to tags
+            var colorMap = {
+                'red': 'red', '#ff0000': 'red', '#f00': 'red',
+                'blue': 'blue', '#0000ff': 'blue', '#00f': 'blue', '#55f': 'blue', '#5555ff': 'blue',
+                'green': 'green', '#008000': 'green', '#0f0': 'green', '#00ff00': 'green',
+                'yellow': 'yellow', '#ffff00': 'yellow', '#ff0': 'yellow',
+                'orange': 'orange', '#ffa500': 'orange',
+                'pink': 'pink', '#ffc0cb': 'pink',
+                'lime': 'lime', '#00ff00': 'lime',
+                'aqua': 'aqua', 'cyan': 'aqua', '#00ffff': 'aqua', '#0ff': 'aqua',
+                'violet': 'violet', '#ee82ee': 'violet', 'purple': 'violet',
+                'white': 'white', '#ffffff': 'white', '#fff': 'white',
+                'silver': 'silver', '#c0c0c0': 'silver',
+                'brown': 'brown', '#a52a2a': 'brown',
+                'gold': 'yellow', '#ffd700': 'yellow'
+            };
+            if (colorMap[color]) {
+                open += '[' + colorMap[color] + ']'; close = '[/]' + close;
+            } else if (color.match(/^#[0-9a-f]{3,6}$/i)) {
+                // Custom hex color
+                open += '[' + color + ']'; close = '[/]' + close;
+            }
+        }
+    }
+
+    // --- GLOW DETECTION ---
+    var shadowMatch = style.match(/text-shadow\s*:\s*([^;]+)/i);
+    if (shadowMatch) {
+        var shadow = shadowMatch[1].toLowerCase();
+        // Detect glow color from text-shadow
+        if (shadow.indexOf('#fff') !== -1 || shadow.indexOf('white') !== -1) {
+            open += '[glow-white]'; close = '[/]' + close;
+        } else if (shadow.indexOf('#f00') !== -1 || shadow.indexOf('red') !== -1) {
+            open += '[glow-red]'; close = '[/]' + close;
+        } else if (shadow.indexOf('#00f') !== -1 || shadow.indexOf('blue') !== -1) {
+            open += '[glow-blue]'; close = '[/]' + close;
+        } else if (shadow.indexOf('#0f0') !== -1 || shadow.indexOf('green') !== -1) {
+            open += '[glow-green]'; close = '[/]' + close;
+        } else if (shadow.indexOf('#ffd700') !== -1 || shadow.indexOf('#ffa500') !== -1 || shadow.indexOf('gold') !== -1) {
+            open += '[glow-gold]'; close = '[/]' + close;
+        } else if (shadow.indexOf('#ff69b4') !== -1 || shadow.indexOf('pink') !== -1) {
+            open += '[glow-pink]'; close = '[/]' + close;
+        }
+    }
+
+    // --- ANIMATION DETECTION (from classes) ---
+    if (classes) {
+        var animMatch = classes.match(/text-(shake|pulse|bounce|wave|flicker|spin)/);
+        if (animMatch) {
+            open += '[' + animMatch[1] + ']'; close = '[/]' + close;
+        }
+    }
+
+    // --- TEXT FORMATTING ---
+    if (style.indexOf('font-weight') !== -1 && style.indexOf('bold') !== -1) {
+        open += '[b]'; close = '[/]' + close;
+    }
+    if (style.indexOf('font-style') !== -1 && style.indexOf('italic') !== -1) {
+        open += '[i]'; close = '[/]' + close;
+    }
+    if (style.indexOf('text-decoration') !== -1) {
+        if (style.indexOf('underline') !== -1) {
+            open += '[u]'; close = '[/]' + close;
+        }
+        if (style.indexOf('line-through') !== -1) {
+            open += '[s]'; close = '[/]' + close;
+        }
+    }
+
+    return { open: open, close: close };
+}
 
 // Create the impersonation popup
 function createImpersonatePopup() {
@@ -5519,7 +5628,7 @@ function createImpersonatePopup() {
 
     var p = document.createElement('div');
     p.id = 'impersonate-popup';
-    p.innerHTML = '<div id="impersonate-popup-header"><span>🎭 Send As...</span><button class="popup-close" onclick="closeImpersonatePopup()">×</button></div>' +
+    p.innerHTML = '<div id="impersonate-popup-header"><span>Send As...</span><button class="popup-close" onclick="closeImpersonatePopup()">x</button></div>' +
         '<div id="impersonate-popup-body">' +
         '<div id="impersonate-target-display"><div class="target-label">Impersonating:</div><div class="target-name" id="impersonate-target-name"></div></div>' +
         '<textarea id="impersonate-message-input" placeholder="Type your message..."></textarea>' +
@@ -5541,13 +5650,20 @@ function createImpersonatePopup() {
     });
 }
 
-function openImpersonatePopup(username, usernameHtml, msgStyle) {
+var currentImpersonateMsgClasses = null; // Classes for message animations
+
+function openImpersonatePopup(username, usernameStyle, msgStyle, usernameClasses, msgClasses) {
     createImpersonatePopup();
     currentImpersonateTarget = username;
-    currentImpersonateUsernameHtml = usernameHtml || username;
-    currentImpersonateMsgStyle = msgStyle || null;
+    currentImpersonateUsernameStyle = usernameStyle || '';
+    currentImpersonateMsgStyle = msgStyle || '';
+    currentImpersonateUsernameClasses = usernameClasses || '';
+    currentImpersonateMsgClasses = msgClasses || '';
 
-    document.getElementById('impersonate-target-name').innerHTML = currentImpersonateUsernameHtml;
+    // Show styled preview of who we're impersonating
+    var previewStyle = usernameStyle ? ' style="' + usernameStyle + '"' : '';
+    var previewClass = usernameClasses ? ' class="' + usernameClasses + '"' : '';
+    document.getElementById('impersonate-target-name').innerHTML = '<span' + previewStyle + previewClass + '>' + username + '</span>';
     document.getElementById('impersonate-message-input').value = '';
     document.getElementById('impersonate-popup-overlay').classList.add('visible');
 
@@ -5560,8 +5676,10 @@ function closeImpersonatePopup() {
     var o = document.getElementById('impersonate-popup-overlay');
     if (o) o.classList.remove('visible');
     currentImpersonateTarget = null;
-    currentImpersonateUsernameHtml = null;
+    currentImpersonateUsernameStyle = null;
     currentImpersonateMsgStyle = null;
+    currentImpersonateUsernameClasses = null;
+    currentImpersonateMsgClasses = null;
 }
 
 function sendImpersonateMessage() {
@@ -5573,124 +5691,43 @@ function sendImpersonateMessage() {
         return;
     }
 
-    // URL-encode the styles to preserve special chars (shorter than base64)
-    var usernameStyleEnc = encodeURIComponent(currentImpersonateUsernameHtml || '');
-    var msgStyleEnc = encodeURIComponent(currentImpersonateMsgStyle || '');
+    // Convert captured CSS styles to BBCode tags
+    var usernameTags = cssToTags(currentImpersonateUsernameStyle, currentImpersonateUsernameClasses);
+    var msgTags = cssToTags(currentImpersonateMsgStyle, currentImpersonateMsgClasses);
 
-    // Format: 🎭[username|usernameStyle|msgStyle] message
-    var formattedMsg = '🎭[' + currentImpersonateTarget + '|' + usernameStyleEnc + '|' + msgStyleEnc + '] ' + message;
+    // Build the formatted message with tags
+    // Format: [uname]{tags}USERNAME{/tags}[/uname] {msgTags}message{/msgTags}
+    var formattedMsg = '';
 
-    // Send via Cytube's socket
-    if (typeof socket !== 'undefined' && socket.emit) {
-        socket.emit('chatMsg', { msg: formattedMsg });
+    // Add username part with [uname] wrapper if there's styling
+    if (usernameTags.open) {
+        formattedMsg = '[uname]' + usernameTags.open + currentImpersonateTarget + usernameTags.close + '[/uname] ';
     } else {
-        // Fallback: put in chatline and submit
-        var chatline = document.getElementById('chatline');
-        if (chatline) {
-            chatline.value = formattedMsg;
-            var form = document.getElementById('chatform');
-            if (form) {
-                form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
-            }
+        // No username styling - just use [uname] with plain name
+        formattedMsg = '[uname]' + currentImpersonateTarget + '[/uname] ';
+    }
+
+    // Add message with styling tags
+    if (msgTags.open) {
+        formattedMsg += msgTags.open + message + msgTags.close;
+    } else {
+        formattedMsg += message;
+    }
+
+    // Send via chatline (let the normal form submission handle it)
+    var chatline = document.getElementById('chatline');
+    if (chatline) {
+        chatline.value = formattedMsg;
+        // Trigger send via form submission
+        var form = document.getElementById('chatform');
+        if (form) {
+            // Dispatch a submit event
+            var submitEvent = new Event('submit', { bubbles: true, cancelable: true });
+            form.dispatchEvent(submitEvent);
         }
     }
 
     closeImpersonatePopup();
-}
-
-// Style impersonation messages when they appear
-function styleImpersonateMessages() {
-    $('#messagebuffer > div').each(function() {
-        var $msg = $(this);
-        // Skip if already processed
-        if ($msg.data('impersonate-styled')) return;
-
-        // Check for impersonation marker
-        var text = $msg.text();
-        if (text.indexOf('🎭[') === -1) return;
-
-        // Mark as processed
-        $msg.data('impersonate-styled', true);
-
-        // Find the message content and replace marker
-        var $spans = $msg.find('span');
-        $spans.each(function() {
-            var $span = $(this);
-            var html = $span.html();
-            if (!html || html.indexOf('🎭[') === -1) return;
-
-            // Parse: 🎭[username|usernameStyle|msgStyle] message
-            var markerMatch = html.match(/🎭\[([^|\]]+)\|([^|\]]*)\|([^\]]*)\]\s*([\s\S]*)/);
-            if (!markerMatch) {
-                // Fallback for old format: 🎭[username] message
-                var oldMatch = html.match(/🎭\[([^\]]+)\]\s*([\s\S]*)/);
-                if (oldMatch) {
-                    var username = oldMatch[1];
-                    var messageText = oldMatch[2];
-                    var newHtml = '<span class="username">' + username + ': </span> ' + messageText;
-                    $span.html(newHtml);
-                }
-                return;
-            }
-
-            var username = markerMatch[1];
-            var usernameStyleEnc = markerMatch[2];
-            var msgStyleEnc = markerMatch[3];
-            var messageText = markerMatch[4];
-
-            // Decode username style
-            var usernameStyle = '';
-            if (usernameStyleEnc) {
-                try {
-                    usernameStyle = decodeURIComponent(usernameStyleEnc);
-                } catch(e) {}
-            }
-
-            // Decode message style
-            var msgStyle = '';
-            if (msgStyleEnc) {
-                try {
-                    msgStyle = decodeURIComponent(msgStyleEnc);
-                } catch(e) {}
-            }
-
-            // Build styled username
-            var styledUsernameHtml = '<span class="username"';
-            if (usernameStyle) {
-                styledUsernameHtml += ' style="' + usernameStyle + '"';
-            }
-            styledUsernameHtml += '>' + username + ': </span>';
-
-            // Build styled message
-            var styledMessage = messageText;
-            if (msgStyle) {
-                styledMessage = '<span style="' + msgStyle + '">' + messageText + '</span>';
-            }
-
-            var newHtml = styledUsernameHtml + ' ' + styledMessage;
-            $span.html(newHtml);
-        });
-    });
-}
-
-// Initialize impersonation message styling observer
-function initImpersonateObserver() {
-    // Initial styling
-    styleImpersonateMessages();
-
-    // Watch for new messages
-    var observer = new MutationObserver(function(mutations) {
-        mutations.forEach(function(mutation) {
-            if (mutation.addedNodes.length > 0) {
-                setTimeout(styleImpersonateMessages, 50);
-            }
-        });
-    });
-
-    var msgBuffer = document.getElementById('messagebuffer');
-    if (msgBuffer) {
-        observer.observe(msgBuffer, { childList: true });
-    }
 }
 
 // Click username in chat to mention, Shift+Click to impersonate
@@ -5732,12 +5769,16 @@ function initClickToMention() {
             e.preventDefault();
             e.stopPropagation();
 
-            // Get username style (from the element itself or child spans)
+            // Get username style and classes (from the element itself or child spans)
             var usernameStyle = usernameEl.getAttribute('style') || '';
+            var usernameClasses = usernameEl.className || '';
             if (!usernameStyle) {
                 // Check for styled spans inside
                 var styledChild = usernameEl.querySelector('span[style]');
-                if (styledChild) usernameStyle = styledChild.getAttribute('style') || '';
+                if (styledChild) {
+                    usernameStyle = styledChild.getAttribute('style') || '';
+                    usernameClasses = styledChild.className || '';
+                }
             }
 
             // Find the parent message element to get message styling
@@ -5748,8 +5789,9 @@ function initClickToMention() {
 
             // Extract message styling from THIS specific message
             var msgStyle = '';
+            var msgClasses = '';
             if (msgEl && msgEl.id !== 'messagebuffer') {
-                var spans = msgEl.querySelectorAll('span[style]');
+                var spans = msgEl.querySelectorAll('span[style], span[class*="text-"]');
                 for (var i = 0; i < spans.length; i++) {
                     var span = spans[i];
                     var cls = span.className || '';
@@ -5759,14 +5801,15 @@ function initClickToMention() {
                     if (span.closest('.username, .styled-username')) continue;
                     // Found a styled content span
                     var style = span.getAttribute('style');
-                    if (style && style.length > 0) {
-                        msgStyle = style;
+                    if ((style && style.length > 0) || cls.indexOf('text-') !== -1) {
+                        msgStyle = style || '';
+                        msgClasses = cls;
                         break;
                     }
                 }
             }
 
-            openImpersonatePopup(username, usernameStyle, msgStyle);
+            openImpersonatePopup(username, usernameStyle, msgStyle, usernameClasses, msgClasses);
         } else {
             // Regular click: Add @mention to chatline
             var chatline = document.getElementById('chatline');
@@ -5992,7 +6035,6 @@ $(document).ready(function() {
         initMentionNotifications();
         initIgnoreList();
         initKeyboardShortcuts();
-        initImpersonateObserver();
         addReplyButtonsToExistingMessages();
         addSettingsButton();
 
