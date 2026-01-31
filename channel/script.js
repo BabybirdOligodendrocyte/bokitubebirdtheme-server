@@ -2982,6 +2982,7 @@ function initReplySystem() {
             // Get or assign a color for this reply thread
             var sourceMsg = document.getElementById('chat-msg-' + currentReplyData.targetId);
             var colorIndex = -1;
+            var msgId = currentReplyData.targetId || '';
 
             if (sourceMsg) {
                 sourceMsg.classList.add('reply-target');
@@ -2997,9 +2998,11 @@ function initReplySystem() {
                 colorIndex = getNextReplyColor();
             }
 
-            // Create marker with color embedded: ▶1 @username: (1-6 for readability)
+            // Create marker with color AND message ID: ▶1:abc12 @username:
+            // ID helps other users find the exact message being replied to
             var colorNum = colorIndex + 1; // 1-indexed for display
-            var marker = '▶' + colorNum + ' @' + currentReplyData.usernameText + ': ';
+            var shortId = msgId.substring(0, 6); // First 6 chars of message ID
+            var marker = '▶' + colorNum + ':' + shortId + ' @' + currentReplyData.usernameText + ': ';
 
             // Only add if not already there
             if (!chatline.value.startsWith('▶')) {
@@ -3031,27 +3034,43 @@ function initReplySystem() {
             if ($msg.hasClass('is-reply-message') || $msg.data('reply-checked')) return;
             $msg.data('reply-checked', true);
 
-            // Check if message contains reply marker (new format ▶1 @ or old format ▶ @)
+            // Check if message contains reply marker
             var text = $msg.text();
             if (text.indexOf('▶') !== -1 && text.indexOf('@') !== -1) {
                 $msg.addClass('is-reply-message');
 
                 var colorIndex = -1;
+                var replyToUser = null;
+                var msgIdShort = null;
 
-                // Try new format first: ▶1 @username: (color embedded)
-                var newMatch = text.match(/▶(\d)\s*@/);
-                if (newMatch && newMatch[1]) {
-                    colorIndex = parseInt(newMatch[1], 10) - 1; // Convert 1-6 to 0-5
+                // Try newest format: ▶1:abc123 @username: (color + message ID)
+                var idMatch = text.match(/▶(\d):([a-zA-Z0-9]+)\s*@([^:]+):/);
+                if (idMatch && idMatch[1]) {
+                    colorIndex = parseInt(idMatch[1], 10) - 1;
                     if (colorIndex < 0 || colorIndex >= REPLY_COLORS_COUNT) {
-                        colorIndex = -1; // Invalid, will assign new
+                        colorIndex = -1;
+                    }
+                    msgIdShort = idMatch[2] || null;
+                    replyToUser = idMatch[3] ? idMatch[3].trim() : null;
+                }
+
+                // Fallback: format without ID ▶1 @username:
+                if (colorIndex === -1) {
+                    var newMatch = text.match(/▶(\d)\s*@([^:]+):/);
+                    if (newMatch && newMatch[1]) {
+                        colorIndex = parseInt(newMatch[1], 10) - 1;
+                        if (colorIndex < 0 || colorIndex >= REPLY_COLORS_COUNT) {
+                            colorIndex = -1;
+                        }
+                        replyToUser = newMatch[2] ? newMatch[2].trim() : null;
                     }
                 }
 
-                // Fallback: try to find original message by username (old format)
+                // Fallback: old format ▶ @username:
                 if (colorIndex === -1) {
                     var oldMatch = text.match(/▶\s*@([^:]+):/);
                     if (oldMatch && oldMatch[1]) {
-                        var replyToUser = oldMatch[1].trim();
+                        replyToUser = oldMatch[1].trim();
                         var originalMsg = findReplyTargetForUser(replyToUser);
                         if (originalMsg) {
                             colorIndex = getReplyColorFromElement(originalMsg);
@@ -3065,8 +3084,54 @@ function initReplySystem() {
                 }
 
                 $msg.addClass('reply-color-' + colorIndex);
+
+                // Also mark the original message being replied to (for other users)
+                markOriginalMessage(msgIdShort, replyToUser, colorIndex);
             }
         });
+    }
+
+    // Find and mark the original message being replied to
+    function markOriginalMessage(msgIdShort, username, colorIndex) {
+        var colorClass = 'reply-color-' + colorIndex;
+
+        // First try: find by message ID (most reliable)
+        if (msgIdShort) {
+            var messages = document.querySelectorAll('#messagebuffer > div[id^="chat-msg-"]');
+            for (var i = 0; i < messages.length; i++) {
+                var msg = messages[i];
+                var fullId = msg.id.replace('chat-msg-', '');
+                // Check if the ID starts with our short ID
+                if (fullId.substring(0, msgIdShort.length) === msgIdShort) {
+                    if (!msg.classList.contains(colorClass)) {
+                        msg.classList.add('reply-target');
+                        msg.classList.add(colorClass);
+                    }
+                    return; // Found exact match by ID
+                }
+            }
+        }
+
+        // Fallback: find by username (for old format or if ID not found)
+        if (!username) return;
+        var cleanName = username.toLowerCase().trim();
+        var messages = document.querySelectorAll('#messagebuffer > div');
+        for (var i = messages.length - 1; i >= 0; i--) {
+            var msg = messages[i];
+            if (msg.classList.contains('is-reply-message')) continue;
+
+            var usernameEl = msg.querySelector('.username');
+            if (usernameEl) {
+                var msgUser = usernameEl.textContent.replace(/:?\s*$/, '').trim().toLowerCase();
+                if (msgUser === cleanName) {
+                    if (!msg.classList.contains(colorClass)) {
+                        msg.classList.add('reply-target');
+                        msg.classList.add(colorClass);
+                    }
+                    return;
+                }
+            }
+        }
     }
 
     // Run on existing messages
