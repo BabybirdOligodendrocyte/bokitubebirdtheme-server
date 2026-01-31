@@ -3354,13 +3354,17 @@ function initReplySystem() {
             // Get or assign a color for this reply thread
             var sourceMsg = document.getElementById('chat-msg-' + currentReplyData.targetId);
             var colorIndex = -1;
+            var existingChainColor = false; // Track if color came from existing chain
             var msgId = currentReplyData.targetId || '';
 
             if (sourceMsg) {
                 sourceMsg.classList.add('reply-target');
-                // Check if it already has a color
+                // Check if it already has a color (from being replied to OR from being a reply itself)
                 colorIndex = getReplyColorFromElement(sourceMsg);
-                if (colorIndex === -1) {
+                if (colorIndex !== -1) {
+                    // Chain already has a color - preserve it
+                    existingChainColor = true;
+                } else {
                     // Assign a new color
                     colorIndex = getNextReplyColor();
                     sourceMsg.classList.add('reply-color-' + colorIndex);
@@ -3400,20 +3404,24 @@ function initReplySystem() {
                     radiusCode = radiusMap[replyStyleSettings.borderRadius];
                 }
 
-                // Find which preset color the user selected to use as the main color index
-                var presetColors = ['#8F6409','#0D8F8F','#7B4B9E','#A34D4D','#4A8F4A','#4A6FA5','#9E4B7B','#B37400','#3D9EAA','#6B8F2E','#B36666','#5B5BAA'];
-                var userColor = (replyStyleSettings.borderColor || '#8F6409').toUpperCase();
-                var userColorIdx = presetColors.findIndex(function(c) { return c.toUpperCase() === userColor; });
-                if (userColorIdx >= 0) {
-                    customColorIndex = userColorIdx;
+                // Only use custom color if this is a NEW chain (not an existing one)
+                // Existing chains keep their color for consistency
+                if (!existingChainColor) {
+                    // Find which preset color the user selected to use as the main color index
+                    var presetColors = ['#8F6409','#0D8F8F','#7B4B9E','#A34D4D','#4A8F4A','#4A6FA5','#9E4B7B','#B37400','#3D9EAA','#6B8F2E','#B36666','#5B5BAA'];
+                    var userColor = (replyStyleSettings.borderColor || '#8F6409').toUpperCase();
+                    var userColorIdx = presetColors.findIndex(function(c) { return c.toUpperCase() === userColor; });
+                    if (userColorIdx >= 0) {
+                        customColorIndex = userColorIdx;
+                    }
                 }
 
                 styleCode = ':' + animCode + borderCode + radiusCode;
             }
 
-            // Create marker - use customColorIndex (user's color) if custom styling, else colorIndex (cycling)
+            // Create marker - use existing chain color if present, otherwise use custom/cycling color
             // Format: ▶colorNum:msgId:styleCode @username:
-            var finalColorIndex = replyStyleSettings.enabled ? customColorIndex : colorIndex;
+            var finalColorIndex = existingChainColor ? colorIndex : (replyStyleSettings.enabled ? customColorIndex : colorIndex);
             var colorNum = finalColorIndex + 1; // 1-indexed for display
             var shortId = msgId.substring(0, 6); // First 6 chars of message ID
             var marker = '▶' + colorNum + ':' + shortId + styleCode + ' @' + currentReplyData.usernameText + ': ';
