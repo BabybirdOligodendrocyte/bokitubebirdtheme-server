@@ -2836,10 +2836,7 @@ function cancelReply() {
     if (indicator) indicator.style.display = 'none';
 }
 
-// Pending reply to attach to next sent message
-var pendingReply = null;
-
-// Initialize reply system
+// Initialize reply system - prepend text marker to message
 function initReplySystem() {
     var form = document.getElementById('formline');
     var chatline = document.getElementById('chatline');
@@ -2848,77 +2845,41 @@ function initReplySystem() {
         return;
     }
 
-    // Store reply data before message is sent
-    function captureReply() {
+    console.log('[Reply] System initialized');
+
+    // Prepend reply marker before message is sent
+    function prependReplyMarker() {
         if (currentReplyData && chatline.value.trim()) {
-            pendingReply = {
-                targetId: currentReplyData.targetId,
-                usernameHtml: currentReplyData.usernameHtml,
-                usernameText: currentReplyData.usernameText,
-                msgPreview: currentReplyData.msgPreview
-            };
+            // Create visible text marker that will be sent with the message
+            var marker = '▶ @' + currentReplyData.usernameText + ': ';
+
+            // Only add if not already there
+            if (!chatline.value.startsWith('▶ @')) {
+                chatline.value = marker + chatline.value;
+            }
+
+            // Mark original message
+            var sourceMsg = document.getElementById('chat-msg-' + currentReplyData.targetId);
+            if (sourceMsg) {
+                sourceMsg.classList.add('reply-target');
+            }
+
+            console.log('[Reply] Added marker:', marker);
             cancelReply();
         }
     }
 
-    // Intercept Enter key
+    // Intercept Enter key - capture phase to run before Cytube
     chatline.addEventListener('keydown', function(e) {
         if ((e.key === 'Enter' || e.keyCode === 13) && !e.shiftKey) {
-            captureReply();
+            prependReplyMarker();
         }
     }, true);
 
-    // Hook form submit
+    // Also hook form submit
     form.addEventListener('submit', function(e) {
-        captureReply();
+        prependReplyMarker();
     }, true);
-
-    // Watch for new messages to attach reply display
-    var msgObserver = new MutationObserver(function(mutations) {
-        mutations.forEach(function(mutation) {
-            mutation.addedNodes.forEach(function(node) {
-                if (node.nodeType === 1 && node.classList && node.closest && node.closest('#messagebuffer')) {
-                    // Check if this is our message and we have a pending reply
-                    if (pendingReply) {
-                        var myUsername = (typeof CLIENT !== 'undefined' && CLIENT.name) ? CLIENT.name : '';
-                        var msgUsername = node.querySelector('.username');
-                        if (msgUsername && msgUsername.textContent.replace(/:$/, '').trim() === myUsername) {
-                            // This is our message - attach the reply
-                            attachReplyToMessage(node, pendingReply);
-                            pendingReply = null;
-                        }
-                    }
-                }
-            });
-        });
-    });
-
-    var msgBuffer = document.getElementById('messagebuffer');
-    if (msgBuffer) {
-        msgObserver.observe(msgBuffer, { childList: true, subtree: false });
-    }
-}
-
-function attachReplyToMessage(msgElement, replyData) {
-    // Create reply quote box
-    var replyBox = document.createElement('div');
-    replyBox.className = 'inline-reply';
-    replyBox.onclick = function() { scrollReply(replyData.targetId); };
-    replyBox.innerHTML = '<span class="inline-reply-icon">↩</span>' +
-        '<span class="inline-reply-user">' + replyData.usernameHtml + '</span>' +
-        '<span class="inline-reply-msg">' + replyData.msgPreview + '</span>';
-
-    // Insert at the beginning of the message
-    msgElement.insertBefore(replyBox, msgElement.firstChild);
-
-    // Add class to show this is a reply
-    msgElement.classList.add('has-reply');
-
-    // Also highlight the original message subtly
-    var sourceMsg = document.getElementById('chat-msg-' + replyData.targetId);
-    if (sourceMsg) {
-        sourceMsg.classList.add('reply-target');
-    }
 }
 
 // Initialize on load
