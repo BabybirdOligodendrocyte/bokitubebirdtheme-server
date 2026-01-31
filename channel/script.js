@@ -207,18 +207,20 @@ var usernameStyleSettings = JSON.parse(localStorage.getItem('usernameStyleSettin
     var s = document.createElement('style');
     s.id = 'custom-popup-styles';
     s.textContent = `
-        /* FIX: Button overflow in leftcontrols */
+        /* FIX: Button layout in leftcontrols */
         #leftcontrols {
             display: flex !important;
             flex-wrap: wrap !important;
-            gap: 4px !important;
-            padding: 5px !important;
+            gap: 2px !important;
+            padding: 3px 4px !important;
             align-items: center !important;
             justify-content: flex-start !important;
         }
         #leftcontrols .btn {
-            flex-shrink: 0 !important;
-            margin: 2px !important;
+            flex: 0 1 auto !important;
+            margin: 1px !important;
+            padding: 3px 6px !important;
+            font-size: 11px !important;
         }
         
         #emote-popup-overlay, #textstyle-popup-overlay, #filter-popup-overlay {
@@ -3433,38 +3435,22 @@ window.resetRename = resetRename;
             }
             
             #column-resize-handle {
-                width: 6px !important;
-                background: rgba(100, 100, 100, 0.3) !important;
+                width: 8px !important;
+                background: transparent !important;
                 cursor: col-resize !important;
                 flex-shrink: 0 !important;
-                transition: background 0.2s !important;
                 position: relative !important;
                 z-index: 1000 !important;
+                margin: 0 -4px !important;
             }
-            
-            #column-resize-handle:hover {
-                background: rgba(150, 150, 150, 0.6) !important;
-            }
-            
-            #column-resize-handle:active,
-            #column-resize-handle.resizing {
-                background: rgba(200, 200, 200, 0.8) !important;
-            }
-            
-            #column-resize-handle::after {
-                content: '⋮' !important;
-                position: absolute !important;
-                top: 50% !important;
-                left: 50% !important;
-                transform: translate(-50%, -50%) !important;
-                color: rgba(255, 255, 255, 0.4) !important;
-                font-size: 18px !important;
-                pointer-events: none !important;
-            }
-            
+
             body.col-resizing {
                 cursor: col-resize !important;
                 user-select: none !important;
+            }
+
+            body.col-resizing * {
+                cursor: col-resize !important;
             }
         }
     `;

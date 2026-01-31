@@ -252,22 +252,22 @@ div.embed-responsive * { max-height: calc(100vh - 50px); }
     background-color: var(--primarycolor);
     display: flex;
     flex-wrap: wrap;
-    gap: 3px;
-    padding: 4px 6px;
-    min-height: 38px;
+    gap: 2px;
+    padding: 3px 4px;
+    min-height: 32px;
     width: 100%;
     box-sizing: border-box;
     align-items: center;
     justify-content: flex-start;
-    overflow: hidden;
 }
 
 #leftcontrols .btn {
-    flex-shrink: 1;
+    flex: 0 1 auto;
     margin: 1px;
-    padding: 4px 8px;
-    font-size: 12px;
+    padding: 3px 6px;
+    font-size: 11px;
     white-space: nowrap;
+    min-width: fit-content;
 }
 
 .btn { background-image: none; background-color: var(--tertiarycolor); }
