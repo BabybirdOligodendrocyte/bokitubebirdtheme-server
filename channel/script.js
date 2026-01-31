@@ -3371,14 +3371,16 @@ function initReplySystem() {
             }
 
             // Build style code if custom styling is enabled
-            // Format: XYZC where X=animation, Y=border style, Z=border radius, C=color index
+            // Format: XYZ where X=animation, Y=border style, Z=border radius
             // Uses 0 for "none/default"
+            // Color is determined by the main color index (first number in marker)
             var styleCode = '';
+            var customColorIndex = colorIndex; // Default to cycling color
+
             if (replyStyleSettings.enabled) {
                 var animCode = '0';
                 var borderCode = '0';
                 var radiusCode = '0';
-                var colorCode = '0';
 
                 // Animation codes: g=glow, p=pulse, s=shimmer, b=breathe, w=rainbow, n=neon, f=flash, l=slide
                 var animMap = {glow:'g', pulse:'p', shimmer:'s', breathe:'b', rainbow:'w', neon:'n', flash:'f', slide:'l'};
@@ -3398,29 +3400,21 @@ function initReplySystem() {
                     radiusCode = radiusMap[replyStyleSettings.borderRadius];
                 }
 
-                // Color code: Find which preset color matches, or use hex encoding
-                // Preset colors array (same order as in Reply tab)
+                // Find which preset color the user selected to use as the main color index
                 var presetColors = ['#8F6409','#0D8F8F','#7B4B9E','#A34D4D','#4A8F4A','#4A6FA5','#9E4B7B','#B37400','#3D9EAA','#6B8F2E','#B36666','#5B5BAA'];
                 var userColor = (replyStyleSettings.borderColor || '#8F6409').toUpperCase();
-                var colorIdx = presetColors.findIndex(function(c) { return c.toUpperCase() === userColor; });
-                if (colorIdx >= 0 && colorIdx <= 9) {
-                    colorCode = String(colorIdx);
-                } else if (colorIdx === 10) {
-                    colorCode = 'a';
-                } else if (colorIdx === 11) {
-                    colorCode = 'b';
-                } else {
-                    // Custom color - encode as 'x' followed by hex (without #)
-                    colorCode = 'x' + userColor.replace('#', '');
+                var userColorIdx = presetColors.findIndex(function(c) { return c.toUpperCase() === userColor; });
+                if (userColorIdx >= 0) {
+                    customColorIndex = userColorIdx;
                 }
 
-                styleCode = ':' + animCode + borderCode + radiusCode + colorCode;
+                styleCode = ':' + animCode + borderCode + radiusCode;
             }
 
-            // Create marker with color, message ID, and style code: ▶1:abc12:btr @username:
-            // ID helps other users find the exact message being replied to
-            // Style code lets other users see the same custom styling
-            var colorNum = colorIndex + 1; // 1-indexed for display
+            // Create marker - use customColorIndex (user's color) if custom styling, else colorIndex (cycling)
+            // Format: ▶colorNum:msgId:styleCode @username:
+            var finalColorIndex = replyStyleSettings.enabled ? customColorIndex : colorIndex;
+            var colorNum = finalColorIndex + 1; // 1-indexed for display
             var shortId = msgId.substring(0, 6); // First 6 chars of message ID
             var marker = '▶' + colorNum + ':' + shortId + styleCode + ' @' + currentReplyData.usernameText + ': ';
 
@@ -3534,34 +3528,17 @@ function initReplySystem() {
                 var isOwnMessage = currentUser && msgUsername.toLowerCase() === currentUser.toLowerCase();
 
                 // Decode style from marker (applies to ALL users viewing the message)
-                var markerAnim = null, markerBorder = null, markerRadius = null, markerColor = null;
+                // Style code is 3 chars: animation, border style, border radius
+                // Color comes from the main colorIndex in the marker (first number)
+                var markerAnim = null, markerBorder = null, markerRadius = null;
                 if (styleCode && styleCode.length >= 3) {
                     markerAnim = animDecode[styleCode[0]] || null;
                     markerBorder = borderDecode[styleCode[1]] || null;
                     markerRadius = radiusDecode[styleCode[2]] || null;
-
-                    // Decode color (4th character onwards)
-                    if (styleCode.length >= 4) {
-                        var colorPart = styleCode.substring(3);
-                        if (colorPart[0] === 'x' && colorPart.length === 7) {
-                            // Custom hex color: xFFFFFF
-                            markerColor = '#' + colorPart.substring(1);
-                        } else if (colorPart[0] === 'a') {
-                            markerColor = presetColors[10]; // Salmon
-                        } else if (colorPart[0] === 'b') {
-                            markerColor = presetColors[11]; // Indigo
-                        } else {
-                            var cIdx = parseInt(colorPart[0], 10);
-                            if (!isNaN(cIdx) && cIdx >= 0 && cIdx <= 9) {
-                                markerColor = presetColors[cIdx];
-                            }
-                        }
-                    }
                 }
 
-                // Check if style code indicates custom styling (has any non-zero values)
-                var hasMarkerStyle = styleCode && styleCode.length >= 4 && !/^0+$/.test(styleCode);
-                console.log('[Reply] styleCode:', styleCode, 'hasMarkerStyle:', hasMarkerStyle, 'markerColor:', markerColor);
+                // Check if style code indicates custom styling (has any non-zero values in first 3 chars)
+                var hasMarkerStyle = styleCode && styleCode.length >= 3 && !/^0{3}/.test(styleCode);
 
                 // Use marker style if present, otherwise fall back to local settings for own messages
                 var useCustom = hasMarkerStyle || (isOwnMessage && replyStyleSettings.enabled);
@@ -3569,7 +3546,12 @@ function initReplySystem() {
                 var animToApply = markerAnim || (isOwnMessage && replyStyleSettings.enabled ? replyStyleSettings.animation : null);
                 var borderToApply = markerBorder || (isOwnMessage && replyStyleSettings.enabled ? replyStyleSettings.borderStyle : null);
                 var radiusToApply = markerRadius || (isOwnMessage && replyStyleSettings.enabled ? replyStyleSettings.borderRadius : null);
-                var colorToApply = markerColor || (isOwnMessage && replyStyleSettings.enabled ? replyStyleSettings.borderColor : null);
+
+                // Color comes from the colorIndex (first number in marker) - use preset colors
+                var colorToApply = null;
+                if (useCustom && colorIndex >= 0 && colorIndex < presetColors.length) {
+                    colorToApply = presetColors[colorIndex];
+                }
 
                 if (useCustom) {
                     $msg.addClass('reply-custom');
@@ -3585,13 +3567,11 @@ function initReplySystem() {
                     if (radiusToApply) {
                         $msg.addClass('reply-' + radiusToApply);
                     }
-                    // Apply color directly as inline style (so all users see same color)
+                    // Apply color from preset (derived from colorIndex in marker)
                     if (colorToApply) {
-                        var bgColor = colorToApply;
-                        // Convert hex to rgba for background
-                        var r = parseInt(bgColor.slice(1,3), 16);
-                        var g = parseInt(bgColor.slice(3,5), 16);
-                        var b = parseInt(bgColor.slice(5,7), 16);
+                        var r = parseInt(colorToApply.slice(1,3), 16);
+                        var g = parseInt(colorToApply.slice(3,5), 16);
+                        var b = parseInt(colorToApply.slice(5,7), 16);
                         var bgRgba = 'rgba(' + r + ',' + g + ',' + b + ',0.15)';
                         $msg[0].style.setProperty('--custom-reply-color', colorToApply);
                         $msg[0].style.setProperty('--custom-reply-bg', bgRgba);
