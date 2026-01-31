@@ -448,3 +448,64 @@ if (tab === 'message') {
 - `replyStyleSettings` - Custom reply styling preferences
 - `emoteFavorites` - Array of favorite emote names
 - `playlistCustomNames` - Custom names for playlist items
+
+### Reply Chain Color/Style Persistence (2026-01)
+
+**Problem:** Reply chains would change color/styling when different users replied, instead of maintaining the original chain's appearance.
+
+**Root Causes & Fixes:**
+
+1. **Regex patterns for multi-digit color numbers**
+   - Color numbers range from 1-12 (can be 2 digits)
+   - **Wrong:** `\d?` or `\d` (matches 0-1 or exactly 1 digit)
+   - **Correct:** `\d+` or `\d*` (matches 1+ or 0+ digits)
+   - Affected: marker parsing regexes AND marker hiding regexes
+
+2. **Always add `reply-color-*` class for chain detection**
+   - Custom-styled messages were only getting inline styles, no color class
+   - `getReplyColorFromElement()` checks for `reply-color-*` classes
+   - Without the class, chain detection fails and assigns a new color
+   - **Fix:** Always add `reply-color-*` class, even when applying custom inline styles
+
+3. **Don't remove color classes when applying custom styling**
+   - `markOriginalMessage()` was calling `removeColorClasses()` before custom styling
+   - This broke chain detection for subsequent replies
+   - **Fix:** Remove the `removeColorClasses()` call, always preserve color class
+
+**Key Functions for Chain Detection:**
+- `getReplyColorFromElement(el)` - Checks for `reply-color-0` through `reply-color-11` classes
+- `getReplyStyleFromElement(el)` - Extracts animation, border, radius from classes
+- `prependReplyMarker()` - Creates marker, checks for existing chain style first
+
+**Chain Detection Flow:**
+```
+1. User clicks reply on a message
+2. prependReplyMarker() runs before message is sent
+3. Check source message for existing color: getReplyColorFromElement(sourceMsg)
+4. Check source message for existing style: getReplyStyleFromElement(sourceMsg)
+5. If chain has existing style → use it (preserve chain consistency)
+6. If new chain → use user's custom style OR next cycling color
+7. Build marker with color index and style codes
+```
+
+**Marker Format:**
+```
+▶{colorNum}:{msgIdShort}:{styleCode} @{username}: {message}
+
+Examples:
+▶1:abc123 @user:           - Color 1, no custom style
+▶11:abc123:p0r @user:      - Color 11, pulse animation, rounded border
+▶3:abc123:gt0 @user:       - Color 3, glow animation, thick border
+```
+
+**Style Code Format (3 characters):**
+- Char 1 - Animation: `g`=glow, `p`=pulse, `s`=shimmer, `b`=breathe, `w`=rainbow, `n`=neon, `f`=flash, `l`=slide, `0`=none
+- Char 2 - Border: `t`=thick, `d`=double, `o`=dotted, `a`=dashed, `0`=none
+- Char 3 - Radius: `r`=rounded, `p`=pill, `0`=none
+
+**Marker Hiding Regex:**
+```javascript
+// Must use \d* to match 0+ digits (handles 1-12 and legacy formats)
+/▶\d*:?[a-zA-Z0-9]*:?[a-zA-Z0-9]*\s*@[^:]+:/
+```
+
