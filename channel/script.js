@@ -5605,14 +5605,83 @@ function styleImpersonateMessages() {
         var match = text.match(/🎭\[([^\]]+)\]/);
         if (!match) return;
 
-        // Find the message content and clean up the marker - perfect impersonation
+        var impersonatedUser = match[1];
+
+        // Find the impersonated user's styling from their messages in chat
+        var styledUsernameHtml = null;
+        var messageStyleTags = null; // Opening tags for message styling
+        var messageStyleCloseTags = null; // Closing tags
+
+        $('#messagebuffer > div').each(function() {
+            var $otherMsg = $(this);
+            if ($otherMsg.data('impersonate-checked')) return; // Skip impersonation messages
+
+            // Look for .styled-username or .username that matches
+            var $styledName = $otherMsg.find('.styled-username');
+            var $plainName = $otherMsg.find('.username');
+            var foundUser = false;
+
+            if ($styledName.length > 0) {
+                var nameText = $styledName.text().replace(/:$/, '').trim();
+                if (nameText.toLowerCase() === impersonatedUser.toLowerCase()) {
+                    styledUsernameHtml = $styledName.prop('outerHTML');
+                    foundUser = true;
+                }
+            }
+            if (!styledUsernameHtml && $plainName.length > 0) {
+                var nameText = $plainName.text().replace(/:$/, '').trim();
+                if (nameText.toLowerCase() === impersonatedUser.toLowerCase()) {
+                    styledUsernameHtml = $plainName.prop('outerHTML');
+                    foundUser = true;
+                }
+            }
+
+            // If we found the user, also get their message styling
+            if (foundUser) {
+                // Find the message content span (not username, not timestamp)
+                var $contentSpans = $otherMsg.find('span').not('.username, .styled-username, .timestamp, [class*="username"]');
+                if ($contentSpans.length > 0) {
+                    // Get the outermost styled span
+                    var $contentSpan = $contentSpans.last();
+                    // Check if it has styling (inline style or classes that indicate styling)
+                    var style = $contentSpan.attr('style');
+                    var classes = $contentSpan.attr('class');
+                    if (style || (classes && classes.length > 0)) {
+                        // Build opening and closing tags
+                        var tagName = $contentSpan.prop('tagName').toLowerCase();
+                        messageStyleTags = '<' + tagName;
+                        if (classes) messageStyleTags += ' class="' + classes + '"';
+                        if (style) messageStyleTags += ' style="' + style + '"';
+                        messageStyleTags += '>';
+                        messageStyleCloseTags = '</' + tagName + '>';
+                    }
+                }
+                return false; // break
+            }
+        });
+
+        // Fallback if user not found in chat
+        if (!styledUsernameHtml) {
+            styledUsernameHtml = '<span class="username">' + impersonatedUser + ': </span>';
+        }
+
+        // Find the message content and replace marker with styled username + styled message
         var $spans = $msg.find('span');
         $spans.each(function() {
             var $span = $(this);
             var html = $span.html();
             if (html && html.indexOf('🎭[') !== -1) {
-                // Replace the marker with just the username - looks like real message
-                var newHtml = html.replace(/🎭\[([^\]]+)\]\s*/, '<strong>$1:</strong> ');
+                // Extract the message text (everything after the marker)
+                var msgMatch = html.match(/🎭\[[^\]]+\]\s*(.*)/);
+                var messageText = msgMatch ? msgMatch[1] : '';
+
+                // Apply styling: styledUsername + styledMessage
+                var styledMessage = messageText;
+                if (messageStyleTags && messageStyleCloseTags) {
+                    styledMessage = messageStyleTags + messageText + messageStyleCloseTags;
+                }
+
+                var newHtml = styledUsernameHtml + ' ' + styledMessage;
                 $span.html(newHtml);
             }
         });
