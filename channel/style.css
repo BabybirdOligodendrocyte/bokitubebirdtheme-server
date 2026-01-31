@@ -210,13 +210,13 @@ div.embed-responsive * { max-height: calc(100vh - 50px); }
 
 #messagebuffer > div {
     position: relative;
-    border-radius: 0.5rem;
-    padding: 0.2rem;
-    padding-right: 5rem;
-    margin-bottom: 10px;
+    border-radius: 0.25rem;
+    padding: 0.15rem 0.3rem;
+    padding-right: 4rem;
+    margin-bottom: 4px;
 }
 
-#messagebuffer > div:last-child { padding-bottom: 0; margin-bottom: 1.25rem; }
+#messagebuffer > div:last-child { padding-bottom: 0; margin-bottom: 0.5rem; }
 .server-whisper { padding-left: 100px; padding-bottom: 0px; }
 .server-msg-disconnect, .server-msg-reconnect { padding-bottom: 0px !important; border-radius: 6px; }
 .label { display: flex; }
@@ -224,9 +224,10 @@ div.embed-responsive * { max-height: calc(100vh - 50px); }
 
 .timestamp {
     position: absolute;
-    top: 0.6rem;
-    right: 0;
-    color: rgb(143, 143, 143);
+    top: 0.15rem;
+    right: 0.3rem;
+    color: rgb(120, 120, 120);
+    font-size: 11px;
     visibility: visible;
 }
 
@@ -251,18 +252,22 @@ div.embed-responsive * { max-height: calc(100vh - 50px); }
     background-color: var(--primarycolor);
     display: flex;
     flex-wrap: wrap;
-    gap: 4px;
-    padding: 6px;
-    min-height: 42px;
-    width: inherit;
-    min-width: inherit;
+    gap: 3px;
+    padding: 4px 6px;
+    min-height: 38px;
+    width: 100%;
+    box-sizing: border-box;
     align-items: center;
     justify-content: flex-start;
+    overflow: hidden;
 }
 
 #leftcontrols .btn {
-    flex-shrink: 0;
-    margin: 2px;
+    flex-shrink: 1;
+    margin: 1px;
+    padding: 4px 8px;
+    font-size: 12px;
+    white-space: nowrap;
 }
 
 .btn { background-image: none; background-color: var(--tertiarycolor); }

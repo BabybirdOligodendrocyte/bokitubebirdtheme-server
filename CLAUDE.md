@@ -212,6 +212,7 @@ All popups follow a consistent pattern:
 - `textStyleSettings` - Object with text styling preferences
 - `usernameStyleSettings` - Object with username styling preferences
 - `playlistCustomNames` - Object mapping playlist items to custom names
+- `cytube_column_width` - Saved video/chat column width percentage (e.g., "75.5%")
 
 ### Event Interception
 
@@ -245,6 +246,33 @@ document.getElementById('chatline').addEventListener('keydown', function(e) {
 3. **No Error Handling:** Many functions lack try-catch
 4. **Global Scope:** Heavy use of global variables
 5. **jQuery Dependency:** Relies on Cytube providing jQuery
+
+## Recent Fixes (2026-01)
+
+### Column Resizer Fix
+- **Issue:** Video resize slider didn't move the chat panel - only the video resized
+- **Cause:** `#rightcontent` had `position: fixed` which prevented flexbox from working
+- **Fix:** Added `position: relative !important` override in resizer CSS, removed duplicate resizer code
+- **File:** `channel/script.js` lines ~3374-3570
+
+### Chat Spacing Improvements
+- **Issue:** Chat messages had excessive spacing, not minimalist
+- **Fix:** Reduced message margin from 10px to 4px, reduced padding, smaller timestamps
+- **File:** `channel/style.css` - `#messagebuffer > div` and `.timestamp` rules
+
+### Button Overflow Fix
+- **Issue:** Chat control buttons were pushed off screen on narrow widths
+- **Fix:** Added `flex-shrink: 1`, smaller padding, `overflow: hidden` on container
+- **File:** `channel/style.css` - `#leftcontrols` rules
+
+### Scroll-to-Current Bounce Fix
+- **Issue:** "Scroll to current" button caused playlist to bounce around
+- **Cause:** Socket events triggered rapid DOM updates during scroll
+- **Fix:**
+  - Replaced `window.scrollQueue()` with custom scroll that targets the queue container
+  - Added debounced playlist updates to prevent rapid re-rendering
+  - Added visual highlight effect on current item
+- **File:** `channel/script.js` - jump button onclick and `debouncedPlaylistUpdate()` function
 
 ## When Making Changes
 

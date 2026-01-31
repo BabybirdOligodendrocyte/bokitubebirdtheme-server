@@ -85,10 +85,28 @@ mediaQuery.addEventListener('change', chatPosition);
 
 /* Add jump to current item button */
 var jumpBtn = document.createElement("button");
-jumpBtn.innerHTML = "Scroll to current item";
+jumpBtn.innerHTML = "Scroll to current";
 jumpBtn.setAttribute("id", "jump-btn");
 jumpBtn.setAttribute("class", "btn");
-jumpBtn.onclick = function() { window.scrollQueue(); }
+jumpBtn.onclick = function() {
+    var currentItem = document.querySelector('.queue_entry.queue_active');
+    if (currentItem) {
+        // Scroll the playlist container, not the whole page
+        var queue = document.getElementById('queue');
+        if (queue) {
+            var queueRect = queue.getBoundingClientRect();
+            var itemRect = currentItem.getBoundingClientRect();
+            var scrollTop = queue.scrollTop + (itemRect.top - queueRect.top) - (queueRect.height / 2) + (itemRect.height / 2);
+            queue.scrollTo({ top: scrollTop, behavior: 'smooth' });
+        }
+        // Brief highlight effect
+        currentItem.style.transition = 'background-color 0.3s';
+        currentItem.style.backgroundColor = 'rgba(143, 100, 9, 0.4)';
+        setTimeout(function() {
+            currentItem.style.backgroundColor = '';
+        }, 800);
+    }
+};
 var rightControls = document.getElementById("rightcontrols");
 rightControls.insertBefore(jumpBtn, rightControls.children[1]);
 
@@ -3278,27 +3296,29 @@ function initPlaylistRenameObserver() {
     
     observer.observe(queue, { childList: true });
     
+    // Debounced playlist update to prevent scroll bounce
+    var playlistUpdateTimer = null;
+    function debouncedPlaylistUpdate(delay) {
+        if (playlistUpdateTimer) clearTimeout(playlistUpdateTimer);
+        playlistUpdateTimer = setTimeout(function() {
+            addAllRenameButtons();
+            applyAllCustomNames();
+            playlistUpdateTimer = null;
+        }, delay);
+    }
+
     // Also listen for playlist socket events to refresh names
     if (typeof socket !== 'undefined') {
         socket.on('playlist', function() {
-            setTimeout(function() {
-                addAllRenameButtons();
-                applyAllCustomNames();
-            }, 500);
+            debouncedPlaylistUpdate(600);
         });
-        
+
         socket.on('queue', function() {
-            setTimeout(function() {
-                addAllRenameButtons();
-                applyAllCustomNames();
-            }, 200);
+            debouncedPlaylistUpdate(400);
         });
-        
+
         socket.on('delete', function() {
-            setTimeout(function() {
-                addAllRenameButtons();
-                applyAllCustomNames();
-            }, 200);
+            debouncedPlaylistUpdate(400);
         });
         
         // Listen for rank changes - add/remove buttons accordingly
@@ -3373,193 +3393,6 @@ window.resetRename = resetRename;
 
 /* ========== CUSTOM COLUMN RESIZER ========== */
 (function() {
-    var resizeHandle = null;
-    var isResizing = false;
-    var startX = 0;
-    var startWidth = 0;
-    
-    // CSS for resizer
-    var resizerCSS = document.createElement('style');
-    resizerCSS.id = 'column-resizer-css';
-    resizerCSS.textContent = `
-        /* Only apply flex layout on desktop */
-        @media (min-width: 769px) {
-            #content-wrap {
-                display: flex !important;
-                flex-direction: row !important;
-                width: 100% !important;
-            }
-            
-            #leftcontent {
-                flex-shrink: 0 !important;
-                box-sizing: border-box !important;
-            }
-            
-            #rightcontent {
-                flex: 1 !important;
-                min-width: 0 !important;
-                box-sizing: border-box !important;
-            }
-            
-            #column-resize-handle {
-                width: 6px !important;
-                background: rgba(100, 100, 100, 0.3) !important;
-                cursor: col-resize !important;
-                flex-shrink: 0 !important;
-                transition: background 0.2s !important;
-                position: relative !important;
-                z-index: 1000 !important;
-            }
-            
-            #column-resize-handle:hover {
-                background: rgba(150, 150, 150, 0.6) !important;
-            }
-            
-            #column-resize-handle::before {
-                content: '⋮' !important;
-                position: absolute !important;
-                top: 50% !important;
-                left: 50% !important;
-                transform: translate(-50%, -50%) !important;
-                color: rgba(255, 255, 255, 0.6) !important;
-                font-size: 18px !important;
-                pointer-events: none !important;
-            }
-        }
-        
-        /* Hide resize handle on mobile */
-        @media (max-width: 768px) {
-            #column-resize-handle {
-                display: none !important;
-            }
-        }
-    `;
-    document.head.appendChild(resizerCSS);
-    
-    function initResizer() {
-        // Only initialize on desktop
-        if (window.innerWidth <= 768) {
-            console.log('[Column Resizer] Skipping on mobile');
-            return;
-        }
-        
-        var contentWrap = document.getElementById('content-wrap');
-        var leftContent = document.getElementById('leftcontent');
-        var rightContent = document.getElementById('rightcontent');
-        
-        if (!contentWrap || !leftContent || !rightContent) {
-            console.log('[Column Resizer] Elements not ready, retrying...');
-            setTimeout(initResizer, 500);
-            return;
-        }
-        
-        // Check if rightContent is a sibling (desktop mode)
-        if (rightContent.parentElement !== contentWrap) {
-            console.log('[Column Resizer] Not in desktop layout, skipping');
-            return;
-        }
-        
-        // Don't create multiple handles
-        if (document.getElementById('column-resize-handle')) {
-            console.log('[Column Resizer] Handle already exists');
-            return;
-        }
-        
-        // Create resize handle
-        resizeHandle = document.createElement('div');
-        resizeHandle.id = 'column-resize-handle';
-        resizeHandle.title = 'Drag to resize video/chat columns';
-        
-        // Insert handle between left and right content
-        contentWrap.insertBefore(resizeHandle, rightContent);
-        
-        // Load saved width or use default 88%
-        var savedWidth = localStorage.getItem('cytube_video_width');
-        if (savedWidth) {
-            leftContent.style.width = savedWidth;
-            console.log('[Column Resizer] Loaded saved width:', savedWidth);
-        } else {
-            leftContent.style.width = '88%';
-            console.log('[Column Resizer] Using default width: 88%');
-        }
-        
-        // Mouse down on handle
-        resizeHandle.addEventListener('mousedown', function(e) {
-            isResizing = true;
-            startX = e.clientX;
-            startWidth = leftContent.offsetWidth;
-            document.body.style.cursor = 'col-resize';
-            document.body.style.userSelect = 'none';
-            e.preventDefault();
-            console.log('[Column Resizer] Started resizing');
-        });
-        
-        // Mouse move anywhere
-        document.addEventListener('mousemove', function(e) {
-            if (!isResizing) return;
-            
-            var deltaX = e.clientX - startX;
-            var newWidth = startWidth + deltaX;
-            var containerWidth = contentWrap.offsetWidth;
-            var percentWidth = (newWidth / containerWidth) * 100;
-            
-            // Constrain between 50% and 95%
-            if (percentWidth >= 50 && percentWidth <= 95) {
-                leftContent.style.width = percentWidth + '%';
-            }
-        });
-        
-        // Mouse up anywhere
-        document.addEventListener('mouseup', function() {
-            if (isResizing) {
-                isResizing = false;
-                document.body.style.cursor = '';
-                document.body.style.userSelect = '';
-                
-                // Save the width
-                var containerWidth = contentWrap.offsetWidth;
-                var percentWidth = (leftContent.offsetWidth / containerWidth) * 100;
-                var savedValue = percentWidth.toFixed(1) + '%';
-                localStorage.setItem('cytube_video_width', savedValue);
-                
-                console.log('[Column Resizer] Saved width:', savedValue);
-            }
-        });
-        
-        console.log('[Column Resizer] ✓ Initialized successfully');
-    }
-    
-    function removeResizer() {
-        if (resizeHandle && resizeHandle.parentElement) {
-            resizeHandle.parentElement.removeChild(resizeHandle);
-            resizeHandle = null;
-            console.log('[Column Resizer] Removed for mobile');
-        }
-    }
-    
-    // Initialize after DOM is ready
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', function() {
-            setTimeout(initResizer, 1500);
-        });
-    } else {
-        setTimeout(initResizer, 1500);
-    }
-    
-    // Handle window resize (desktop ↔ mobile)
-    window.addEventListener('resize', function() {
-        if (window.innerWidth <= 768) {
-            removeResizer();
-        } else {
-            if (!document.getElementById('column-resize-handle')) {
-                setTimeout(initResizer, 500);
-            }
-        }
-    });
-})();
-
-/* ========== CUSTOM COLUMN RESIZER ========== */
-(function() {
     'use strict';
     
     var resizeHandle = null;
@@ -3587,8 +3420,12 @@ window.resetRename = resetRename;
             
             #rightcontent {
                 flex: 1 !important;
-                min-width: 0 !important;
+                min-width: 200px !important;
+                max-width: 50% !important;
                 box-sizing: border-box !important;
+                position: relative !important;
+                right: unset !important;
+                width: auto !important;
             }
             
             #column-resize-handle {
