@@ -5641,10 +5641,10 @@ function initImpersonateObserver() {
 
 // Click username in chat to mention, Shift+Click to impersonate
 function initClickToMention() {
-    // Use event delegation that also catches clicks on child elements of .username
-    $(document).on('click', '#messagebuffer .username, #messagebuffer .username *', function(e) {
-        // Find the actual .username element (might be the target or a parent)
-        var $usernameEl = $(e.target).closest('.username');
+    // Use event delegation that catches clicks on .username, .styled-username, and their children
+    $(document).on('click', '#messagebuffer .username, #messagebuffer .username *, #messagebuffer .styled-username, #messagebuffer .styled-username *', function(e) {
+        // Find the actual username element (might be the target or a parent)
+        var $usernameEl = $(e.target).closest('.username, .styled-username');
         if ($usernameEl.length === 0) return;
 
         var username = $usernameEl.text().replace(/:$/, '').trim();
