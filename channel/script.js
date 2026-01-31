@@ -5507,6 +5507,7 @@ function initMentionAutocomplete() {
 // Store current impersonation target
 var currentImpersonateTarget = null;
 var currentImpersonateUsernameHtml = null;
+var currentImpersonateMsgStyle = null; // Style from clicked message
 
 // Create the impersonation popup
 function createImpersonatePopup() {
@@ -5540,10 +5541,11 @@ function createImpersonatePopup() {
     });
 }
 
-function openImpersonatePopup(username, usernameHtml) {
+function openImpersonatePopup(username, usernameHtml, msgStyle) {
     createImpersonatePopup();
     currentImpersonateTarget = username;
     currentImpersonateUsernameHtml = usernameHtml || username;
+    currentImpersonateMsgStyle = msgStyle || null;
 
     document.getElementById('impersonate-target-name').innerHTML = currentImpersonateUsernameHtml;
     document.getElementById('impersonate-message-input').value = '';
@@ -5559,6 +5561,7 @@ function closeImpersonatePopup() {
     if (o) o.classList.remove('visible');
     currentImpersonateTarget = null;
     currentImpersonateUsernameHtml = null;
+    currentImpersonateMsgStyle = null;
 }
 
 function sendImpersonateMessage() {
@@ -5570,9 +5573,22 @@ function sendImpersonateMessage() {
         return;
     }
 
-    // Format: 🎭[username] message
-    // This format is visible to everyone and clearly marks the message as fake
-    var formattedMsg = '🎭[' + currentImpersonateTarget + '] ' + message;
+    // Encode username HTML and message style as base64 to preserve special chars
+    var usernameB64 = '';
+    var styleB64 = '';
+    try {
+        if (currentImpersonateUsernameHtml) {
+            usernameB64 = btoa(unescape(encodeURIComponent(currentImpersonateUsernameHtml)));
+        }
+        if (currentImpersonateMsgStyle) {
+            styleB64 = btoa(unescape(encodeURIComponent(currentImpersonateMsgStyle)));
+        }
+    } catch(e) {
+        console.log('Impersonate encoding error:', e);
+    }
+
+    // Format: 🎭[username|usernameHtmlB64|msgStyleB64] message
+    var formattedMsg = '🎭[' + currentImpersonateTarget + '|' + usernameB64 + '|' + styleB64 + '] ' + message;
 
     // Send via Cytube's socket
     if (typeof socket !== 'undefined' && socket.emit) {
@@ -5599,119 +5615,62 @@ function styleImpersonateMessages() {
         // Skip if already processed
         if ($msg.data('impersonate-styled')) return;
 
-        // Check for impersonation marker: 🎭[username] message
+        // Check for impersonation marker: 🎭[username|usernameB64|styleB64] message
         var text = $msg.text();
-        var match = text.match(/🎭\[([^\]]+)\]/);
-        if (!match) {
-            return; // Not an impersonation message
-        }
+        if (text.indexOf('🎭[') === -1) return;
 
         // Mark as processed
         $msg.data('impersonate-styled', true);
 
-        var impersonatedUser = match[1];
-
-        // Find the impersonated user's styling from their REAL messages in chat
-        var styledUsernameHtml = null;
-        var messageStyleTags = null;
-        var messageStyleCloseTags = null;
-
-        $('#messagebuffer > div').each(function() {
-            var $otherMsg = $(this);
-
-            // Skip if this message contains the impersonation marker (it's a fake message)
-            if ($otherMsg.text().indexOf('🎭[') !== -1) return;
-
-            // Look for .styled-username or .username that matches
-            var $styledName = $otherMsg.find('.styled-username');
-            var $plainName = $otherMsg.find('.username');
-            var foundUser = false;
-
-            // Prefer styled-username if available
-            if ($styledName.length > 0) {
-                var nameText = $styledName.text().replace(/:$/, '').trim();
-                if (nameText.toLowerCase() === impersonatedUser.toLowerCase()) {
-                    // Only update username HTML if we don't have it yet
-                    if (!styledUsernameHtml) {
-                        styledUsernameHtml = $styledName.prop('outerHTML');
-                    }
-                    foundUser = true;
-                }
-            }
-            // Fallback to plain username
-            if (!foundUser && $plainName.length > 0) {
-                var nameText = $plainName.text().replace(/:$/, '').trim();
-                if (nameText.toLowerCase() === impersonatedUser.toLowerCase()) {
-                    if (!styledUsernameHtml) {
-                        styledUsernameHtml = $plainName.prop('outerHTML');
-                    }
-                    foundUser = true;
-                }
-            }
-
-            // If we found the user, try to get their message styling
-            if (foundUser) {
-                // Find the message content styling
-                // Look at all spans and find ones with style that aren't username/timestamp
-                $otherMsg.find('span').each(function() {
-                    var $span = $(this);
-                    var spanClass = $span.attr('class') || '';
-
-                    // Skip username-related spans
-                    if (spanClass.indexOf('username') !== -1 ||
-                        spanClass.indexOf('timestamp') !== -1 ||
-                        $span.hasClass('username') ||
-                        $span.hasClass('styled-username') ||
-                        $span.hasClass('timestamp')) {
-                        return; // continue to next span
-                    }
-
-                    // Skip if this span is inside a username element
-                    if ($span.closest('.username, .styled-username').length > 0) {
-                        return;
-                    }
-
-                    // Check for inline style
-                    var style = $span.attr('style');
-                    if (style && style.length > 0) {
-                        messageStyleTags = '<span style="' + style + '">';
-                        messageStyleCloseTags = '</span>';
-                        return false; // break inner loop
-                    }
-                });
-
-                // Only stop searching if we found BOTH username and message styling
-                if (styledUsernameHtml && messageStyleTags) {
-                    return false; // break outer loop
-                }
-                // Otherwise continue to find a message with styling
-            }
-        });
-
-        // Fallback if user not found in chat
-        if (!styledUsernameHtml) {
-            styledUsernameHtml = '<span class="username">' + impersonatedUser + ': </span>';
-        }
-
-        // Find the message content and replace marker with styled username + styled message
+        // Find the message content and replace marker
         var $spans = $msg.find('span');
         $spans.each(function() {
             var $span = $(this);
             var html = $span.html();
-            if (html && html.indexOf('🎭[') !== -1) {
-                // Extract the message text (everything after the marker)
-                var msgMatch = html.match(/🎭\[[^\]]+\]\s*([\s\S]*)/);
-                var messageText = msgMatch ? msgMatch[1] : '';
+            if (!html || html.indexOf('🎭[') === -1) return;
 
-                // Apply styling: styledUsername + styledMessage
-                var styledMessage = messageText;
-                if (messageStyleTags && messageStyleCloseTags) {
-                    styledMessage = messageStyleTags + messageText + messageStyleCloseTags;
+            // Parse: 🎭[username|usernameB64|styleB64] message
+            var markerMatch = html.match(/🎭\[([^|\]]+)\|([^|\]]*)\|([^\]]*)\]\s*([\s\S]*)/);
+            if (!markerMatch) {
+                // Fallback for old format: 🎭[username] message
+                var oldMatch = html.match(/🎭\[([^\]]+)\]\s*([\s\S]*)/);
+                if (oldMatch) {
+                    var username = oldMatch[1];
+                    var messageText = oldMatch[2];
+                    var newHtml = '<span class="username">' + username + ': </span> ' + messageText;
+                    $span.html(newHtml);
                 }
-
-                var newHtml = styledUsernameHtml + ' ' + styledMessage;
-                $span.html(newHtml);
+                return;
             }
+
+            var username = markerMatch[1];
+            var usernameB64 = markerMatch[2];
+            var styleB64 = markerMatch[3];
+            var messageText = markerMatch[4];
+
+            // Decode username HTML
+            var styledUsernameHtml = '<span class="username">' + username + ': </span>';
+            if (usernameB64) {
+                try {
+                    styledUsernameHtml = decodeURIComponent(escape(atob(usernameB64)));
+                } catch(e) {
+                    console.log('Failed to decode username:', e);
+                }
+            }
+
+            // Decode message style
+            var styledMessage = messageText;
+            if (styleB64) {
+                try {
+                    var style = decodeURIComponent(escape(atob(styleB64)));
+                    styledMessage = '<span style="' + style + '">' + messageText + '</span>';
+                } catch(e) {
+                    console.log('Failed to decode style:', e);
+                }
+            }
+
+            var newHtml = styledUsernameHtml + ' ' + styledMessage;
+            $span.html(newHtml);
         });
     });
 }
@@ -5774,7 +5733,34 @@ function initClickToMention() {
             // Shift+Click: Open impersonation popup
             e.preventDefault();
             e.stopPropagation();
-            openImpersonatePopup(username, usernameEl.innerHTML.replace(/:?\s*$/, ''));
+
+            // Find the parent message element to get message styling
+            var msgEl = usernameEl.parentElement;
+            while (msgEl && msgEl.id !== 'messagebuffer' && !msgEl.id.startsWith('chat-msg-')) {
+                msgEl = msgEl.parentElement;
+            }
+
+            // Extract message styling from THIS specific message
+            var msgStyle = null;
+            if (msgEl && msgEl.id !== 'messagebuffer') {
+                var spans = msgEl.querySelectorAll('span[style]');
+                for (var i = 0; i < spans.length; i++) {
+                    var span = spans[i];
+                    var cls = span.className || '';
+                    // Skip username/timestamp spans
+                    if (cls.indexOf('username') !== -1 || cls.indexOf('timestamp') !== -1) continue;
+                    // Skip spans inside username
+                    if (span.closest('.username, .styled-username')) continue;
+                    // Found a styled content span
+                    var style = span.getAttribute('style');
+                    if (style && style.length > 0) {
+                        msgStyle = style;
+                        break;
+                    }
+                }
+            }
+
+            openImpersonatePopup(username, usernameEl.outerHTML, msgStyle);
         } else {
             // Regular click: Add @mention to chatline
             var chatline = document.getElementById('chatline');
