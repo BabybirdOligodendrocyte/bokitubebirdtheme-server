@@ -203,8 +203,18 @@ $('<button id="clear-btn" class="btn btn-default btn-sm">Clear</button>')
 
 /* ========== POPUP SYSTEM ========== */
 var emoteFavorites = JSON.parse(localStorage.getItem('emoteFavorites')) || [];
+var gifFavorites = JSON.parse(localStorage.getItem('gifFavorites')) || [];
+var recentlyUsed = JSON.parse(localStorage.getItem('recentlyUsed')) || [];
+var gifSearchHistory = JSON.parse(localStorage.getItem('gifSearchHistory')) || [];
+var ignoredUsers = JSON.parse(localStorage.getItem('ignoredUsers')) || [];
 var currentEmotePage = 0;
 var emotesPerPage = 50;
+var emoteSize = localStorage.getItem('emoteSize') || 'medium';
+var compactMode = localStorage.getItem('compactMode') === 'true';
+var soundEnabled = localStorage.getItem('soundEnabled') !== 'false';
+var chatFontSize = parseInt(localStorage.getItem('chatFontSize')) || 14;
+var timestampsVisible = localStorage.getItem('timestampsVisible') !== 'false';
+var theaterMode = false;
 var textStyleSettings = JSON.parse(localStorage.getItem('textStyleSettings')) || {
     color: null,
     gradient: null,
@@ -560,6 +570,211 @@ var usernameStyleSettings = JSON.parse(localStorage.getItem('usernameStyleSettin
             cursor: not-allowed !important;
         }
         #emote-popup-pageinfo { color: #aaa !important; }
+
+        /* Emote size toggle */
+        .emote-size-toggle {
+            display: flex !important;
+            gap: 2px !important;
+            margin-left: auto !important;
+            margin-right: 10px !important;
+        }
+        .size-btn {
+            width: 24px !important;
+            height: 24px !important;
+            background: #333 !important;
+            border: 1px solid #555 !important;
+            color: #888 !important;
+            font-size: 11px !important;
+            cursor: pointer !important;
+            border-radius: 4px !important;
+        }
+        .size-btn.active {
+            background: var(--tertiarycolor, #8F6409) !important;
+            color: #fff !important;
+        }
+
+        /* GIF search history */
+        #gif-search-history {
+            display: none;
+            flex-wrap: wrap;
+            gap: 6px;
+            padding: 8px 0 0 0;
+        }
+        .gif-history-item {
+            background: #333 !important;
+            padding: 4px 10px !important;
+            border-radius: 12px !important;
+            font-size: 11px !important;
+            color: #aaa !important;
+            cursor: pointer !important;
+        }
+        .gif-history-item:hover {
+            background: #444 !important;
+            color: #fff !important;
+        }
+
+        /* GIF preview popup */
+        #gif-preview-popup {
+            display: none;
+            position: fixed !important;
+            bottom: 20px !important;
+            left: 20px !important;
+            background: #1e1e24 !important;
+            border: 2px solid #555 !important;
+            border-radius: 10px !important;
+            padding: 10px !important;
+            z-index: 1000002 !important;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.8) !important;
+        }
+        #gif-preview-popup img {
+            max-width: 250px !important;
+            max-height: 250px !important;
+        }
+
+        /* Mention autocomplete */
+        #mention-autocomplete {
+            display: none;
+            position: absolute !important;
+            background: #1e1e24 !important;
+            border: 1px solid #555 !important;
+            border-radius: 8px !important;
+            max-height: 200px !important;
+            overflow-y: auto !important;
+            z-index: 100000 !important;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.5) !important;
+        }
+        #mention-autocomplete.visible { display: block !important; }
+        .mention-item {
+            padding: 8px 12px !important;
+            cursor: pointer !important;
+            color: #ccc !important;
+        }
+        .mention-item:hover, .mention-item.selected {
+            background: var(--tertiarycolor, #8F6409) !important;
+            color: #fff !important;
+        }
+
+        /* Settings panel */
+        #settings-panel {
+            display: none;
+            position: fixed !important;
+            top: 50% !important;
+            left: 50% !important;
+            transform: translate(-50%, -50%) !important;
+            background: #1e1e24 !important;
+            border: 2px solid #555 !important;
+            border-radius: 12px !important;
+            padding: 20px !important;
+            z-index: 1000000 !important;
+            min-width: 300px !important;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.8) !important;
+        }
+        #settings-panel.visible { display: block !important; }
+        .settings-row {
+            display: flex !important;
+            justify-content: space-between !important;
+            align-items: center !important;
+            padding: 10px 0 !important;
+            border-bottom: 1px solid #333 !important;
+        }
+        .settings-row:last-child { border-bottom: none !important; }
+        .settings-label { color: #ccc !important; }
+        .settings-toggle {
+            width: 44px !important;
+            height: 24px !important;
+            background: #444 !important;
+            border-radius: 12px !important;
+            position: relative !important;
+            cursor: pointer !important;
+            transition: background 0.2s !important;
+        }
+        .settings-toggle.on { background: var(--tertiarycolor, #8F6409) !important; }
+        .settings-toggle::after {
+            content: '' !important;
+            position: absolute !important;
+            width: 20px !important;
+            height: 20px !important;
+            background: #fff !important;
+            border-radius: 50% !important;
+            top: 2px !important;
+            left: 2px !important;
+            transition: left 0.2s !important;
+        }
+        .settings-toggle.on::after { left: 22px !important; }
+        .settings-slider {
+            width: 100px !important;
+            -webkit-appearance: none !important;
+            background: #444 !important;
+            height: 6px !important;
+            border-radius: 3px !important;
+        }
+        .settings-slider::-webkit-slider-thumb {
+            -webkit-appearance: none !important;
+            width: 16px !important;
+            height: 16px !important;
+            background: var(--tertiarycolor, #8F6409) !important;
+            border-radius: 50% !important;
+            cursor: pointer !important;
+        }
+
+        /* Compact mode */
+        body.compact-mode #messagebuffer > div {
+            padding: 2px 8px !important;
+            margin: 1px 0 !important;
+        }
+        body.compact-mode .timestamp { font-size: 9px !important; }
+
+        /* Quote reply styling */
+        .quote-reply {
+            background: #252530 !important;
+            border-left: 3px solid var(--tertiarycolor, #8F6409) !important;
+            padding: 4px 8px !important;
+            margin-bottom: 4px !important;
+            font-size: 12px !important;
+            color: #888 !important;
+            border-radius: 4px !important;
+            cursor: pointer !important;
+        }
+        .quote-reply:hover { background: #303040 !important; }
+
+        /* Mention highlight */
+        .mention-highlight {
+            background: rgba(143, 100, 9, 0.3) !important;
+            border-left: 3px solid var(--tertiarycolor, #8F6409) !important;
+        }
+
+        /* Theater mode */
+        body.theater-mode #leftcontent {
+            position: fixed !important;
+            top: 0 !important;
+            left: 0 !important;
+            width: 100vw !important;
+            height: 100vh !important;
+            z-index: 99999 !important;
+        }
+        body.theater-mode #rightcontent { display: none !important; }
+        body.theater-mode #videowrap { height: 100vh !important; }
+        #theater-exit-btn {
+            display: none;
+            position: fixed !important;
+            top: 10px !important;
+            right: 10px !important;
+            z-index: 100000 !important;
+            background: rgba(0,0,0,0.7) !important;
+            color: #fff !important;
+            border: none !important;
+            padding: 10px 20px !important;
+            border-radius: 8px !important;
+            cursor: pointer !important;
+        }
+        body.theater-mode #theater-exit-btn { display: block !important; }
+
+        /* Ignored user message */
+        .ignored-user-msg {
+            opacity: 0.3 !important;
+            font-style: italic !important;
+        }
+
         #favorites-dropdown {
             display: none;
             position: fixed !important;
@@ -818,9 +1033,9 @@ function createEmotePopup() {
     o.onclick = function(e) { if (e.target === o) closeEmotePopup(); };
     var p = document.createElement('div');
     p.id = 'emote-popup';
-    p.innerHTML = '<div class="popup-header" id="emote-popup-header"><span>Emotes</span><button class="popup-close" onclick="closeEmotePopup()">×</button></div>' +
-        '<div id="emote-popup-tabs"><button class="emote-tab active" data-tab="all" onclick="switchEmoteTab(\'all\')">All Emotes</button><button class="emote-tab" data-tab="fav" onclick="switchEmoteTab(\'fav\')">★ Favorites</button><button class="emote-tab" data-tab="gif" onclick="switchEmoteTab(\'gif\')">🔍 GIFs</button></div>' +
-        '<div id="emote-popup-search"><input type="text" placeholder="Search emotes..." oninput="filterEmotePopup(this.value)" onkeydown="handleEmoteSearchKey(event)"></div>' +
+    p.innerHTML = '<div class="popup-header" id="emote-popup-header"><span>Emotes</span><div class="emote-size-toggle" title="Emote size"><button onclick="setEmoteSize(\'small\')" class="size-btn' + (emoteSize === 'small' ? ' active' : '') + '">S</button><button onclick="setEmoteSize(\'medium\')" class="size-btn' + (emoteSize === 'medium' ? ' active' : '') + '">M</button><button onclick="setEmoteSize(\'large\')" class="size-btn' + (emoteSize === 'large' ? ' active' : '') + '">L</button></div><button class="popup-close" onclick="closeEmotePopup()">×</button></div>' +
+        '<div id="emote-popup-tabs"><button class="emote-tab active" data-tab="all" onclick="switchEmoteTab(\'all\')">All</button><button class="emote-tab" data-tab="recent" onclick="switchEmoteTab(\'recent\')">🕐 Recent</button><button class="emote-tab" data-tab="fav" onclick="switchEmoteTab(\'fav\')">★ Favs</button><button class="emote-tab" data-tab="gif" onclick="switchEmoteTab(\'gif\')">🔍 GIFs</button></div>' +
+        '<div id="emote-popup-search"><input type="text" placeholder="Search emotes..." oninput="filterEmotePopup(this.value)" onkeydown="handleEmoteSearchKey(event)"><div id="gif-search-history"></div></div>' +
         '<div id="emote-popup-body"></div>' +
         '<div id="emote-popup-pagination"><button onclick="emotePrevPage()">◀ Prev</button><span id="emote-popup-pageinfo">Page 1</span><button onclick="emoteNextPage()">Next ▶</button></div>';
     o.appendChild(p);
@@ -855,14 +1070,105 @@ function switchEmoteTab(tab) {
     currentEmotePage = 0;
     currentGifPage = 0;
     var searchInput = document.querySelector('#emote-popup-search input');
+    var historyEl = document.getElementById('gif-search-history');
+    if (historyEl) historyEl.style.display = 'none';
+
     if (tab === 'gif') {
         searchInput.placeholder = 'Search Tenor GIFs... (press Enter)';
         searchInput.value = lastGifSearch;
+        showGifSearchHistory();
         renderGifTab();
+    } else if (tab === 'recent') {
+        searchInput.placeholder = 'Search recent...';
+        renderRecentlyUsed();
+    } else if (tab === 'fav') {
+        searchInput.placeholder = 'Search favorites...';
+        renderFavorites();
     } else {
         searchInput.placeholder = 'Search emotes...';
         renderEmotes(tab);
     }
+}
+
+function showGifSearchHistory() {
+    var historyEl = document.getElementById('gif-search-history');
+    if (!historyEl || gifSearchHistory.length === 0) return;
+    historyEl.innerHTML = gifSearchHistory.slice(0, 5).map(function(q) {
+        return '<span class="gif-history-item" onclick="searchTenorGifs(\'' + q.replace(/'/g, "\\'") + '\')">' + q + '</span>';
+    }).join('');
+    historyEl.style.display = 'flex';
+}
+
+function renderRecentlyUsed() {
+    var body = document.getElementById('emote-popup-body');
+    if (!body) return;
+    body.innerHTML = '';
+
+    if (recentlyUsed.length === 0) {
+        body.innerHTML = '<div style="width:100%;text-align:center;color:#888;padding:40px">No recently used emotes/GIFs yet!</div>';
+        return;
+    }
+
+    recentlyUsed.forEach(function(item) {
+        var d = document.createElement('div');
+        d.className = 'emote-item' + (item.type === 'gif' ? ' gif-item' : '');
+        if (item.type === 'gif') {
+            d.style.width = '100px';
+            d.style.height = '100px';
+            var isFav = gifFavorites.some(function(g) { return g.url === item.url; });
+            d.innerHTML = '<img src="' + item.preview + '" title="Click to insert"><button class="emote-fav ' + (isFav ? 'faved' : '') + '" onclick="toggleGifFav(\'' + item.url.replace(/'/g, "\\'") + '\',\'' + item.preview.replace(/'/g, "\\'") + '\',event)">★</button>';
+            d.querySelector('img').onclick = function() { insertGif(item.url); };
+        } else {
+            var isFav = emoteFavorites.indexOf(item.name) !== -1;
+            d.innerHTML = '<img src="' + item.image + '" title="' + item.name + '"><button class="emote-fav ' + (isFav ? 'faved' : '') + '" onclick="toggleEmoteFav(\'' + item.name.replace(/'/g, "\\'") + '\',event)">★</button>';
+            d.querySelector('img').onclick = function() { insertEmote(item.name); };
+        }
+        body.appendChild(d);
+    });
+
+    document.getElementById('emote-popup-pageinfo').textContent = recentlyUsed.length + ' recent';
+    var btns = document.querySelectorAll('#emote-popup-pagination button');
+    btns[0].disabled = true;
+    btns[1].disabled = true;
+}
+
+function renderFavorites() {
+    var body = document.getElementById('emote-popup-body');
+    if (!body) return;
+    body.innerHTML = '';
+
+    var emotes = (CHANNEL && CHANNEL.emotes) ? CHANNEL.emotes.slice() : [];
+    var favEmotes = emotes.filter(function(e) { return emoteFavorites.indexOf(e.name) !== -1; });
+
+    if (favEmotes.length === 0 && gifFavorites.length === 0) {
+        body.innerHTML = '<div style="width:100%;text-align:center;color:#888;padding:40px">No favorites yet! Click ★ on emotes or GIFs.</div>';
+        return;
+    }
+
+    // Render emote favorites
+    favEmotes.forEach(function(e) {
+        var d = document.createElement('div');
+        d.className = 'emote-item';
+        d.innerHTML = '<img src="' + e.image + '" title="' + e.name + '"><button class="emote-fav faved" onclick="toggleEmoteFav(\'' + e.name.replace(/'/g, "\\'") + '\',event)">★</button>';
+        d.querySelector('img').onclick = function() { insertEmote(e.name); };
+        body.appendChild(d);
+    });
+
+    // Render GIF favorites
+    gifFavorites.forEach(function(gif) {
+        var d = document.createElement('div');
+        d.className = 'emote-item gif-item';
+        d.style.width = '100px';
+        d.style.height = '100px';
+        d.innerHTML = '<img src="' + gif.preview + '" title="Click to insert"><button class="emote-fav faved" onclick="toggleGifFav(\'' + gif.url.replace(/'/g, "\\'") + '\',\'' + gif.preview.replace(/'/g, "\\'") + '\',event)">★</button>';
+        d.querySelector('img').onclick = function() { insertGif(gif.url); };
+        body.appendChild(d);
+    });
+
+    document.getElementById('emote-popup-pageinfo').textContent = (favEmotes.length + gifFavorites.length) + ' favorites';
+    var btns = document.querySelectorAll('#emote-popup-pagination button');
+    btns[0].disabled = true;
+    btns[1].disabled = true;
 }
 
 function handleEmoteSearchKey(e) {
@@ -935,21 +1241,85 @@ function emoteNextPage() {
         currentEmotePage++; renderEmotes(tab, document.querySelector('#emote-popup-search input').value); 
     }
 }
-function insertEmote(name) { var c = document.getElementById('chatline'); if (c) { c.value += name + ' '; c.focus(); } }
-function insertGif(url) { 
-    var c = document.getElementById('chatline'); 
-    if (c) { 
-        c.value += url + ' '; 
-        c.focus(); 
-    } 
+function insertEmote(name) {
+    var c = document.getElementById('chatline');
+    if (c) { c.value += name + ' '; c.focus(); }
+    // Add to recently used
+    var emote = (CHANNEL && CHANNEL.emotes) ? CHANNEL.emotes.find(function(e) { return e.name === name; }) : null;
+    if (emote) {
+        addToRecentlyUsed({ type: 'emote', name: emote.name, image: emote.image });
+    }
+}
+
+function insertGif(url) {
+    var c = document.getElementById('chatline');
+    if (c) {
+        c.value += url + ' ';
+        c.focus();
+    }
+    // Add to recently used (find preview from current results)
+    var gif = gifSearchResults.find(function(g) {
+        return (g.media_formats.gif && g.media_formats.gif.url === url) ||
+               (g.media_formats.tinygif && g.media_formats.tinygif.url === url);
+    });
+    if (gif) {
+        var preview = gif.media_formats.tinygif ? gif.media_formats.tinygif.url : url;
+        addToRecentlyUsed({ type: 'gif', url: url, preview: preview });
+    }
     closeEmotePopup();
 }
+
+function addToRecentlyUsed(item) {
+    // Remove if already exists
+    recentlyUsed = recentlyUsed.filter(function(r) {
+        if (item.type === 'gif') return r.url !== item.url;
+        return r.name !== item.name;
+    });
+    // Add to front
+    recentlyUsed.unshift(item);
+    // Keep only 20
+    recentlyUsed = recentlyUsed.slice(0, 20);
+    localStorage.setItem('recentlyUsed', JSON.stringify(recentlyUsed));
+}
+
 function toggleEmoteFav(name, e) {
     e.stopPropagation();
     var i = emoteFavorites.indexOf(name);
     if (i !== -1) emoteFavorites.splice(i, 1); else emoteFavorites.unshift(name);
     localStorage.setItem('emoteFavorites', JSON.stringify(emoteFavorites));
-    renderEmotes(document.querySelector('.emote-tab.active').dataset.tab, document.querySelector('#emote-popup-search input').value);
+    var tab = document.querySelector('.emote-tab.active').dataset.tab;
+    if (tab === 'fav') renderFavorites();
+    else if (tab === 'recent') renderRecentlyUsed();
+    else renderEmotes(tab, document.querySelector('#emote-popup-search input').value);
+}
+
+function toggleGifFav(url, preview, e) {
+    e.stopPropagation();
+    var idx = gifFavorites.findIndex(function(g) { return g.url === url; });
+    if (idx !== -1) {
+        gifFavorites.splice(idx, 1);
+    } else {
+        gifFavorites.unshift({ url: url, preview: preview });
+    }
+    localStorage.setItem('gifFavorites', JSON.stringify(gifFavorites));
+    var tab = document.querySelector('.emote-tab.active').dataset.tab;
+    if (tab === 'fav') renderFavorites();
+    else if (tab === 'recent') renderRecentlyUsed();
+    else if (tab === 'gif') renderGifResults();
+}
+
+function setEmoteSize(size) {
+    emoteSize = size;
+    localStorage.setItem('emoteSize', size);
+    document.querySelectorAll('.size-btn').forEach(function(b) { b.classList.remove('active'); });
+    document.querySelector('.size-btn:nth-child(' + (size === 'small' ? 1 : size === 'medium' ? 2 : 3) + ')').classList.add('active');
+    applyEmoteSize();
+}
+
+function applyEmoteSize() {
+    var sizes = { small: 40, medium: 60, large: 80 };
+    var sz = sizes[emoteSize] || 60;
+    document.documentElement.style.setProperty('--emote-size', sz + 'px');
 }
 
 // GIF SEARCH FUNCTIONS
@@ -970,9 +1340,36 @@ function renderGifTab() {
     }
 }
 
+function showGifPreview(url) {
+    var preview = document.getElementById('gif-preview-popup');
+    if (!preview) {
+        preview = document.createElement('div');
+        preview.id = 'gif-preview-popup';
+        document.body.appendChild(preview);
+    }
+    preview.innerHTML = '<img src="' + url + '">';
+    preview.style.display = 'block';
+}
+
+function hideGifPreview() {
+    var preview = document.getElementById('gif-preview-popup');
+    if (preview) preview.style.display = 'none';
+}
+
 function searchTenorGifs(query, loadMore) {
     if (!query.trim()) return;
     lastGifSearch = query;
+    // Save to search history
+    if (!loadMore) {
+        gifSearchHistory = gifSearchHistory.filter(function(q) { return q !== query; });
+        gifSearchHistory.unshift(query);
+        gifSearchHistory = gifSearchHistory.slice(0, 10);
+        localStorage.setItem('gifSearchHistory', JSON.stringify(gifSearchHistory));
+        var historyEl = document.getElementById('gif-search-history');
+        if (historyEl) historyEl.style.display = 'none';
+    }
+    var searchInput = document.querySelector('#emote-popup-search input');
+    if (searchInput) searchInput.value = query;
     var body = document.getElementById('emote-popup-body');
     if (!loadMore) {
         gifSearchResults = [];
@@ -1021,11 +1418,15 @@ function renderGifResults() {
             d.style.width = '100px';
             d.style.height = '100px';
             // Get the smallest GIF format for preview
-            var previewUrl = gif.media_formats.tinygif ? gif.media_formats.tinygif.url : 
+            var previewUrl = gif.media_formats.tinygif ? gif.media_formats.tinygif.url :
                             (gif.media_formats.gif ? gif.media_formats.gif.url : '');
             var fullUrl = gif.media_formats.gif ? gif.media_formats.gif.url : previewUrl;
-            d.innerHTML = '<img src="' + previewUrl + '" title="Click to insert" style="max-width:90px;max-height:90px;object-fit:contain;">';
-            d.onclick = function() { insertGif(fullUrl); };
+            var isFav = gifFavorites.some(function(g) { return g.url === fullUrl; });
+            d.innerHTML = '<img src="' + previewUrl + '" title="Click to insert" style="max-width:90px;max-height:90px;object-fit:contain;"><button class="emote-fav ' + (isFav ? 'faved' : '') + '" onclick="toggleGifFav(\'' + fullUrl.replace(/'/g, "\\'") + '\',\'' + previewUrl.replace(/'/g, "\\'") + '\',event)">★</button>';
+            d.querySelector('img').onclick = function() { insertGif(fullUrl); };
+            // GIF preview on hover
+            d.onmouseenter = function() { showGifPreview(previewUrl); };
+            d.onmouseleave = function() { hideGifPreview(); };
             body.appendChild(d);
         });
     }
@@ -3744,3 +4145,355 @@ window.resetRename = resetRename;
         currentlyMobile = nowMobile;
     });
 })();
+
+/* ========== ENHANCED FEATURES ========== */
+
+// Mention notification sound (base64 encoded short beep)
+var mentionSound = new Audio('data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdH2Onp+cnpuYlZebnZuZl5WUlZibnZuZl5WTk5WWl5iZmpqampqampqam5ubm5ycnJycnJ2dnZ2dnZ6enp6enp6enp6enp6enp6enp+fn5+fn5+fn5+fn5+fn5+fn56enp6enp6enp6enp6enp6enp6enp6enp2dnZ2dnZycnJycnJubm5ubmpqampqamZmZmZiYmJiXl5eXlpaWlpWVlZWUlJSTk5OTkpKSkpGRkZGQkJCQj4+Pj46Ojo6NjY2NjIyMi4uLi4qKioqJiYmJiIiIiIeHh4eGhoaGhYWFhYSEhIODg4OCgoKCgYGBgYCAgIB/f39/fn5+fn19fX18fHx8e3t7e3p6enp5eXl5eHh4eHd3d3d2dnZ2dXV1dXR0dHRzc3NzcnJycnFxcXFwcHBwb29vb25ubm5tbW1tbGxsbGtra2tqampqaWlpaWhoaGhnZ2dnZmZmZmVlZWVkZGRkY2NjY2JiYmJhYWFhYGBgYF9fX19eXl5eXV1dXVxcXFxbW1tbWlpaWllZWVlYWFhYV1dXV1ZWVlZVVVVVVFRUVFNTU1NSUVFRUVFRUVFRUVFRUVFRUVFRUVFRUVFRUFBQUFBQUFBQUFBQUFBQT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PUFBQUFBQUFBQUFBQUFBQUFFRUVFRUVFRUVFRUVFRUVFRUVFRUVFRUVFRUVFSU1NTU1NUVFRUVFRUVFVVVVVWVlZWV1dXV1hYWFhZWVlZWlpaWltbW1tcXFxcXV1dXV5eXl5fX19fYGBgYGFhYWFiYmJiY2NjY2RkZGRlZWVlZmZmZmdnZ2doaGhoaWlpaWpqampra2trbGxsbG1tbW1ubm5ub29vb3BwcHBxcXFxcnJycnNzc3N0dHR0dXV1dXZ2dnZ3d3d3eHh4eHl5eXl6enp6e3t7e3x8fHx9fX19fn5+fn9/f3+AgICAgYGBgYKCgoKDg4ODhISEhIWFhYWGhoaGh4eHh4iIiIiJiYmJioqKiouLi4uMjIyMjY2NjY6Ojo6Pj4+PkJCQkJGRkZGSkpKSk5OTk5SUlJSVlZWVlpaWlpeXl5eYmJiYmZmZmZqampqbm5ubnJycnJ2dnZ2enp6en5+fnw==');
+
+// Initialize mention autocomplete
+function initMentionAutocomplete() {
+    var chatline = document.getElementById('chatline');
+    if (!chatline) return;
+
+    var autocomplete = document.createElement('div');
+    autocomplete.id = 'mention-autocomplete';
+    chatline.parentElement.style.position = 'relative';
+    chatline.parentElement.appendChild(autocomplete);
+
+    var selectedIndex = -1;
+    var filteredUsers = [];
+
+    chatline.addEventListener('input', function(e) {
+        var val = chatline.value;
+        var cursorPos = chatline.selectionStart;
+        var textBeforeCursor = val.substring(0, cursorPos);
+        var atMatch = textBeforeCursor.match(/@(\w*)$/);
+
+        if (atMatch) {
+            var query = atMatch[1].toLowerCase();
+            var users = [];
+            $('#userlist .userlist_item span').each(function() {
+                var name = $(this).text().trim();
+                if (name && name.toLowerCase().indexOf(query) !== -1) {
+                    users.push(name);
+                }
+            });
+            filteredUsers = users.slice(0, 8);
+            selectedIndex = 0;
+
+            if (filteredUsers.length > 0) {
+                autocomplete.innerHTML = filteredUsers.map(function(u, i) {
+                    return '<div class="mention-item' + (i === 0 ? ' selected' : '') + '" data-name="' + u + '">' + u + '</div>';
+                }).join('');
+                autocomplete.classList.add('visible');
+                positionAutocomplete();
+            } else {
+                autocomplete.classList.remove('visible');
+            }
+        } else {
+            autocomplete.classList.remove('visible');
+        }
+    });
+
+    chatline.addEventListener('keydown', function(e) {
+        if (!autocomplete.classList.contains('visible')) return;
+
+        if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            selectedIndex = Math.min(selectedIndex + 1, filteredUsers.length - 1);
+            updateSelection();
+        } else if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            selectedIndex = Math.max(selectedIndex - 1, 0);
+            updateSelection();
+        } else if (e.key === 'Tab' || e.key === 'Enter') {
+            if (filteredUsers[selectedIndex]) {
+                e.preventDefault();
+                insertMention(filteredUsers[selectedIndex]);
+            }
+        } else if (e.key === 'Escape') {
+            autocomplete.classList.remove('visible');
+        }
+    });
+
+    autocomplete.addEventListener('click', function(e) {
+        if (e.target.classList.contains('mention-item')) {
+            insertMention(e.target.dataset.name);
+        }
+    });
+
+    function updateSelection() {
+        autocomplete.querySelectorAll('.mention-item').forEach(function(el, i) {
+            el.classList.toggle('selected', i === selectedIndex);
+        });
+    }
+
+    function insertMention(name) {
+        var val = chatline.value;
+        var cursorPos = chatline.selectionStart;
+        var textBeforeCursor = val.substring(0, cursorPos);
+        var textAfterCursor = val.substring(cursorPos);
+        var newBefore = textBeforeCursor.replace(/@\w*$/, '@' + name + ' ');
+        chatline.value = newBefore + textAfterCursor;
+        chatline.selectionStart = chatline.selectionEnd = newBefore.length;
+        chatline.focus();
+        autocomplete.classList.remove('visible');
+    }
+
+    function positionAutocomplete() {
+        autocomplete.style.bottom = (chatline.offsetHeight + 5) + 'px';
+        autocomplete.style.left = '0';
+        autocomplete.style.minWidth = '150px';
+    }
+}
+
+// Click username in chat to mention
+function initClickToMention() {
+    $(document).on('click', '#messagebuffer .username', function(e) {
+        var username = $(this).text().replace(/:$/, '').trim();
+        var chatline = document.getElementById('chatline');
+        if (chatline && username) {
+            chatline.value += '@' + username + ' ';
+            chatline.focus();
+        }
+    });
+}
+
+// Mention notifications
+function initMentionNotifications() {
+    var myUsername = CLIENT && CLIENT.name ? CLIENT.name.toLowerCase() : '';
+
+    socket.on('chatMsg', function(data) {
+        if (!myUsername) {
+            myUsername = CLIENT && CLIENT.name ? CLIENT.name.toLowerCase() : '';
+        }
+        if (!myUsername || !data.msg) return;
+
+        var msgLower = data.msg.toLowerCase();
+        if (msgLower.indexOf('@' + myUsername) !== -1 || msgLower.indexOf(myUsername) !== -1) {
+            // Play sound
+            if (soundEnabled) {
+                mentionSound.currentTime = 0;
+                mentionSound.play().catch(function() {});
+            }
+            // Highlight the message
+            setTimeout(function() {
+                var msgs = document.querySelectorAll('#messagebuffer > div');
+                var lastMsg = msgs[msgs.length - 1];
+                if (lastMsg && lastMsg.querySelector('.username')?.textContent.replace(/:$/, '').trim().toLowerCase() === data.username.toLowerCase()) {
+                    lastMsg.classList.add('mention-highlight');
+                }
+            }, 100);
+        }
+    });
+}
+
+// User ignore list
+function initIgnoreList() {
+    // Add ignore option to user context
+    $(document).on('contextmenu', '#messagebuffer .username', function(e) {
+        e.preventDefault();
+        var username = $(this).text().replace(/:$/, '').trim();
+        if (confirm('Ignore messages from ' + username + '?')) {
+            addToIgnoreList(username);
+        }
+    });
+
+    // Filter messages from ignored users
+    socket.on('chatMsg', function(data) {
+        if (ignoredUsers.indexOf(data.username.toLowerCase()) !== -1) {
+            setTimeout(function() {
+                var msgs = document.querySelectorAll('#messagebuffer > div');
+                var lastMsg = msgs[msgs.length - 1];
+                if (lastMsg) {
+                    lastMsg.classList.add('ignored-user-msg');
+                    lastMsg.title = 'Message from ignored user';
+                }
+            }, 50);
+        }
+    });
+}
+
+function addToIgnoreList(username) {
+    var lowerName = username.toLowerCase();
+    if (ignoredUsers.indexOf(lowerName) === -1) {
+        ignoredUsers.push(lowerName);
+        localStorage.setItem('ignoredUsers', JSON.stringify(ignoredUsers));
+    }
+}
+
+function removeFromIgnoreList(username) {
+    var lowerName = username.toLowerCase();
+    ignoredUsers = ignoredUsers.filter(function(u) { return u !== lowerName; });
+    localStorage.setItem('ignoredUsers', JSON.stringify(ignoredUsers));
+}
+
+// Quote reply functionality
+function initQuoteReply() {
+    // Find existing reply buttons and enhance them
+    $(document).on('click', '.reply-btn', function() {
+        var msgDiv = $(this).closest('#messagebuffer > div');
+        var username = msgDiv.find('.username').text().replace(/:$/, '').trim();
+        var msgText = msgDiv.find('.chat-message, span:not(.username):not(.timestamp)').text().trim().substring(0, 50);
+
+        var chatline = document.getElementById('chatline');
+        if (chatline) {
+            chatline.value = '[Replying to ' + username + ': "' + msgText + '..."] ';
+            chatline.focus();
+        }
+    });
+}
+
+// Keyboard shortcuts
+function initKeyboardShortcuts() {
+    document.addEventListener('keydown', function(e) {
+        // Escape - close popups
+        if (e.key === 'Escape') {
+            closeEmotePopup();
+            closeTextStylePopup();
+            var settingsPanel = document.getElementById('settings-panel');
+            if (settingsPanel) settingsPanel.classList.remove('visible');
+            if (theaterMode) toggleTheaterMode();
+        }
+
+        // Slash - focus chat (when not in input)
+        if (e.key === '/' && !['INPUT', 'TEXTAREA'].includes(document.activeElement.tagName)) {
+            e.preventDefault();
+            var chatline = document.getElementById('chatline');
+            if (chatline) chatline.focus();
+        }
+
+        // Ctrl+Shift+T - toggle theater mode
+        if (e.ctrlKey && e.shiftKey && e.key === 'T') {
+            e.preventDefault();
+            toggleTheaterMode();
+        }
+    });
+}
+
+// Theater mode
+function toggleTheaterMode() {
+    theaterMode = !theaterMode;
+    document.body.classList.toggle('theater-mode', theaterMode);
+
+    if (theaterMode && !document.getElementById('theater-exit-btn')) {
+        var btn = document.createElement('button');
+        btn.id = 'theater-exit-btn';
+        btn.textContent = 'Exit Theater Mode (Esc)';
+        btn.onclick = toggleTheaterMode;
+        document.body.appendChild(btn);
+    }
+}
+
+// Timestamp toggle
+function toggleTimestamps() {
+    timestampsVisible = !timestampsVisible;
+    localStorage.setItem('timestampsVisible', timestampsVisible);
+    applyTimestampVisibility();
+}
+
+function applyTimestampVisibility() {
+    var style = document.getElementById('timestamp-visibility-style');
+    if (!style) {
+        style = document.createElement('style');
+        style.id = 'timestamp-visibility-style';
+        document.head.appendChild(style);
+    }
+    style.textContent = timestampsVisible ? '' : '.timestamp { display: none !important; }';
+}
+
+// Compact mode
+function toggleCompactMode() {
+    compactMode = !compactMode;
+    localStorage.setItem('compactMode', compactMode);
+    document.body.classList.toggle('compact-mode', compactMode);
+}
+
+// Font size
+function setChatFontSize(size) {
+    chatFontSize = size;
+    localStorage.setItem('chatFontSize', size);
+    applyChatFontSize();
+}
+
+function applyChatFontSize() {
+    var style = document.getElementById('chat-fontsize-style');
+    if (!style) {
+        style = document.createElement('style');
+        style.id = 'chat-fontsize-style';
+        document.head.appendChild(style);
+    }
+    style.textContent = '#messagebuffer { font-size: ' + chatFontSize + 'px !important; }';
+}
+
+// Sound toggle
+function toggleSound() {
+    soundEnabled = !soundEnabled;
+    localStorage.setItem('soundEnabled', soundEnabled);
+}
+
+// Settings panel
+function createSettingsPanel() {
+    if (document.getElementById('settings-panel')) return;
+
+    var panel = document.createElement('div');
+    panel.id = 'settings-panel';
+    panel.innerHTML = '<div class="popup-header"><span>⚙️ Settings</span><button class="popup-close" onclick="closeSettingsPanel()">×</button></div>' +
+        '<div class="settings-row"><span class="settings-label">Compact Mode</span><div class="settings-toggle' + (compactMode ? ' on' : '') + '" onclick="toggleCompactMode();this.classList.toggle(\'on\')"></div></div>' +
+        '<div class="settings-row"><span class="settings-label">Sound Notifications</span><div class="settings-toggle' + (soundEnabled ? ' on' : '') + '" onclick="toggleSound();this.classList.toggle(\'on\')"></div></div>' +
+        '<div class="settings-row"><span class="settings-label">Show Timestamps</span><div class="settings-toggle' + (timestampsVisible ? ' on' : '') + '" onclick="toggleTimestamps();this.classList.toggle(\'on\')"></div></div>' +
+        '<div class="settings-row"><span class="settings-label">Font Size</span><input type="range" class="settings-slider" min="10" max="20" value="' + chatFontSize + '" oninput="setChatFontSize(this.value)"><span id="fontsize-val">' + chatFontSize + 'px</span></div>' +
+        '<div class="settings-row"><span class="settings-label">Theater Mode</span><button class="btn btn-sm" onclick="toggleTheaterMode();closeSettingsPanel()">Enter</button></div>' +
+        '<div class="settings-row"><span class="settings-label">Ignored Users</span><button class="btn btn-sm" onclick="showIgnoredUsers()">Manage</button></div>';
+    document.body.appendChild(panel);
+}
+
+function openSettingsPanel() {
+    createSettingsPanel();
+    document.getElementById('settings-panel').classList.add('visible');
+}
+
+function closeSettingsPanel() {
+    var panel = document.getElementById('settings-panel');
+    if (panel) panel.classList.remove('visible');
+}
+
+function showIgnoredUsers() {
+    if (ignoredUsers.length === 0) {
+        alert('No ignored users.');
+        return;
+    }
+    var result = prompt('Ignored users (remove one by typing their name):\\n' + ignoredUsers.join(', '));
+    if (result) {
+        removeFromIgnoreList(result.trim());
+        alert(result.trim() + ' removed from ignore list.');
+    }
+}
+
+// Add settings button
+function addSettingsButton() {
+    if (document.getElementById('settings-btn')) return;
+    var btn = $('<button id="settings-btn" class="btn btn-sm btn-default" title="Settings">⚙️</button>');
+    btn.on('click', openSettingsPanel);
+    btn.appendTo('#leftcontrols');
+}
+
+// Initialize all enhanced features
+$(document).ready(function() {
+    setTimeout(function() {
+        initMentionAutocomplete();
+        initClickToMention();
+        initMentionNotifications();
+        initIgnoreList();
+        initQuoteReply();
+        initKeyboardShortcuts();
+        addSettingsButton();
+
+        // Apply saved settings
+        applyEmoteSize();
+        applyTimestampVisibility();
+        applyChatFontSize();
+        if (compactMode) document.body.classList.add('compact-mode');
+    }, 2000);
+});
