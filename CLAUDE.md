@@ -180,6 +180,21 @@ The active Cytube channel uses the following internal CSS configuration:
 
 **Note:** The closing brace `}` for `:root` appears to be missing in the current config. This should be added before the `@keyframes` declarations.
 
+### Internal JavaScript Configuration
+
+```javascript
+var channelName = "Altar of Victory";
+var faviconUrl = "https://i.postimg.cc/zfGQnKKR/aovfavicon2.png";
+var scrollingBannerEnabled = false;
+$.get('https://cdn.jsdelivr.net/gh/deerfarce/cytube-nnd-chat@master/index.js')
+```
+
+**Configuration breakdown:**
+- **Channel Name:** "Altar of Victory" - custom title displayed in navbar
+- **Favicon:** Custom icon hosted on postimg.cc
+- **Banner:** Scrolling banner disabled
+- **External Script:** Loads [cytube-nnd-chat](https://github.com/deerfarce/cytube-nnd-chat) - NicoNicoDouga-style scrolling chat overlay that displays messages across the video player
+
 ## Important Patterns
 
 ### Popup System
