@@ -590,18 +590,6 @@ function hexToRgba(hex, opacity) {
             background: #555 !important;
         }
 
-        /* Impersonation message styling - subtle indicator */
-        .impersonate-message {
-            position: relative !important;
-            opacity: 0.85 !important;
-        }
-        .impersonate-indicator {
-            font-size: 9px !important;
-            color: #666 !important;
-            margin-left: 4px !important;
-            font-style: italic !important;
-        }
-
         #emote-popup-tabs {
             display: flex !important;
             background: #252530 !important;
@@ -5617,28 +5605,17 @@ function styleImpersonateMessages() {
         var match = text.match(/🎭\[([^\]]+)\]/);
         if (!match) return;
 
-        var impersonatedUser = match[1];
-
-        // Add impersonation styling (subtle opacity change)
-        $msg.addClass('impersonate-message');
-
-        // Find the message content and clean up the marker
+        // Find the message content and clean up the marker - perfect impersonation
         var $spans = $msg.find('span');
         $spans.each(function() {
             var $span = $(this);
             var html = $span.html();
             if (html && html.indexOf('🎭[') !== -1) {
-                // Replace the marker with just the username (subtle - no badge)
+                // Replace the marker with just the username - looks like real message
                 var newHtml = html.replace(/🎭\[([^\]]+)\]\s*/, '<strong>$1:</strong> ');
                 $span.html(newHtml);
             }
         });
-
-        // Add subtle indicator at end
-        var realSender = $msg.find('.username').first().text().replace(/:$/, '').trim();
-        if (realSender && realSender !== impersonatedUser) {
-            $msg.append('<span class="impersonate-indicator">- ' + realSender + '</span>');
-        }
     });
 }
 
