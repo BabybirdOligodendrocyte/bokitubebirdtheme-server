@@ -3396,17 +3396,18 @@ window.resetRename = resetRename;
 /* ========== CUSTOM COLUMN RESIZER ========== */
 (function() {
     'use strict';
-    
-    var resizeHandle = null;
+
     var isResizing = false;
     var startX = 0;
     var startWidth = 0;
-    
-    // Add CSS for resizer
+    var leftContent = null;
+    var contentWrap = null;
+    var EDGE_THRESHOLD = 8; // pixels from edge to trigger resize cursor
+
+    // Add CSS for resizer - NO visible element, just layout fixes
     var resizerCSS = document.createElement('style');
     resizerCSS.id = 'column-resizer-css';
     resizerCSS.textContent = `
-        /* Only apply flex layout on desktop */
         @media (min-width: 769px) {
             #content-wrap {
                 display: flex !important;
@@ -3433,167 +3434,103 @@ window.resetRename = resetRename;
                 width: auto !important;
                 height: 100% !important;
             }
-            
-            #column-resize-handle {
-                width: 0 !important;
-                height: 100% !important;
-                background: none !important;
-                background-color: transparent !important;
-                border: none !important;
-                box-shadow: none !important;
-                outline: none !important;
-                flex-shrink: 0 !important;
-                position: relative !important;
-                z-index: 1000 !important;
-            }
 
-            #column-resize-handle::before {
-                content: '' !important;
-                display: block !important;
-                position: absolute !important;
-                top: 0 !important;
-                left: -6px !important;
-                width: 12px !important;
-                height: 100% !important;
-                cursor: col-resize !important;
-                background: transparent !important;
-            }
-
-            body.col-resizing {
-                cursor: col-resize !important;
-                user-select: none !important;
-            }
-
+            body.col-resizing,
             body.col-resizing * {
                 cursor: col-resize !important;
+                user-select: none !important;
             }
         }
     `;
     document.head.appendChild(resizerCSS);
-    
+
+    function isNearEdge(e) {
+        if (!leftContent) return false;
+        var rect = leftContent.getBoundingClientRect();
+        var distFromEdge = Math.abs(e.clientX - rect.right);
+        return distFromEdge <= EDGE_THRESHOLD;
+    }
+
     function initResizer() {
-        // Only run on desktop
-        if (window.innerWidth <= 768) {
-            console.log('[Resizer] Skipping - mobile view');
-            return;
-        }
-        
-        var contentWrap = document.getElementById('content-wrap');
-        var leftContent = document.getElementById('leftcontent');
+        if (window.innerWidth <= 768) return;
+
+        contentWrap = document.getElementById('content-wrap');
+        leftContent = document.getElementById('leftcontent');
         var rightContent = document.getElementById('rightcontent');
-        
+
         if (!contentWrap || !leftContent || !rightContent) {
-            console.log('[Resizer] Elements not ready, retrying...');
             setTimeout(initResizer, 500);
             return;
         }
-        
-        // Check if rightcontent is a sibling (desktop mode)
-        if (rightContent.parentElement !== contentWrap) {
-            console.log('[Resizer] Not in desktop layout mode');
-            return;
-        }
-        
-        // Don't add handle twice
-        if (document.getElementById('column-resize-handle')) {
-            console.log('[Resizer] Handle already exists');
-            return;
-        }
-        
-        // Create resize handle
-        resizeHandle = document.createElement('div');
-        resizeHandle.id = 'column-resize-handle';
-        resizeHandle.title = 'Drag to resize video/chat columns';
-        
-        // Insert handle between left and right content
-        contentWrap.insertBefore(resizeHandle, rightContent);
-        
-        // Load saved width or use default
+
+        if (rightContent.parentElement !== contentWrap) return;
+        if (contentWrap.dataset.resizerInit) return;
+        contentWrap.dataset.resizerInit = 'true';
+
+        // Load saved width
         var savedWidth = localStorage.getItem('cytube_column_width');
         if (savedWidth) {
             leftContent.style.width = savedWidth;
-            console.log('[Resizer] Loaded saved width:', savedWidth);
         } else {
             leftContent.style.width = '88%';
-            console.log('[Resizer] Using default width: 88%');
         }
-        
-        // Mouse down on handle
-        resizeHandle.addEventListener('mousedown', function(e) {
-            isResizing = true;
-            startX = e.clientX;
-            startWidth = leftContent.offsetWidth;
-            
-            document.body.classList.add('col-resizing');
-            resizeHandle.classList.add('resizing');
-            
-            e.preventDefault();
-        });
-        
-        // Mouse move
+
+        // Mouse move - detect edge hover and handle resize drag
         document.addEventListener('mousemove', function(e) {
-            if (!isResizing) return;
-            
-            var deltaX = e.clientX - startX;
-            var newWidth = startWidth + deltaX;
-            var containerWidth = contentWrap.offsetWidth;
-            var percentWidth = (newWidth / containerWidth) * 100;
-            
-            // Constrain between 50% and 95%
-            if (percentWidth >= 50 && percentWidth <= 95) {
-                leftContent.style.width = percentWidth + '%';
+            if (isResizing) {
+                var deltaX = e.clientX - startX;
+                var newWidth = startWidth + deltaX;
+                var containerWidth = contentWrap.offsetWidth;
+                var percentWidth = (newWidth / containerWidth) * 100;
+
+                if (percentWidth >= 50 && percentWidth <= 95) {
+                    leftContent.style.width = percentWidth + '%';
+                }
+            } else {
+                // Show resize cursor when near edge
+                if (isNearEdge(e)) {
+                    document.body.style.cursor = 'col-resize';
+                } else if (document.body.style.cursor === 'col-resize') {
+                    document.body.style.cursor = '';
+                }
             }
         });
-        
-        // Mouse up
+
+        // Mouse down - start resize if near edge
+        document.addEventListener('mousedown', function(e) {
+            if (isNearEdge(e)) {
+                isResizing = true;
+                startX = e.clientX;
+                startWidth = leftContent.offsetWidth;
+                document.body.classList.add('col-resizing');
+                e.preventDefault();
+            }
+        });
+
+        // Mouse up - end resize
         document.addEventListener('mouseup', function() {
             if (isResizing) {
                 isResizing = false;
                 document.body.classList.remove('col-resizing');
-                resizeHandle.classList.remove('resizing');
-                
-                // Save the width
+                document.body.style.cursor = '';
+
                 var containerWidth = contentWrap.offsetWidth;
-                var leftWidth = leftContent.offsetWidth;
-                var percentWidth = (leftWidth / containerWidth) * 100;
-                var savedValue = percentWidth.toFixed(1) + '%';
-                
-                localStorage.setItem('cytube_column_width', savedValue);
-                console.log('[Resizer] Saved width:', savedValue);
+                var percentWidth = (leftContent.offsetWidth / containerWidth) * 100;
+                localStorage.setItem('cytube_column_width', percentWidth.toFixed(1) + '%');
             }
         });
-        
-        console.log('[Resizer] ✓ Initialized successfully');
+
+        console.log('[Resizer] Initialized (edge detection mode)');
     }
-    
-    function removeResizer() {
-        var handle = document.getElementById('column-resize-handle');
-        if (handle) {
-            handle.remove();
-            console.log('[Resizer] Removed handle (mobile mode)');
-        }
-    }
-    
-    // Initialize after a delay
-    setTimeout(function() {
-        initResizer();
-    }, 1500);
-    
-    // Handle window resize - reinit if switching between mobile/desktop
+
+    setTimeout(initResizer, 1500);
+
     var currentlyMobile = window.innerWidth <= 768;
     window.addEventListener('resize', function() {
         var nowMobile = window.innerWidth <= 768;
-        
         if (currentlyMobile && !nowMobile) {
-            // Switched to desktop
-            console.log('[Resizer] Switched to desktop mode');
             setTimeout(initResizer, 500);
-        } else if (!currentlyMobile && nowMobile) {
-            // Switched to mobile
-            console.log('[Resizer] Switched to mobile mode');
-            removeResizer();
         }
-        
         currentlyMobile = nowMobile;
     });
 })();
