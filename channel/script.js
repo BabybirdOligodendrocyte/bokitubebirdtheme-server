@@ -5714,17 +5714,12 @@ function sendImpersonateMessage() {
         formattedMsg += message;
     }
 
-    // Send via chatline (let the normal form submission handle it)
-    var chatline = document.getElementById('chatline');
-    if (chatline) {
-        chatline.value = formattedMsg;
-        // Trigger send via form submission
-        var form = document.getElementById('chatform');
-        if (form) {
-            // Dispatch a submit event
-            var submitEvent = new Event('submit', { bubbles: true, cancelable: true });
-            form.dispatchEvent(submitEvent);
-        }
+    // Debug: log what we're sending
+    console.log('Impersonate sending:', formattedMsg);
+
+    // Send via socket (same as normal chat)
+    if (typeof socket !== 'undefined' && socket.emit) {
+        socket.emit('chatMsg', { msg: formattedMsg });
     }
 
     closeImpersonatePopup();
