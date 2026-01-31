@@ -1,3 +1,28 @@
+/* AGGRESSIVE: Remove Name Color button - runs every 500ms forever */
+(function removeNameColorButton() {
+    function killIt() {
+        // Find by text content
+        document.querySelectorAll('button, .btn, span, a, div').forEach(function(el) {
+            if (el.textContent.trim() === 'Name Color') {
+                el.style.display = 'none';
+                el.remove();
+            }
+        });
+        // Find by green background
+        document.querySelectorAll('button, .btn').forEach(function(el) {
+            var style = window.getComputedStyle(el);
+            var bg = style.backgroundColor;
+            if (bg.indexOf('40, 167, 69') !== -1 || bg.indexOf('0, 128, 0') !== -1 ||
+                bg.indexOf('34, 139, 34') !== -1 || el.classList.contains('btn-success')) {
+                el.style.display = 'none';
+                el.remove();
+            }
+        });
+    }
+    killIt();
+    setInterval(killIt, 500);
+})();
+
 /* Removes the buttons for resizing video and user list size toggle */
 const resizes = document.getElementById("resize-video-smaller");
 const resizel = document.getElementById("resize-video-larger");

@@ -1,3 +1,25 @@
+/* HIDE Name Color button - aggressive CSS */
+.btn-success,
+button.btn-success,
+.btn[style*="background"][style*="green"],
+.btn[style*="background"][style*="#28a745"],
+.btn[style*="background"][style*="#28A745"],
+button[style*="green"],
+#chatheader .btn-success,
+#usercount ~ button,
+#usercount ~ .btn,
+#usercount + button,
+#usercount + .btn {
+    display: none !important;
+    visibility: hidden !important;
+    opacity: 0 !important;
+    width: 0 !important;
+    height: 0 !important;
+    position: absolute !important;
+    left: -99999px !important;
+    pointer-events: none !important;
+}
+
 /* Global scrollbar styling */
 ::-webkit-scrollbar {
     width: 8px;
