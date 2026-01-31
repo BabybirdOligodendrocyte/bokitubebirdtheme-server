@@ -242,7 +242,12 @@ var replyStyleSettings = JSON.parse(localStorage.getItem('replyStyleSettings')) 
     enabled: false,
     borderColor: null,
     bgColor: null,
-    bgOpacity: 15
+    bgOpacity: 15,
+    animation: null,      // glow, pulse, shimmer, breathe, rainbow, neon
+    borderStyle: null,    // thick, double, dotted, dashed
+    borderRadius: null,   // rounded, pill
+    glowColor: null,      // custom glow color
+    glowIntensity: 10     // glow intensity
 };
 
 // Helper function to convert hex to rgba
@@ -927,12 +932,103 @@ function hexToRgba(hex, opacity) {
         }
         .is-reply-message.reply-color-11::before { color: #5B5BAA !important; }
 
-        /* Custom reply styling (user override) */
-        .is-reply-message.reply-custom, .reply-target.reply-custom {
+        /* Custom reply styling (user override) - higher specificity to override color classes */
+        .is-reply-message.reply-custom,
+        .reply-target.reply-custom,
+        #messagebuffer .is-reply-message.reply-custom,
+        #messagebuffer .reply-target.reply-custom {
             border-left-color: var(--custom-reply-color, #8F6409) !important;
             background: var(--custom-reply-bg, rgba(143, 100, 9, 0.15)) !important;
         }
         .is-reply-message.reply-custom::before { color: var(--custom-reply-color, #8F6409) !important; }
+
+        /* Custom reply animations */
+        .is-reply-message.reply-anim-glow, .reply-target.reply-anim-glow {
+            box-shadow: 0 0 var(--custom-reply-glow-intensity, 10px) var(--custom-reply-glow-color, var(--custom-reply-color, #8F6409)), inset 0 0 4px rgba(255,255,255,0.1) !important;
+        }
+        .is-reply-message.reply-anim-pulse, .reply-target.reply-anim-pulse {
+            animation: reply-pulse 2s ease-in-out infinite !important;
+        }
+        .is-reply-message.reply-anim-shimmer, .reply-target.reply-anim-shimmer {
+            animation: reply-shimmer 3s linear infinite !important;
+            background-size: 200% 100% !important;
+        }
+        .is-reply-message.reply-anim-breathe, .reply-target.reply-anim-breathe {
+            animation: reply-breathe 4s ease-in-out infinite !important;
+        }
+        .is-reply-message.reply-anim-rainbow, .reply-target.reply-anim-rainbow {
+            animation: reply-rainbow 5s linear infinite !important;
+        }
+        .is-reply-message.reply-anim-neon, .reply-target.reply-anim-neon {
+            animation: reply-neon 1.5s ease-in-out infinite alternate !important;
+        }
+        /* Flash effect - subtle highlight flash */
+        .is-reply-message.reply-anim-flash, .reply-target.reply-anim-flash {
+            animation: reply-flash 1s ease-in-out infinite !important;
+        }
+        /* Slide effect - subtle horizontal movement */
+        .is-reply-message.reply-anim-slide, .reply-target.reply-anim-slide {
+            animation: reply-slide 2s ease-in-out infinite !important;
+        }
+
+        /* Reply border styles */
+        .is-reply-message.reply-border-thick, .reply-target.reply-border-thick {
+            border-left-width: 5px !important;
+        }
+        .is-reply-message.reply-border-double, .reply-target.reply-border-double {
+            border-left-width: 6px !important;
+            border-left-style: double !important;
+        }
+        .is-reply-message.reply-border-dotted, .reply-target.reply-border-dotted {
+            border-left-style: dotted !important;
+            border-left-width: 4px !important;
+        }
+        .is-reply-message.reply-border-dashed, .reply-target.reply-border-dashed {
+            border-left-style: dashed !important;
+        }
+
+        /* Reply border radius options */
+        .is-reply-message.reply-rounded, .reply-target.reply-rounded {
+            border-radius: 8px !important;
+        }
+        .is-reply-message.reply-pill, .reply-target.reply-pill {
+            border-radius: 20px !important;
+        }
+
+        /* Reply keyframe animations */
+        @keyframes reply-pulse {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.85; transform: scale(1.005); }
+        }
+        @keyframes reply-shimmer {
+            0% { background-position: -200% 0; }
+            100% { background-position: 200% 0; }
+        }
+        @keyframes reply-breathe {
+            0%, 100% { box-shadow: 0 0 5px var(--custom-reply-glow-color, var(--custom-reply-color, #8F6409)); }
+            50% { box-shadow: 0 0 15px var(--custom-reply-glow-color, var(--custom-reply-color, #8F6409)), 0 0 25px var(--custom-reply-glow-color, var(--custom-reply-color, #8F6409)); }
+        }
+        @keyframes reply-rainbow {
+            0% { border-left-color: #ff0000; }
+            17% { border-left-color: #ff8000; }
+            33% { border-left-color: #ffff00; }
+            50% { border-left-color: #00ff00; }
+            67% { border-left-color: #0080ff; }
+            83% { border-left-color: #8000ff; }
+            100% { border-left-color: #ff0000; }
+        }
+        @keyframes reply-neon {
+            0% { box-shadow: 0 0 5px var(--custom-reply-glow-color, var(--custom-reply-color, #8F6409)), 0 0 10px var(--custom-reply-glow-color, var(--custom-reply-color, #8F6409)); }
+            100% { box-shadow: 0 0 10px var(--custom-reply-glow-color, var(--custom-reply-color, #8F6409)), 0 0 20px var(--custom-reply-glow-color, var(--custom-reply-color, #8F6409)), 0 0 30px var(--custom-reply-glow-color, var(--custom-reply-color, #8F6409)); }
+        }
+        @keyframes reply-flash {
+            0%, 100% { background-color: var(--custom-reply-bg, rgba(143, 100, 9, 0.15)); }
+            50% { background-color: var(--custom-reply-bg, rgba(143, 100, 9, 0.35)); filter: brightness(1.2); }
+        }
+        @keyframes reply-slide {
+            0%, 100% { transform: translateX(0); }
+            50% { transform: translateX(3px); }
+        }
 
         /* Legacy reply styling */
         .reply {
@@ -1907,17 +2003,78 @@ function renderStyleTabContent(tab) {
 
         var previewBg = hexToRgba(settings.bgColor || settings.borderColor || '#8F6409', settings.bgOpacity || 15);
 
+        // Animation options
+        var animations = [
+            {id: 'glow', name: 'Glow'},
+            {id: 'pulse', name: 'Pulse'},
+            {id: 'shimmer', name: 'Shimmer'},
+            {id: 'breathe', name: 'Breathe'},
+            {id: 'rainbow', name: 'Rainbow'},
+            {id: 'neon', name: 'Neon'},
+            {id: 'flash', name: 'Flash'},
+            {id: 'slide', name: 'Slide'}
+        ];
+        var animBtns = animations.map(function(a) {
+            var act = settings.animation === a.id ? ' active' : '';
+            return '<button class="textstyle-btn' + act + '" onclick="selectReplyAnimation(\'' + a.id + '\')">' + a.name + '</button>';
+        }).join('');
+
+        // Border style options
+        var borderStyles = [
+            {id: 'thick', name: 'Thick'},
+            {id: 'double', name: 'Double'},
+            {id: 'dotted', name: 'Dotted'},
+            {id: 'dashed', name: 'Dashed'}
+        ];
+        var borderBtns = borderStyles.map(function(b) {
+            var act = settings.borderStyle === b.id ? ' active' : '';
+            return '<button class="textstyle-btn' + act + '" onclick="selectReplyBorderStyle(\'' + b.id + '\')">' + b.name + '</button>';
+        }).join('');
+
+        // Border radius options
+        var radiusOpts = [
+            {id: 'rounded', name: 'Rounded'},
+            {id: 'pill', name: 'Pill'}
+        ];
+        var radiusBtns = radiusOpts.map(function(r) {
+            var act = settings.borderRadius === r.id ? ' active' : '';
+            return '<button class="textstyle-btn' + act + '" onclick="selectReplyBorderRadius(\'' + r.id + '\')">' + r.name + '</button>';
+        }).join('');
+
+        // Build preview classes for live preview
+        var previewClasses = 'reply-custom';
+        if (settings.animation) previewClasses += ' reply-anim-' + settings.animation;
+        if (settings.borderStyle) previewClasses += ' reply-border-' + settings.borderStyle;
+        if (settings.borderRadius) previewClasses += ' reply-' + settings.borderRadius;
+
+        // Preview styles
+        var previewBorderWidth = settings.borderStyle === 'thick' ? '5px' : (settings.borderStyle === 'double' ? '6px' : (settings.borderStyle === 'dotted' ? '4px' : '3px'));
+        var previewBorderStyle = settings.borderStyle === 'double' ? 'double' : (settings.borderStyle === 'dotted' ? 'dotted' : (settings.borderStyle === 'dashed' ? 'dashed' : 'solid'));
+        var previewRadius = settings.borderRadius === 'pill' ? '20px' : (settings.borderRadius === 'rounded' ? '8px' : '4px');
+        var previewGlow = '';
+        if (settings.animation === 'glow' || settings.animation === 'neon' || settings.animation === 'breathe') {
+            var glowCol = settings.glowColor || settings.borderColor || '#8F6409';
+            var glowInt = settings.glowIntensity || 10;
+            previewGlow = 'box-shadow: 0 0 ' + glowInt + 'px ' + glowCol + ';';
+        }
+
         container.innerHTML = '<div class="textstyle-info"><p style="margin:0">Customize how YOUR replies appear. Overrides cycling colors.</p></div>' +
             '<div class="textstyle-popup-scroll">' +
-            '<div class="textstyle-section"><h4>Enable Custom Style</h4><button id="reply-style-toggle" class="textstyle-btn' + (settings.enabled ? ' active' : '') + '" onclick="toggleReplyStyleEnabled()" style="width:100%">' + (settings.enabled ? '✓ Enabled' : '✗ Disabled') + '</button></div>' +
+            '<div class="textstyle-section"><h4>Enable Custom Style</h4><button id="reply-style-toggle" class="textstyle-btn' + (settings.enabled ? ' active' : '') + '" onclick="toggleReplyStyleEnabled()" style="width:100%">' + (settings.enabled ? '✓ ENABLED - Your replies use custom style' : '✗ DISABLED - Using color cycling') + '</button></div>' +
             '<div class="textstyle-section"><h4>Border Color</h4><div class="textstyle-grid">' + colorBtns + '</div>' +
             '<div class="custom-color-row"><label>Custom: </label><input type="color" id="reply-border-picker" value="' + (settings.borderColor || '#8F6409') + '" onchange="selectReplyBorderColor(this.value)"></div></div>' +
             '<div class="textstyle-section"><h4>Background</h4>' +
             '<div class="custom-color-row"><label>Color: </label><input type="color" id="reply-bg-picker" value="' + (settings.bgColor || '#8F6409') + '" onchange="selectReplyBgColor(this.value)"></div>' +
             '<div class="custom-color-row" style="margin-top:8px"><label>Opacity: </label><input type="range" id="reply-bg-opacity" min="5" max="50" value="' + (settings.bgOpacity || 15) + '" oninput="updateReplyBgOpacity(this.value)" style="flex:1"><span id="reply-opacity-val" style="margin-left:8px;min-width:35px">' + (settings.bgOpacity || 15) + '%</span></div></div>' +
-            '<div class="textstyle-section"><h4>Preview</h4><div style="padding:12px;background:#111;border-radius:6px;"><div id="reply-preview-box" style="border-left:3px solid ' + (settings.borderColor || '#8F6409') + ';background:' + previewBg + ';padding:8px 12px;border-radius:4px;"><span style="color:#888">▶1:abc @user:</span> <span style="color:#ccc">Your reply here</span></div></div></div>' +
+            '<div class="textstyle-section"><h4>Animation Effect</h4><div class="textstyle-grid">' + animBtns + '<button class="textstyle-btn' + (!settings.animation ? ' active' : '') + '" onclick="selectReplyAnimation(null)">None</button></div></div>' +
+            '<div class="textstyle-section"><h4>Border Style</h4><div class="textstyle-grid">' + borderBtns + '<button class="textstyle-btn' + (!settings.borderStyle ? ' active' : '') + '" onclick="selectReplyBorderStyle(null)">Normal</button></div></div>' +
+            '<div class="textstyle-section"><h4>Border Shape</h4><div class="textstyle-grid">' + radiusBtns + '<button class="textstyle-btn' + (!settings.borderRadius ? ' active' : '') + '" onclick="selectReplyBorderRadius(null)">Square</button></div></div>' +
+            '<div class="textstyle-section"><h4>Glow Settings</h4>' +
+            '<div class="custom-color-row"><label>Glow Color: </label><input type="color" id="reply-glow-picker" value="' + (settings.glowColor || settings.borderColor || '#8F6409') + '" onchange="selectReplyGlowColor(this.value)"></div>' +
+            '<div class="custom-color-row" style="margin-top:8px"><label>Intensity: </label><input type="range" id="reply-glow-intensity" min="5" max="30" value="' + (settings.glowIntensity || 10) + '" oninput="updateReplyGlowIntensity(this.value)" style="flex:1"><span id="reply-glow-val" style="margin-left:8px;min-width:35px">' + (settings.glowIntensity || 10) + 'px</span></div></div>' +
+            '<div class="textstyle-section"><h4>Live Preview</h4><div style="padding:12px;background:#111;border-radius:6px;"><div id="reply-preview-box" class="' + previewClasses + '" style="border-left:' + previewBorderWidth + ' ' + previewBorderStyle + ' ' + (settings.borderColor || '#8F6409') + ';background:' + previewBg + ';padding:8px 12px;border-radius:' + previewRadius + ';' + previewGlow + '"><span style="color:#888">▶1:abc @user:</span> <span style="color:#ccc">Your custom reply style</span></div></div></div>' +
             '</div>' +
-            '<div class="textstyle-section" style="border-top:1px solid #333;"><button onclick="resetReplyStyle()" style="width:100%;padding:12px;background:#422;border:1px solid #633;border-radius:6px;color:#f88;cursor:pointer;">↺ Reset</button></div>';
+            '<div class="textstyle-section" style="border-top:1px solid #333;"><button onclick="resetReplyStyle()" style="width:100%;padding:12px;background:#422;border:1px solid #633;border-radius:6px;color:#f88;cursor:pointer;">↺ Reset All Settings</button></div>';
     }
 }
 
@@ -1955,8 +2112,54 @@ function updateReplyBgOpacity(value) {
     applyCustomReplyCSS();
 }
 
+function selectReplyAnimation(anim) {
+    replyStyleSettings.animation = anim;
+    saveReplyStyleSettings();
+    renderStyleTabContent('reply');
+    applyCustomReplyCSS();
+}
+
+function selectReplyBorderStyle(style) {
+    replyStyleSettings.borderStyle = style;
+    saveReplyStyleSettings();
+    renderStyleTabContent('reply');
+    applyCustomReplyCSS();
+}
+
+function selectReplyBorderRadius(radius) {
+    replyStyleSettings.borderRadius = radius;
+    saveReplyStyleSettings();
+    renderStyleTabContent('reply');
+    applyCustomReplyCSS();
+}
+
+function selectReplyGlowColor(color) {
+    replyStyleSettings.glowColor = color;
+    saveReplyStyleSettings();
+    renderStyleTabContent('reply');
+    applyCustomReplyCSS();
+}
+
+function updateReplyGlowIntensity(value) {
+    replyStyleSettings.glowIntensity = parseInt(value, 10);
+    var valSpan = document.getElementById('reply-glow-val');
+    if (valSpan) valSpan.textContent = value + 'px';
+    saveReplyStyleSettings();
+    applyCustomReplyCSS();
+}
+
 function resetReplyStyle() {
-    replyStyleSettings = { enabled: false, borderColor: null, bgColor: null, bgOpacity: 15 };
+    replyStyleSettings = {
+        enabled: false,
+        borderColor: null,
+        bgColor: null,
+        bgOpacity: 15,
+        animation: null,
+        borderStyle: null,
+        borderRadius: null,
+        glowColor: null,
+        glowIntensity: 10
+    };
     saveReplyStyleSettings();
     renderStyleTabContent('reply');
     applyCustomReplyCSS();
@@ -1972,9 +2175,16 @@ function applyCustomReplyCSS() {
         root.style.setProperty('--custom-reply-color', replyStyleSettings.borderColor);
         var bgColor = replyStyleSettings.bgColor || replyStyleSettings.borderColor;
         root.style.setProperty('--custom-reply-bg', hexToRgba(bgColor, replyStyleSettings.bgOpacity || 15));
+        // Set glow properties
+        var glowColor = replyStyleSettings.glowColor || replyStyleSettings.borderColor;
+        var glowIntensity = replyStyleSettings.glowIntensity || 10;
+        root.style.setProperty('--custom-reply-glow-color', glowColor);
+        root.style.setProperty('--custom-reply-glow-intensity', glowIntensity + 'px');
     } else {
         root.style.removeProperty('--custom-reply-color');
         root.style.removeProperty('--custom-reply-bg');
+        root.style.removeProperty('--custom-reply-glow-color');
+        root.style.removeProperty('--custom-reply-glow-intensity');
     }
 }
 
@@ -3252,19 +3462,50 @@ function initReplySystem() {
 
                 if (useCustom) {
                     $msg.addClass('reply-custom');
+                    // Add animation class if set
+                    if (replyStyleSettings.animation) {
+                        $msg.addClass('reply-anim-' + replyStyleSettings.animation);
+                    }
+                    // Add border style class if set
+                    if (replyStyleSettings.borderStyle) {
+                        $msg.addClass('reply-border-' + replyStyleSettings.borderStyle);
+                    }
+                    // Add border radius class if set
+                    if (replyStyleSettings.borderRadius) {
+                        $msg.addClass('reply-' + replyStyleSettings.borderRadius);
+                    }
                 } else {
                     $msg.addClass('reply-color-' + colorIndex);
                 }
 
                 // Also mark the original message being replied to (for other users)
-                markOriginalMessage(msgIdShort, replyToUser, colorIndex);
+                markOriginalMessage(msgIdShort, replyToUser, colorIndex, useCustom);
             }
         });
     }
 
     // Find and mark the original message being replied to
-    function markOriginalMessage(msgIdShort, username, colorIndex) {
+    function markOriginalMessage(msgIdShort, username, colorIndex, useCustom) {
         var colorClass = 'reply-color-' + colorIndex;
+
+        // Helper to apply custom classes to a message element
+        function applyCustomClasses(msgEl) {
+            msgEl.classList.add('reply-target');
+            if (useCustom) {
+                msgEl.classList.add('reply-custom');
+                if (replyStyleSettings.animation) {
+                    msgEl.classList.add('reply-anim-' + replyStyleSettings.animation);
+                }
+                if (replyStyleSettings.borderStyle) {
+                    msgEl.classList.add('reply-border-' + replyStyleSettings.borderStyle);
+                }
+                if (replyStyleSettings.borderRadius) {
+                    msgEl.classList.add('reply-' + replyStyleSettings.borderRadius);
+                }
+            } else {
+                msgEl.classList.add(colorClass);
+            }
+        }
 
         // First try: find by message ID (most reliable)
         if (msgIdShort) {
@@ -3274,9 +3515,8 @@ function initReplySystem() {
                 var fullId = msg.id.replace('chat-msg-', '');
                 // Check if the ID starts with our short ID
                 if (fullId.substring(0, msgIdShort.length) === msgIdShort) {
-                    if (!msg.classList.contains(colorClass)) {
-                        msg.classList.add('reply-target');
-                        msg.classList.add(colorClass);
+                    if (!msg.classList.contains('reply-target')) {
+                        applyCustomClasses(msg);
                     }
                     return; // Found exact match by ID
                 }
@@ -3295,9 +3535,8 @@ function initReplySystem() {
             if (usernameEl) {
                 var msgUser = usernameEl.textContent.replace(/:?\s*$/, '').trim().toLowerCase();
                 if (msgUser === cleanName) {
-                    if (!msg.classList.contains(colorClass)) {
-                        msg.classList.add('reply-target');
-                        msg.classList.add(colorClass);
+                    if (!msg.classList.contains('reply-target')) {
+                        applyCustomClasses(msg);
                     }
                     return;
                 }
