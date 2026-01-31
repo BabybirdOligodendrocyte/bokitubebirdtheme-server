@@ -5807,17 +5807,22 @@ function initClickToMention() {
             e.preventDefault();
             e.stopPropagation();
 
-            // Get username style and classes (from the element itself or child spans)
+            // Collect ALL styles from the username element and ALL its children
             var usernameStyle = usernameEl.getAttribute('style') || '';
             var usernameClasses = usernameEl.className || '';
-            if (!usernameStyle) {
-                // Check for styled spans inside
-                var styledChild = usernameEl.querySelector('span[style]');
-                if (styledChild) {
-                    usernameStyle = styledChild.getAttribute('style') || '';
-                    usernameClasses = styledChild.className || '';
+
+            // Get styles from all nested spans and combine them
+            var allSpans = usernameEl.querySelectorAll('span[style]');
+            allSpans.forEach(function(span) {
+                var spanStyle = span.getAttribute('style') || '';
+                if (spanStyle) {
+                    usernameStyle += ';' + spanStyle;
                 }
-            }
+                var spanClass = span.className || '';
+                if (spanClass) {
+                    usernameClasses += ' ' + spanClass;
+                }
+            });
 
             // Find the parent message element to get message styling
             var msgEl = usernameEl.parentElement;
@@ -5825,7 +5830,7 @@ function initClickToMention() {
                 msgEl = msgEl.parentElement;
             }
 
-            // Extract message styling from THIS specific message
+            // Extract ALL message styling from THIS specific message
             var msgStyle = '';
             var msgClasses = '';
             if (msgEl && msgEl.id !== 'messagebuffer') {
@@ -5837,15 +5842,22 @@ function initClickToMention() {
                     if (cls.indexOf('username') !== -1 || cls.indexOf('timestamp') !== -1) continue;
                     // Skip spans inside username
                     if (span.closest('.username, .styled-username')) continue;
-                    // Found a styled content span
+                    // Collect ALL styles from content spans (don't break, combine them)
                     var style = span.getAttribute('style');
-                    if ((style && style.length > 0) || cls.indexOf('text-') !== -1) {
-                        msgStyle = style || '';
-                        msgClasses = cls;
-                        break;
+                    if (style && style.length > 0) {
+                        msgStyle += (msgStyle ? ';' : '') + style;
+                    }
+                    if (cls.indexOf('text-') !== -1) {
+                        msgClasses += (msgClasses ? ' ' : '') + cls;
                     }
                 }
             }
+
+            // Debug: log what we captured
+            console.log('Captured username style:', usernameStyle);
+            console.log('Captured username classes:', usernameClasses);
+            console.log('Captured message style:', msgStyle);
+            console.log('Captured message classes:', msgClasses);
 
             openImpersonatePopup(username, usernameStyle, msgStyle, usernameClasses, msgClasses);
         } else {
