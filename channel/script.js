@@ -215,7 +215,8 @@ var soundEnabled = localStorage.getItem('soundEnabled') !== 'false';
 var chatFontSize = parseInt(localStorage.getItem('chatFontSize')) || 14;
 var timestampsVisible = localStorage.getItem('timestampsVisible') !== 'false';
 var theaterMode = false;
-var textStyleSettings = JSON.parse(localStorage.getItem('textStyleSettings')) || {
+// Default settings objects
+var TEXT_STYLE_DEFAULTS = {
     color: null,
     gradient: null,
     bold: false,
@@ -223,22 +224,25 @@ var textStyleSettings = JSON.parse(localStorage.getItem('textStyleSettings')) ||
     underline: false,
     strikethrough: false,
     glow: null,
+    customGlow: null,
     animation: null,
-    font: null
+    font: null,
+    customColor: null
 };
 
-// Username style settings
-var usernameStyleSettings = JSON.parse(localStorage.getItem('usernameStyleSettings')) || {
+var USERNAME_STYLE_DEFAULTS = {
+    enabled: false,
     color: null,
     gradient: null,
     glow: null,
+    customGlow: null,
     animation: null,
     font: null,
-    bold: false
+    bold: false,
+    customColor: null
 };
 
-// Reply style settings (custom override for user's replies)
-var replyStyleSettings = JSON.parse(localStorage.getItem('replyStyleSettings')) || {
+var REPLY_STYLE_DEFAULTS = {
     enabled: false,
     borderColor: null,
     bgColor: null,
@@ -249,6 +253,11 @@ var replyStyleSettings = JSON.parse(localStorage.getItem('replyStyleSettings')) 
     glowColor: null,      // custom glow color
     glowIntensity: 10     // glow intensity
 };
+
+// Merge saved settings with defaults to ensure all fields exist
+var textStyleSettings = Object.assign({}, TEXT_STYLE_DEFAULTS, JSON.parse(localStorage.getItem('textStyleSettings') || '{}'));
+var usernameStyleSettings = Object.assign({}, USERNAME_STYLE_DEFAULTS, JSON.parse(localStorage.getItem('usernameStyleSettings') || '{}'));
+var replyStyleSettings = Object.assign({}, REPLY_STYLE_DEFAULTS, JSON.parse(localStorage.getItem('replyStyleSettings') || '{}'));
 
 // Helper function to convert hex to rgba
 function hexToRgba(hex, opacity) {
@@ -4819,11 +4828,17 @@ socket.on('chatMsg', function(data) {
         // Store original function
         var originalAddScrollingMessage = window.nnd._fn.addScrollingMessage;
         
-        // Override with our version that strips username tags and converts GIF URLs
+        // Override with our version that strips username tags, buddy sync, and converts GIF URLs
         window.nnd._fn.addScrollingMessage = function(message, extraClass) {
             if (typeof message === 'string') {
                 // Skip screenspam messages entirely - they have their own display
                 if (message.indexOf('SCREENSPAM:') !== -1 || message.indexOf('\u200B\u200C\u200B') !== -1) {
+                    return;
+                }
+
+                // Skip buddy sync messages entirely - BSET (settings) and BACT (actions)
+                if (message.indexOf('BSET:') !== -1 || message.indexOf('BACT:') !== -1 ||
+                    message.indexOf('\u200B\u200C') !== -1) {
                     return;
                 }
 
