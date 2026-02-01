@@ -4350,6 +4350,11 @@ socket.on('chatMsg', function(data) {
         // Override with our version that strips username tags and converts GIF URLs
         window.nnd._fn.addScrollingMessage = function(message, extraClass) {
             if (typeof message === 'string') {
+                // Skip screenspam messages entirely - they have their own display
+                if (message.indexOf('SCREENSPAM:') !== -1 || message.indexOf('\u200B\u200C\u200B') !== -1) {
+                    return;
+                }
+
                 // Remove [uname]...[/uname] tags and their contents (including styled spans)
                 message = message.replace(/\[uname\][\s\S]*?\[\/uname\]\s*/gi, '');
                 
@@ -6121,151 +6126,354 @@ var screenspamMarker = '\u200B\u200C\u200B'; // Zero-width chars as marker
             font-weight: bold;
             color: #fff;
             text-shadow:
-                -2px -2px 0 #000,
-                2px -2px 0 #000,
-                -2px 2px 0 #000,
-                2px 2px 0 #000,
-                0 0 20px rgba(255,255,255,0.5);
+                -3px -3px 0 #000,
+                3px -3px 0 #000,
+                -3px 3px 0 #000,
+                3px 3px 0 #000,
+                0 0 30px rgba(255,255,255,0.8),
+                0 0 60px currentColor;
             white-space: nowrap;
             pointer-events: none;
             z-index: 10000;
         }
 
-        /* Screenspam animations */
-        @keyframes screenspam-scroll-left {
-            0% { transform: translateX(100vw); }
-            100% { transform: translateX(-100%); }
-        }
-        @keyframes screenspam-scroll-right {
-            0% { transform: translateX(-100%); }
-            100% { transform: translateX(100vw); }
-        }
-        @keyframes screenspam-drop {
-            0% { transform: translateY(-100px) rotate(-10deg); opacity: 0; }
-            10% { opacity: 1; }
-            50% { transform: translateY(50vh) rotate(5deg); }
-            70% { transform: translateY(40vh) rotate(-3deg); }
-            100% { transform: translateY(50vh) rotate(0deg); opacity: 0; }
-        }
-        @keyframes screenspam-explode {
-            0% { transform: scale(0) rotate(0deg); opacity: 0; }
-            20% { transform: scale(1.5) rotate(10deg); opacity: 1; }
-            40% { transform: scale(1.2) rotate(-5deg); }
-            60% { transform: scale(1.3) rotate(3deg); }
-            80% { transform: scale(1.1) rotate(-2deg); }
-            100% { transform: scale(0) rotate(720deg); opacity: 0; }
-        }
-        @keyframes screenspam-bounce {
-            0%, 100% { transform: translateY(0) scale(1); }
-            25% { transform: translateY(-30vh) scale(1.1) rotate(5deg); }
-            50% { transform: translateY(0) scale(0.95); }
-            75% { transform: translateY(-15vh) scale(1.05) rotate(-3deg); }
-        }
-        @keyframes screenspam-spin-fly {
-            0% { transform: translate(-100%, 50%) rotate(0deg) scale(0.5); opacity: 0; }
-            20% { opacity: 1; }
-            100% { transform: translate(100vw, -50%) rotate(1080deg) scale(1.5); opacity: 0; }
-        }
-        @keyframes screenspam-zigzag {
-            0% { transform: translate(-100%, 0); }
-            25% { transform: translate(25vw, 30vh); }
-            50% { transform: translate(50vw, -20vh); }
-            75% { transform: translate(75vw, 40vh); }
-            100% { transform: translate(100vw, 0); }
-        }
-        @keyframes screenspam-shake-grow {
-            0% { transform: scale(0.1); opacity: 0; }
-            10% { transform: scale(1); opacity: 1; }
-            15% { transform: scale(1) translateX(-10px); }
-            20% { transform: scale(1.1) translateX(10px); }
-            25% { transform: scale(1) translateX(-8px); }
-            30% { transform: scale(1.15) translateX(8px); }
-            35% { transform: scale(1.1) translateX(-5px); }
-            40% { transform: scale(1.2) translateX(5px); }
-            90% { transform: scale(1.2); opacity: 1; }
-            100% { transform: scale(3); opacity: 0; }
-        }
-        @keyframes screenspam-spiral {
-            0% { transform: translate(-50%, -50%) rotate(0deg) scale(0); opacity: 0; }
-            20% { opacity: 1; }
-            100% {
-                transform: translate(
-                    calc(-50% + 40vw * cos(720deg)),
-                    calc(-50% + 40vh * sin(720deg))
-                ) rotate(720deg) scale(1.5);
-                opacity: 0;
-            }
-        }
-        @keyframes screenspam-flash {
-            0%, 100% { opacity: 0; transform: scale(0.5); }
-            10%, 90% { opacity: 1; transform: scale(1); }
-            20% { opacity: 0.3; transform: scale(1.2); }
-            30% { opacity: 1; transform: scale(1); }
-            40% { opacity: 0.5; transform: scale(1.1); }
-            50% { opacity: 1; transform: scale(1); }
-            60% { opacity: 0.7; transform: scale(1.15); }
-        }
-        @keyframes screenspam-rain {
-            0% { transform: translateY(-100%) rotate(5deg); opacity: 0; }
-            10% { opacity: 1; }
-            90% { opacity: 1; }
-            100% { transform: translateY(100vh) rotate(-5deg); opacity: 0; }
-        }
-        @keyframes screenspam-wave {
-            0% { transform: translateX(-100%) translateY(0); }
-            25% { transform: translateX(0) translateY(-20vh); }
-            50% { transform: translateX(50vw) translateY(20vh); }
-            75% { transform: translateX(75vw) translateY(-10vh); }
-            100% { transform: translateX(100vw) translateY(0); opacity: 0; }
-        }
-        @keyframes screenspam-popup {
-            0% { transform: scale(0) rotate(-180deg); opacity: 0; }
-            30% { transform: scale(1.3) rotate(10deg); opacity: 1; }
-            50% { transform: scale(1) rotate(-5deg); }
-            70% { transform: scale(1.1) rotate(2deg); }
-            85% { transform: scale(1) rotate(0deg); opacity: 1; }
-            100% { transform: scale(0) rotate(180deg); opacity: 0; }
-        }
-        @keyframes screenspam-glitch {
-            0%, 100% { transform: translate(0, 0); filter: hue-rotate(0deg); }
-            10% { transform: translate(-5px, 3px); filter: hue-rotate(90deg); }
-            20% { transform: translate(5px, -3px); filter: hue-rotate(180deg); }
-            30% { transform: translate(-3px, -5px); filter: hue-rotate(270deg); }
-            40% { transform: translate(3px, 5px); filter: hue-rotate(0deg); }
-            50% { transform: translate(-5px, -3px) skewX(5deg); filter: hue-rotate(90deg); }
-            60% { transform: translate(5px, 3px) skewX(-5deg); filter: hue-rotate(180deg); }
-            70% { transform: translate(0, -5px); filter: hue-rotate(270deg); }
-            80% { transform: translate(-3px, 0); filter: hue-rotate(0deg); }
-            90% { transform: translate(3px, 3px); filter: hue-rotate(90deg); }
-        }
-        @keyframes screenspam-rainbow {
-            0% { filter: hue-rotate(0deg); transform: scale(1); }
-            50% { filter: hue-rotate(180deg); transform: scale(1.1); }
-            100% { filter: hue-rotate(360deg); transform: scale(1); opacity: 0; }
-        }
-        @keyframes screenspam-typewriter {
-            0% { width: 0; opacity: 1; }
-            80% { width: 100%; opacity: 1; }
-            100% { width: 100%; opacity: 0; }
+        /* CRAZY SCREENSPAM ANIMATIONS */
+
+        /* Nuclear explosion - starts tiny, becomes MASSIVE */
+        @keyframes screenspam-nuke {
+            0% { transform: scale(0) rotate(0deg); opacity: 0; filter: brightness(1); }
+            10% { transform: scale(0.5) rotate(180deg); opacity: 1; filter: brightness(3); }
+            20% { transform: scale(2) rotate(360deg); filter: brightness(5) blur(2px); }
+            30% { transform: scale(4) rotate(540deg); filter: brightness(3) blur(0); }
+            50% { transform: scale(6) rotate(720deg); filter: brightness(2); }
+            70% { transform: scale(8) rotate(900deg) skewX(10deg); filter: brightness(1.5); }
+            85% { transform: scale(10) rotate(1080deg) skewX(-5deg); opacity: 0.8; }
+            100% { transform: scale(15) rotate(1440deg); opacity: 0; filter: brightness(0); }
         }
 
-        /* Screenspam color variations */
-        .screenspam-color-0 { color: #ff0000; text-shadow: -2px -2px 0 #000, 2px -2px 0 #000, -2px 2px 0 #000, 2px 2px 0 #000, 0 0 30px #ff0000; }
-        .screenspam-color-1 { color: #00ff00; text-shadow: -2px -2px 0 #000, 2px -2px 0 #000, -2px 2px 0 #000, 2px 2px 0 #000, 0 0 30px #00ff00; }
-        .screenspam-color-2 { color: #00ffff; text-shadow: -2px -2px 0 #000, 2px -2px 0 #000, -2px 2px 0 #000, 2px 2px 0 #000, 0 0 30px #00ffff; }
-        .screenspam-color-3 { color: #ff00ff; text-shadow: -2px -2px 0 #000, 2px -2px 0 #000, -2px 2px 0 #000, 2px 2px 0 #000, 0 0 30px #ff00ff; }
-        .screenspam-color-4 { color: #ffff00; text-shadow: -2px -2px 0 #000, 2px -2px 0 #000, -2px 2px 0 #000, 2px 2px 0 #000, 0 0 30px #ffff00; }
-        .screenspam-color-5 { color: #ff6600; text-shadow: -2px -2px 0 #000, 2px -2px 0 #000, -2px 2px 0 #000, 2px 2px 0 #000, 0 0 30px #ff6600; }
-        .screenspam-color-6 { color: #ff69b4; text-shadow: -2px -2px 0 #000, 2px -2px 0 #000, -2px 2px 0 #000, 2px 2px 0 #000, 0 0 30px #ff69b4; }
+        /* Seizure warning - rapid color/position chaos */
+        @keyframes screenspam-seizure {
+            0% { transform: translate(0, 0) scale(1) rotate(0deg); filter: hue-rotate(0deg) brightness(1); }
+            5% { transform: translate(50px, -30px) scale(1.5) rotate(45deg); filter: hue-rotate(60deg) brightness(2); }
+            10% { transform: translate(-40px, 20px) scale(0.8) rotate(-30deg); filter: hue-rotate(120deg) brightness(3); }
+            15% { transform: translate(30px, 40px) scale(2) rotate(90deg); filter: hue-rotate(180deg) brightness(1); }
+            20% { transform: translate(-60px, -10px) scale(0.5) rotate(-60deg); filter: hue-rotate(240deg) brightness(2.5); }
+            25% { transform: translate(20px, -50px) scale(2.5) rotate(120deg); filter: hue-rotate(300deg) brightness(1.5); }
+            30% { transform: translate(-30px, 30px) scale(1) rotate(-90deg); filter: hue-rotate(360deg) brightness(3); }
+            35% { transform: translate(70px, 0) scale(1.8) rotate(150deg); filter: hue-rotate(60deg) brightness(1); }
+            40% { transform: translate(-20px, -40px) scale(0.6) rotate(-120deg); filter: hue-rotate(120deg) brightness(2); }
+            45% { transform: translate(40px, 60px) scale(3) rotate(180deg); filter: hue-rotate(180deg) brightness(2.5); }
+            50% { transform: translate(-50px, 10px) scale(1.2) rotate(-150deg); filter: hue-rotate(240deg) brightness(1); }
+            55% { transform: translate(10px, -30px) scale(2.2) rotate(210deg); filter: hue-rotate(300deg) brightness(3); }
+            60% { transform: translate(-40px, 50px) scale(0.7) rotate(-180deg); filter: hue-rotate(0deg) brightness(2); }
+            65% { transform: translate(60px, -20px) scale(2.8) rotate(240deg); filter: hue-rotate(60deg) brightness(1.5); }
+            70% { transform: translate(-10px, 40px) scale(1.5) rotate(-210deg); filter: hue-rotate(120deg) brightness(2.5); }
+            75% { transform: translate(30px, -60px) scale(0.9) rotate(270deg); filter: hue-rotate(180deg) brightness(1); }
+            80% { transform: translate(-70px, 0px) scale(3.5) rotate(-240deg); filter: hue-rotate(240deg) brightness(3); }
+            85% { transform: translate(50px, 30px) scale(1.1) rotate(300deg); filter: hue-rotate(300deg) brightness(2); }
+            90% { transform: translate(-30px, -50px) scale(2) rotate(-270deg); filter: hue-rotate(0deg) brightness(1.5); }
+            95% { transform: translate(20px, 20px) scale(4) rotate(330deg); filter: hue-rotate(60deg) brightness(2.5); }
+            100% { transform: translate(0, 0) scale(5) rotate(360deg); opacity: 0; filter: hue-rotate(120deg) brightness(0); }
+        }
+
+        /* Tornado spin - spins while moving chaotically */
+        @keyframes screenspam-tornado {
+            0% { transform: translate(0, 100vh) rotate(0deg) scale(0.3); opacity: 0; }
+            10% { transform: translate(10vw, 80vh) rotate(360deg) scale(0.5); opacity: 1; }
+            20% { transform: translate(-15vw, 60vh) rotate(720deg) scale(0.8); }
+            30% { transform: translate(20vw, 40vh) rotate(1080deg) scale(1.2); }
+            40% { transform: translate(-25vw, 30vh) rotate(1440deg) scale(1.5); }
+            50% { transform: translate(30vw, 20vh) rotate(1800deg) scale(2); }
+            60% { transform: translate(-20vw, 10vh) rotate(2160deg) scale(2.5); }
+            70% { transform: translate(15vw, 0vh) rotate(2520deg) scale(3); }
+            80% { transform: translate(-10vw, -20vh) rotate(2880deg) scale(3.5); }
+            90% { transform: translate(5vw, -40vh) rotate(3240deg) scale(4); }
+            100% { transform: translate(0, -60vh) rotate(3600deg) scale(5); opacity: 0; }
+        }
+
+        /* Pinball - bounces off walls crazily */
+        @keyframes screenspam-pinball {
+            0% { transform: translate(-50vw, -50vh) rotate(0deg) scale(1); }
+            8% { transform: translate(40vw, 30vh) rotate(180deg) scale(1.3); }
+            16% { transform: translate(-30vw, -40vh) rotate(360deg) scale(0.8); }
+            24% { transform: translate(45vw, -20vh) rotate(540deg) scale(1.5); }
+            32% { transform: translate(-40vw, 45vh) rotate(720deg) scale(1.1); }
+            40% { transform: translate(30vw, -45vh) rotate(900deg) scale(1.4); }
+            48% { transform: translate(-45vw, 20vh) rotate(1080deg) scale(0.9); }
+            56% { transform: translate(35vw, 40vh) rotate(1260deg) scale(1.6); }
+            64% { transform: translate(-20vw, -35vh) rotate(1440deg) scale(1.2); }
+            72% { transform: translate(40vw, 10vh) rotate(1620deg) scale(1.7); }
+            80% { transform: translate(-35vw, -10vh) rotate(1800deg) scale(1.3); }
+            88% { transform: translate(25vw, -30vh) rotate(1980deg) scale(2); }
+            100% { transform: translate(0, 0) rotate(2160deg) scale(3); opacity: 0; }
+        }
+
+        /* Rubber band - stretches and snaps */
+        @keyframes screenspam-rubber {
+            0% { transform: scale(0.1, 0.1); opacity: 0; }
+            10% { transform: scale(5, 0.2); opacity: 1; }
+            20% { transform: scale(0.3, 4); }
+            30% { transform: scale(4, 0.3); }
+            40% { transform: scale(0.4, 3); }
+            50% { transform: scale(3, 0.4) rotate(180deg); }
+            60% { transform: scale(0.5, 2.5) rotate(180deg); }
+            70% { transform: scale(2, 0.5) rotate(360deg); }
+            80% { transform: scale(1.5, 1.5) rotate(360deg); }
+            90% { transform: scale(2.5, 2.5) rotate(540deg); }
+            100% { transform: scale(4, 4) rotate(720deg); opacity: 0; }
+        }
+
+        /* Drunk walk - stumbles around */
+        @keyframes screenspam-drunk {
+            0% { transform: translate(-50vw, 0) rotate(-30deg) skewX(-20deg); }
+            10% { transform: translate(-35vw, 15vh) rotate(20deg) skewX(15deg); }
+            20% { transform: translate(-20vw, -10vh) rotate(-25deg) skewX(-25deg); }
+            30% { transform: translate(-5vw, 20vh) rotate(35deg) skewX(10deg); }
+            40% { transform: translate(10vw, -15vh) rotate(-40deg) skewX(-15deg); }
+            50% { transform: translate(20vw, 25vh) rotate(30deg) skewX(20deg); }
+            60% { transform: translate(30vw, -20vh) rotate(-35deg) skewX(-10deg); }
+            70% { transform: translate(40vw, 10vh) rotate(45deg) skewX(25deg); }
+            80% { transform: translate(50vw, -5vh) rotate(-20deg) skewX(-20deg); }
+            90% { transform: translate(60vw, 15vh) rotate(50deg) skewX(15deg) scale(1.5); }
+            100% { transform: translate(70vw, 0) rotate(-30deg) scale(2); opacity: 0; }
+        }
+
+        /* Earthquake - violently shakes everything */
+        @keyframes screenspam-earthquake {
+            0%, 100% { transform: translate(0, 0) rotate(0deg) scale(1); }
+            2% { transform: translate(-25px, 15px) rotate(-8deg) scale(1.1); }
+            4% { transform: translate(20px, -20px) rotate(6deg) scale(0.9); }
+            6% { transform: translate(-15px, -10px) rotate(-5deg) scale(1.2); }
+            8% { transform: translate(25px, 20px) rotate(10deg) scale(0.85); }
+            10% { transform: translate(-20px, 5px) rotate(-12deg) scale(1.15); }
+            12% { transform: translate(10px, -25px) rotate(8deg) scale(1.05); }
+            14% { transform: translate(-30px, 15px) rotate(-6deg) scale(0.95); }
+            16% { transform: translate(15px, -5px) rotate(15deg) scale(1.25); }
+            18% { transform: translate(-10px, 20px) rotate(-10deg) scale(0.9); }
+            20% { transform: translate(30px, -15px) rotate(5deg) scale(1.3); }
+            22% { transform: translate(-25px, 10px) rotate(-15deg) scale(0.85); }
+            24% { transform: translate(5px, 25px) rotate(12deg) scale(1.2); }
+            26% { transform: translate(-15px, -20px) rotate(-8deg) scale(1.1); }
+            28% { transform: translate(20px, 5px) rotate(10deg) scale(0.95); }
+            30% { transform: translate(-5px, 15px) rotate(-5deg) scale(1.35); }
+        }
+
+        /* Black hole - gets sucked in then explodes out */
+        @keyframes screenspam-blackhole {
+            0% { transform: scale(3) rotate(0deg); opacity: 1; filter: blur(0); }
+            20% { transform: scale(2) rotate(180deg); filter: blur(2px); }
+            40% { transform: scale(0.5) rotate(540deg); filter: blur(5px); }
+            50% { transform: scale(0.1) rotate(720deg); filter: blur(10px) brightness(3); }
+            55% { transform: scale(0.05) rotate(900deg); filter: blur(15px) brightness(5); }
+            60% { transform: scale(5) rotate(1080deg); filter: blur(0) brightness(3); }
+            70% { transform: scale(4) rotate(1260deg); filter: brightness(2); }
+            80% { transform: scale(6) rotate(1440deg); filter: brightness(1.5); }
+            90% { transform: scale(8) rotate(1620deg); opacity: 0.5; }
+            100% { transform: scale(12) rotate(1800deg); opacity: 0; }
+        }
+
+        /* Glitch nightmare - extreme glitching */
+        @keyframes screenspam-glitchnightmare {
+            0% { transform: translate(0, 0) skew(0deg); filter: hue-rotate(0deg); clip-path: inset(0 0 0 0); }
+            5% { transform: translate(-20px, 10px) skew(20deg); filter: hue-rotate(90deg); clip-path: inset(20% 0 30% 0); }
+            10% { transform: translate(15px, -15px) skew(-15deg); filter: hue-rotate(180deg) saturate(3); clip-path: inset(0 20% 0 40%); }
+            15% { transform: translate(-10px, 5px) skew(25deg); filter: hue-rotate(270deg) brightness(2); clip-path: inset(40% 0 10% 0); }
+            20% { transform: translate(25px, -5px) skew(-20deg); filter: hue-rotate(0deg) contrast(2); clip-path: inset(0 30% 0 20%); }
+            25% { transform: translate(-5px, 20px) skew(10deg); filter: hue-rotate(90deg) invert(1); clip-path: inset(10% 0 50% 0); }
+            30% { transform: translate(10px, -20px) skew(-30deg); filter: hue-rotate(180deg) saturate(5); clip-path: inset(0 50% 0 10%); }
+            35% { transform: translate(-30px, 0px) skew(15deg); filter: hue-rotate(270deg) brightness(3); clip-path: inset(60% 0 0 0); }
+            40% { transform: translate(20px, 10px) skew(-10deg); filter: hue-rotate(45deg) contrast(3); clip-path: inset(0 0 60% 0); }
+            45% { transform: translate(-15px, -10px) skew(35deg); filter: hue-rotate(135deg); clip-path: inset(25% 25% 25% 25%); }
+            50% { transform: translate(5px, 25px) skew(-25deg) scale(1.5); filter: hue-rotate(225deg) saturate(4); }
+            55% { transform: translate(-25px, -5px) skew(5deg) scale(0.8); filter: hue-rotate(315deg) brightness(2.5); }
+            60% { transform: translate(30px, 15px) skew(-35deg) scale(1.3); filter: hue-rotate(60deg) invert(0.5); }
+            65% { transform: translate(0px, -25px) skew(30deg) scale(1.1); filter: hue-rotate(150deg) contrast(2.5); }
+            70% { transform: translate(-20px, 20px) skew(-5deg) scale(1.6); filter: hue-rotate(240deg) saturate(2); }
+            75% { transform: translate(15px, 0px) skew(40deg) scale(0.9); filter: hue-rotate(330deg) brightness(1.5); }
+            80% { transform: translate(-10px, -15px) skew(-40deg) scale(2); filter: hue-rotate(30deg); }
+            85% { transform: translate(25px, 5px) skew(20deg) scale(1.4); filter: hue-rotate(120deg) invert(0.3); }
+            90% { transform: translate(-5px, 10px) skew(-15deg) scale(2.5); filter: hue-rotate(210deg) saturate(3); }
+            95% { transform: translate(10px, -10px) skew(25deg) scale(1.8); filter: hue-rotate(300deg) brightness(4); }
+            100% { transform: translate(0, 0) skew(0deg) scale(3); opacity: 0; filter: hue-rotate(0deg) brightness(0); }
+        }
+
+        /* Firework burst - explodes into multiple directions */
+        @keyframes screenspam-firework {
+            0% { transform: translateY(100vh) scale(0.5); opacity: 0; }
+            30% { transform: translateY(20vh) scale(1); opacity: 1; }
+            35% { transform: translateY(15vh) scale(1.2); }
+            40% { transform: translateY(10vh) scale(2) rotate(0deg); filter: brightness(3); }
+            50% { transform: translateY(0vh) scale(3) rotate(180deg); filter: brightness(2); }
+            60% { transform: translate(20vw, -10vh) scale(2) rotate(360deg); }
+            70% { transform: translate(-15vw, -20vh) scale(2.5) rotate(540deg); filter: brightness(1.5); }
+            80% { transform: translate(10vw, 15vh) scale(2) rotate(720deg); }
+            90% { transform: translate(-25vw, 5vh) scale(3) rotate(900deg); }
+            100% { transform: translate(30vw, -30vh) scale(4) rotate(1080deg); opacity: 0; }
+        }
+
+        /* Jello wobble - wobbly jello effect */
+        @keyframes screenspam-jello {
+            0% { transform: scale(0.1, 0.1); opacity: 0; }
+            10% { transform: scale(1.5, 0.5); opacity: 1; }
+            20% { transform: scale(0.6, 1.4); }
+            30% { transform: scale(1.3, 0.7); }
+            40% { transform: scale(0.8, 1.2); }
+            50% { transform: scale(1.1, 0.9) rotate(10deg); }
+            60% { transform: scale(0.95, 1.05) rotate(-8deg); }
+            70% { transform: scale(1.05, 0.95) rotate(5deg); }
+            80% { transform: scale(1.5, 1.5) rotate(-3deg); }
+            90% { transform: scale(2, 2) rotate(0deg); }
+            100% { transform: scale(3, 3); opacity: 0; }
+        }
+
+        /* Matrix rain - digital rain style */
+        @keyframes screenspam-matrix {
+            0% { transform: translateY(-100%) scale(1); opacity: 0; filter: blur(0) brightness(1); text-shadow: 0 0 10px #0f0, 0 0 20px #0f0, 0 0 40px #0f0; }
+            10% { transform: translateY(-50%) scale(1.2); opacity: 1; filter: brightness(2); }
+            20% { transform: translateY(0%) scale(0.9); filter: blur(1px) brightness(1.5); }
+            30% { transform: translateY(20%) scale(1.3); filter: blur(0) brightness(2); }
+            40% { transform: translateY(40%) scale(1.1); filter: brightness(1); }
+            50% { transform: translateY(50%) scale(1.5); filter: blur(2px) brightness(2.5); }
+            60% { transform: translateY(60%) scale(0.8); filter: blur(0) brightness(1.5); }
+            70% { transform: translateY(75%) scale(1.4); filter: brightness(2); }
+            80% { transform: translateY(85%) scale(1.2); filter: blur(1px) brightness(1); }
+            90% { transform: translateY(95%) scale(1.6); filter: blur(3px) brightness(0.5); }
+            100% { transform: translateY(110%) scale(2); opacity: 0; filter: blur(5px) brightness(0); }
+        }
+
+        /* Yo-yo - swings back and forth */
+        @keyframes screenspam-yoyo {
+            0% { transform: translateY(-100vh) rotate(-720deg) scale(0.5); opacity: 0; }
+            15% { transform: translateY(30vh) rotate(0deg) scale(1.5); opacity: 1; }
+            25% { transform: translateY(-20vh) rotate(360deg) scale(1); }
+            35% { transform: translateY(40vh) rotate(720deg) scale(2); }
+            45% { transform: translateY(-10vh) rotate(1080deg) scale(1.2); }
+            55% { transform: translateY(50vh) rotate(1440deg) scale(2.5); }
+            65% { transform: translateY(0vh) rotate(1800deg) scale(1.5); }
+            75% { transform: translateY(60vh) rotate(2160deg) scale(3); }
+            85% { transform: translateY(20vh) rotate(2520deg) scale(2); }
+            100% { transform: translateY(100vh) rotate(3600deg) scale(4); opacity: 0; }
+        }
+
+        /* Portal warp - spins into a portal */
+        @keyframes screenspam-portal {
+            0% { transform: scale(0) rotate(0deg); opacity: 0; filter: hue-rotate(0deg) blur(10px); }
+            10% { transform: scale(0.5) rotate(180deg); opacity: 1; filter: hue-rotate(36deg) blur(5px); }
+            20% { transform: scale(1) rotate(360deg); filter: hue-rotate(72deg) blur(0); }
+            30% { transform: scale(1.5) rotate(540deg); filter: hue-rotate(108deg); }
+            40% { transform: scale(2) rotate(720deg); filter: hue-rotate(144deg); }
+            50% { transform: scale(2.5) rotate(900deg); filter: hue-rotate(180deg) brightness(1.5); }
+            60% { transform: scale(2) rotate(1080deg); filter: hue-rotate(216deg); }
+            70% { transform: scale(1.5) rotate(1260deg); filter: hue-rotate(252deg); }
+            80% { transform: scale(0.8) rotate(1440deg); filter: hue-rotate(288deg) blur(5px); }
+            90% { transform: scale(0.3) rotate(1620deg); filter: hue-rotate(324deg) blur(10px); }
+            100% { transform: scale(0) rotate(1800deg); opacity: 0; filter: hue-rotate(360deg) blur(20px); }
+        }
+
+        /* Helicopter - spins like helicopter blades */
+        @keyframes screenspam-helicopter {
+            0% { transform: translate(-100vw, 50vh) rotate(0deg) scale(0.5); opacity: 0; }
+            10% { transform: translate(-70vw, 30vh) rotate(720deg) scale(1); opacity: 1; }
+            20% { transform: translate(-40vw, 60vh) rotate(1440deg) scale(1.3); }
+            30% { transform: translate(-10vw, 20vh) rotate(2160deg) scale(1.1); }
+            40% { transform: translate(20vw, 70vh) rotate(2880deg) scale(1.5); }
+            50% { transform: translate(40vw, 10vh) rotate(3600deg) scale(1.2); }
+            60% { transform: translate(55vw, 50vh) rotate(4320deg) scale(1.7); }
+            70% { transform: translate(70vw, 25vh) rotate(5040deg) scale(1.4); }
+            80% { transform: translate(85vw, 65vh) rotate(5760deg) scale(2); }
+            90% { transform: translate(100vw, 40vh) rotate(6480deg) scale(2.5); }
+            100% { transform: translate(120vw, 30vh) rotate(7200deg) scale(3); opacity: 0; }
+        }
+
+        /* Supernova - massive explosion */
+        @keyframes screenspam-supernova {
+            0% { transform: scale(0); opacity: 0; filter: brightness(1) blur(0); }
+            5% { transform: scale(0.1); opacity: 1; filter: brightness(10) blur(0); }
+            10% { transform: scale(0.3); filter: brightness(8); }
+            20% { transform: scale(1); filter: brightness(5) blur(2px); }
+            30% { transform: scale(2); filter: brightness(4) blur(0); }
+            40% { transform: scale(4); filter: brightness(3); }
+            50% { transform: scale(6); filter: brightness(2.5) hue-rotate(60deg); }
+            60% { transform: scale(8); filter: brightness(2) hue-rotate(120deg); }
+            70% { transform: scale(10); filter: brightness(1.5) hue-rotate(180deg); }
+            80% { transform: scale(12) rotate(45deg); filter: brightness(1) hue-rotate(240deg); opacity: 0.7; }
+            90% { transform: scale(15) rotate(90deg); filter: brightness(0.5) hue-rotate(300deg); opacity: 0.3; }
+            100% { transform: scale(20) rotate(180deg); filter: brightness(0) hue-rotate(360deg); opacity: 0; }
+        }
+
+        /* Slot machine - spins vertically like slots */
+        @keyframes screenspam-slots {
+            0% { transform: translateY(-200vh) rotate(-20deg); opacity: 0; }
+            5% { transform: translateY(-150vh) rotate(15deg); opacity: 1; }
+            10% { transform: translateY(-100vh) rotate(-10deg); }
+            15% { transform: translateY(-50vh) rotate(25deg); }
+            20% { transform: translateY(0) rotate(-15deg); }
+            25% { transform: translateY(50vh) rotate(20deg); }
+            30% { transform: translateY(100vh) rotate(-25deg); }
+            35% { transform: translateY(-80vh) rotate(10deg); }
+            40% { transform: translateY(-30vh) rotate(-20deg); }
+            45% { transform: translateY(20vh) rotate(30deg); }
+            50% { transform: translateY(70vh) rotate(-10deg); }
+            55% { transform: translateY(-60vh) rotate(15deg); }
+            60% { transform: translateY(-10vh) rotate(-30deg); }
+            65% { transform: translateY(40vh) rotate(25deg); }
+            70% { transform: translateY(10vh) rotate(-5deg) scale(1.5); }
+            80% { transform: translateY(15vh) rotate(3deg) scale(2); }
+            90% { transform: translateY(12vh) rotate(-2deg) scale(2.5); }
+            100% { transform: translateY(10vh) rotate(0deg) scale(3); opacity: 0; }
+        }
+
+        /* Screenspam color variations - EXTRA INTENSE */
+        .screenspam-color-0 {
+            color: #ff0000;
+            text-shadow: -3px -3px 0 #000, 3px -3px 0 #000, -3px 3px 0 #000, 3px 3px 0 #000,
+                         0 0 40px #ff0000, 0 0 80px #ff0000, 0 0 120px #ff3333;
+        }
+        .screenspam-color-1 {
+            color: #00ff00;
+            text-shadow: -3px -3px 0 #000, 3px -3px 0 #000, -3px 3px 0 #000, 3px 3px 0 #000,
+                         0 0 40px #00ff00, 0 0 80px #00ff00, 0 0 120px #33ff33;
+        }
+        .screenspam-color-2 {
+            color: #00ffff;
+            text-shadow: -3px -3px 0 #000, 3px -3px 0 #000, -3px 3px 0 #000, 3px 3px 0 #000,
+                         0 0 40px #00ffff, 0 0 80px #00ffff, 0 0 120px #33ffff;
+        }
+        .screenspam-color-3 {
+            color: #ff00ff;
+            text-shadow: -3px -3px 0 #000, 3px -3px 0 #000, -3px 3px 0 #000, 3px 3px 0 #000,
+                         0 0 40px #ff00ff, 0 0 80px #ff00ff, 0 0 120px #ff33ff;
+        }
+        .screenspam-color-4 {
+            color: #ffff00;
+            text-shadow: -3px -3px 0 #000, 3px -3px 0 #000, -3px 3px 0 #000, 3px 3px 0 #000,
+                         0 0 40px #ffff00, 0 0 80px #ffff00, 0 0 120px #ffff33;
+        }
+        .screenspam-color-5 {
+            color: #ff6600;
+            text-shadow: -3px -3px 0 #000, 3px -3px 0 #000, -3px 3px 0 #000, 3px 3px 0 #000,
+                         0 0 40px #ff6600, 0 0 80px #ff6600, 0 0 120px #ff9933;
+        }
+        .screenspam-color-6 {
+            color: #ff69b4;
+            text-shadow: -3px -3px 0 #000, 3px -3px 0 #000, -3px 3px 0 #000, 3px 3px 0 #000,
+                         0 0 40px #ff69b4, 0 0 80px #ff69b4, 0 0 120px #ff99cc;
+        }
         .screenspam-color-7 {
-            background: linear-gradient(90deg, #ff0000, #ff7f00, #ffff00, #00ff00, #0000ff, #4b0082, #9400d3);
+            background: linear-gradient(90deg, #ff0000, #ff7f00, #ffff00, #00ff00, #0000ff, #4b0082, #9400d3, #ff0000);
+            background-size: 200% 100%;
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
             background-clip: text;
-            filter: drop-shadow(0 0 10px rgba(255,255,255,0.8));
+            animation: rainbow-shift 0.5s linear infinite;
+            filter: drop-shadow(0 0 20px rgba(255,255,255,0.9)) drop-shadow(0 0 40px rgba(255,0,255,0.7));
+        }
+        @keyframes rainbow-shift {
+            0% { background-position: 0% 50%; }
+            100% { background-position: 200% 50%; }
         }
 
-        /* Cooldown indicator */
+        /* Toast indicator */
         .screenspam-cooldown-toast {
             position: fixed;
             bottom: 100px;
@@ -6288,164 +6496,197 @@ var screenspamMarker = '\u200B\u200C\u200B'; // Zero-width chars as marker
     document.head.appendChild(screenspamStyles);
 })();
 
-// Pool of animation effects
+// Pool of CRAZY animation effects
 var SCREENSPAM_EFFECTS = [
     {
-        name: 'scroll-left',
-        apply: function(el, container) {
-            var height = container.offsetHeight;
-            el.style.top = (Math.random() * (height - 60)) + 'px';
-            el.style.left = '0';
-            el.style.fontSize = (30 + Math.random() * 30) + 'px';
-            el.style.animation = 'screenspam-scroll-left ' + (3 + Math.random() * 2) + 's linear forwards';
-        }
-    },
-    {
-        name: 'scroll-right',
-        apply: function(el, container) {
-            var height = container.offsetHeight;
-            el.style.top = (Math.random() * (height - 60)) + 'px';
-            el.style.left = '0';
-            el.style.fontSize = (30 + Math.random() * 30) + 'px';
-            el.style.animation = 'screenspam-scroll-right ' + (3 + Math.random() * 2) + 's linear forwards';
-        }
-    },
-    {
-        name: 'drop',
-        apply: function(el, container) {
-            el.style.left = (10 + Math.random() * 80) + '%';
-            el.style.top = '0';
-            el.style.fontSize = (40 + Math.random() * 40) + 'px';
-            el.style.animation = 'screenspam-drop 5s ease-in-out forwards';
-        }
-    },
-    {
-        name: 'explode',
-        apply: function(el, container) {
-            el.style.left = '50%';
-            el.style.top = '50%';
-            el.style.transform = 'translate(-50%, -50%)';
-            el.style.fontSize = (50 + Math.random() * 50) + 'px';
-            el.style.animation = 'screenspam-explode 5s ease-out forwards';
-        }
-    },
-    {
-        name: 'bounce',
-        apply: function(el, container) {
-            el.style.left = (20 + Math.random() * 60) + '%';
-            el.style.bottom = '10%';
-            el.style.fontSize = (35 + Math.random() * 35) + 'px';
-            el.style.animation = 'screenspam-bounce 1s ease-in-out 5';
-            setTimeout(function() { el.style.opacity = '0'; }, 4800);
-        }
-    },
-    {
-        name: 'spin-fly',
-        apply: function(el, container) {
-            el.style.top = '50%';
-            el.style.left = '0';
-            el.style.fontSize = (40 + Math.random() * 30) + 'px';
-            el.style.animation = 'screenspam-spin-fly 5s ease-in-out forwards';
-        }
-    },
-    {
-        name: 'zigzag',
-        apply: function(el, container) {
-            el.style.top = '30%';
-            el.style.left = '0';
-            el.style.fontSize = (35 + Math.random() * 25) + 'px';
-            el.style.animation = 'screenspam-zigzag 5s ease-in-out forwards';
-        }
-    },
-    {
-        name: 'shake-grow',
-        apply: function(el, container) {
-            el.style.left = '50%';
-            el.style.top = '50%';
-            el.style.transform = 'translate(-50%, -50%)';
-            el.style.fontSize = (45 + Math.random() * 35) + 'px';
-            el.style.animation = 'screenspam-shake-grow 5s ease-out forwards';
-        }
-    },
-    {
-        name: 'flash',
+        name: 'nuke',
         apply: function(el, container) {
             el.style.left = '50%';
             el.style.top = '50%';
             el.style.transform = 'translate(-50%, -50%)';
             el.style.fontSize = (60 + Math.random() * 40) + 'px';
-            el.style.animation = 'screenspam-flash 5s ease-in-out forwards';
+            el.style.animation = 'screenspam-nuke 5s ease-out forwards';
         }
     },
     {
-        name: 'rain',
+        name: 'seizure',
         apply: function(el, container) {
-            el.style.left = (5 + Math.random() * 90) + '%';
-            el.style.top = '0';
-            el.style.fontSize = (25 + Math.random() * 25) + 'px';
-            el.style.animation = 'screenspam-rain ' + (3 + Math.random() * 2) + 's linear forwards';
+            el.style.left = '50%';
+            el.style.top = '50%';
+            el.style.transform = 'translate(-50%, -50%)';
+            el.style.fontSize = (50 + Math.random() * 50) + 'px';
+            el.style.animation = 'screenspam-seizure 5s linear forwards';
         }
     },
     {
-        name: 'wave',
+        name: 'tornado',
         apply: function(el, container) {
-            el.style.top = '40%';
-            el.style.left = '0';
-            el.style.fontSize = (35 + Math.random() * 30) + 'px';
-            el.style.animation = 'screenspam-wave 5s ease-in-out forwards';
+            el.style.left = '50%';
+            el.style.top = '100%';
+            el.style.fontSize = (40 + Math.random() * 40) + 'px';
+            el.style.animation = 'screenspam-tornado 5s ease-in-out forwards';
         }
     },
     {
-        name: 'popup',
-        apply: function(el, container) {
-            el.style.left = (15 + Math.random() * 70) + '%';
-            el.style.top = (20 + Math.random() * 60) + '%';
-            el.style.fontSize = (50 + Math.random() * 40) + 'px';
-            el.style.animation = 'screenspam-popup 5s ease-out forwards';
-        }
-    },
-    {
-        name: 'glitch',
+        name: 'pinball',
         apply: function(el, container) {
             el.style.left = '50%';
             el.style.top = '50%';
             el.style.transform = 'translate(-50%, -50%)';
             el.style.fontSize = (45 + Math.random() * 35) + 'px';
-            el.style.animation = 'screenspam-glitch 0.5s ease-in-out 10';
-            setTimeout(function() { el.style.opacity = '0'; }, 4800);
+            el.style.animation = 'screenspam-pinball 5s linear forwards';
         }
     },
     {
-        name: 'rainbow',
+        name: 'rubber',
         apply: function(el, container) {
             el.style.left = '50%';
             el.style.top = '50%';
             el.style.transform = 'translate(-50%, -50%)';
-            el.style.fontSize = (55 + Math.random() * 35) + 'px';
-            el.style.animation = 'screenspam-rainbow 5s linear forwards';
+            el.style.fontSize = (55 + Math.random() * 45) + 'px';
+            el.style.animation = 'screenspam-rubber 5s ease-in-out forwards';
         }
     },
     {
-        name: 'multi-rain',
+        name: 'drunk',
         apply: function(el, container) {
-            // Create multiple copies for rain effect
+            el.style.left = '0';
+            el.style.top = '50%';
+            el.style.fontSize = (40 + Math.random() * 30) + 'px';
+            el.style.animation = 'screenspam-drunk 5s ease-in-out forwards';
+        }
+    },
+    {
+        name: 'earthquake',
+        apply: function(el, container) {
+            el.style.left = '50%';
+            el.style.top = '50%';
+            el.style.transform = 'translate(-50%, -50%)';
+            el.style.fontSize = (70 + Math.random() * 50) + 'px';
+            el.style.animation = 'screenspam-earthquake 0.1s linear 50';
+            setTimeout(function() { el.style.opacity = '0'; }, 4800);
+        }
+    },
+    {
+        name: 'blackhole',
+        apply: function(el, container) {
+            el.style.left = '50%';
+            el.style.top = '50%';
+            el.style.transform = 'translate(-50%, -50%)';
+            el.style.fontSize = (50 + Math.random() * 40) + 'px';
+            el.style.animation = 'screenspam-blackhole 5s ease-in-out forwards';
+        }
+    },
+    {
+        name: 'glitchnightmare',
+        apply: function(el, container) {
+            el.style.left = '50%';
+            el.style.top = '50%';
+            el.style.transform = 'translate(-50%, -50%)';
+            el.style.fontSize = (55 + Math.random() * 45) + 'px';
+            el.style.animation = 'screenspam-glitchnightmare 5s linear forwards';
+        }
+    },
+    {
+        name: 'firework',
+        apply: function(el, container) {
+            el.style.left = '50%';
+            el.style.bottom = '0';
+            el.style.fontSize = (45 + Math.random() * 35) + 'px';
+            el.style.animation = 'screenspam-firework 5s ease-out forwards';
+        }
+    },
+    {
+        name: 'jello',
+        apply: function(el, container) {
+            el.style.left = '50%';
+            el.style.top = '50%';
+            el.style.transform = 'translate(-50%, -50%)';
+            el.style.fontSize = (60 + Math.random() * 40) + 'px';
+            el.style.animation = 'screenspam-jello 5s ease-in-out forwards';
+        }
+    },
+    {
+        name: 'matrix',
+        apply: function(el, container) {
+            el.style.left = (10 + Math.random() * 80) + '%';
+            el.style.top = '0';
+            el.style.fontSize = (40 + Math.random() * 30) + 'px';
+            el.style.color = '#00ff00';
+            el.style.animation = 'screenspam-matrix 5s linear forwards';
+        }
+    },
+    {
+        name: 'yoyo',
+        apply: function(el, container) {
+            el.style.left = '50%';
+            el.style.top = '0';
+            el.style.transform = 'translateX(-50%)';
+            el.style.fontSize = (50 + Math.random() * 40) + 'px';
+            el.style.animation = 'screenspam-yoyo 5s ease-in-out forwards';
+        }
+    },
+    {
+        name: 'portal',
+        apply: function(el, container) {
+            el.style.left = '50%';
+            el.style.top = '50%';
+            el.style.transform = 'translate(-50%, -50%)';
+            el.style.fontSize = (55 + Math.random() * 45) + 'px';
+            el.style.animation = 'screenspam-portal 5s ease-in-out forwards';
+        }
+    },
+    {
+        name: 'helicopter',
+        apply: function(el, container) {
+            el.style.left = '0';
+            el.style.top = '50%';
+            el.style.fontSize = (35 + Math.random() * 25) + 'px';
+            el.style.animation = 'screenspam-helicopter 5s linear forwards';
+        }
+    },
+    {
+        name: 'supernova',
+        apply: function(el, container) {
+            el.style.left = '50%';
+            el.style.top = '50%';
+            el.style.transform = 'translate(-50%, -50%)';
+            el.style.fontSize = (40 + Math.random() * 30) + 'px';
+            el.style.animation = 'screenspam-supernova 5s ease-out forwards';
+        }
+    },
+    {
+        name: 'slots',
+        apply: function(el, container) {
+            el.style.left = '50%';
+            el.style.top = '0';
+            el.style.transform = 'translateX(-50%)';
+            el.style.fontSize = (50 + Math.random() * 40) + 'px';
+            el.style.animation = 'screenspam-slots 5s ease-out forwards';
+        }
+    },
+    {
+        name: 'chaos-multi',
+        apply: function(el, container) {
+            // Create MANY copies with different crazy effects
             var text = el.textContent;
-            var colorClass = el.className.match(/screenspam-color-\d/);
+            var html = el.innerHTML;
             el.remove();
 
-            for (var i = 0; i < 5; i++) {
+            var effects = ['screenspam-nuke', 'screenspam-tornado', 'screenspam-pinball', 'screenspam-seizure', 'screenspam-blackhole'];
+            for (var i = 0; i < 8; i++) {
                 var copy = document.createElement('div');
-                copy.className = 'screenspam-msg ' + (colorClass ? colorClass[0] : 'screenspam-color-' + Math.floor(Math.random() * 8));
-                copy.textContent = text;
-                copy.style.left = (5 + i * 20 + Math.random() * 10) + '%';
-                copy.style.top = '-50px';
-                copy.style.fontSize = (25 + Math.random() * 20) + 'px';
-                copy.style.animation = 'screenspam-rain ' + (3 + Math.random() * 2) + 's linear forwards';
-                copy.style.animationDelay = (i * 0.3) + 's';
+                copy.className = 'screenspam-msg screenspam-color-' + Math.floor(Math.random() * 8);
+                copy.innerHTML = html;
+                copy.style.left = (Math.random() * 80 + 10) + '%';
+                copy.style.top = (Math.random() * 80 + 10) + '%';
+                copy.style.fontSize = (30 + Math.random() * 40) + 'px';
+                copy.style.animation = effects[Math.floor(Math.random() * effects.length)] + ' ' + (3 + Math.random() * 3) + 's linear forwards';
+                copy.style.animationDelay = (i * 0.2) + 's';
                 container.appendChild(copy);
 
                 (function(elem) {
-                    setTimeout(function() { elem.remove(); }, SCREENSPAM_DURATION + 1000);
+                    setTimeout(function() { if (elem.parentNode) elem.remove(); }, SCREENSPAM_DURATION + 2000);
                 })(copy);
             }
         }
@@ -6569,20 +6810,6 @@ function initScreenspamCommand() {
             setTimeout(function() { toast.remove(); }, 2000);
             return;
         }
-
-        // Check cooldown
-        var myUsername = (CLIENT && CLIENT.name) ? CLIENT.name : 'anonymous';
-        var remaining = checkScreenspamCooldown(myUsername);
-
-        if (remaining > 0) {
-            e.preventDefault();
-            e.stopImmediatePropagation();
-            showCooldownToast(remaining / 1000);
-            return;
-        }
-
-        // Set cooldown
-        setScreenspamCooldown(myUsername);
 
         // Modify message to include screenspam marker
         // The marker is invisible zero-width characters that other clients will detect
