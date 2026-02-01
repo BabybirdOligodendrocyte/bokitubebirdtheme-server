@@ -584,3 +584,57 @@ Detects and converts:
 - `openImpersonatePopup(username, usernameStyle, msgStyle, usernameClasses, msgClasses)` - Opens popup
 - `sendImpersonateMessage()` - Builds and sends the formatted message
 - `initClickToMention()` - Sets up shift+click handler on usernames
+
+## Failed Approaches & Lessons Learned
+
+### Dual Playlist System (2026-02) - FAILED
+
+Attempted to create a priority queue system with a separate media pool. Multiple approaches were tried and all failed:
+
+#### Approach 1: Custom UI with localStorage
+- **What**: Created a separate custom priority queue panel above CyTube's native playlist
+- **Problem**: Videos in custom UI couldn't be previewed (click to watch), mediaId wasn't captured properly from `CHANNEL.playlist`, couldn't move videos back to pool
+- **Lesson**: Custom UI loses all native CyTube functionality (preview, buttons, drag-drop)
+
+#### Approach 2: Socket Interception
+- **What**: Intercepted `socket.emit('queue')` to redirect new videos to priority queue
+- **Problem**: Broke the Add Media dropdown completely - it wouldn't open
+- **Lesson**: NEVER intercept `socket.emit` - it breaks CyTube's core functionality
+
+#### Approach 3: Divider in Native Playlist
+- **What**: Inserted a visual divider element into CyTube's native `#queue`, used `socket.emit('moveMedia')` to reorder videos
+- **Problem**: Caused severe lag, MutationObserver fired constantly, videos didn't display properly
+- **Lesson**: DOM manipulation inside `#queue` causes cascading updates and lag
+
+#### Approach 4: CSS-only Priority Marking
+- **What**: Just tracked priority UIDs in localStorage, added CSS class for visual distinction, no DOM manipulation
+- **Problem**: No visual separation between priority and pool sections - user couldn't distinguish them
+- **Lesson**: Pure CSS marking without visual grouping doesn't meet UX requirements
+
+### Key CyTube Constraints Discovered
+
+1. **`CHANNEL.playlist`** - May not always contain media data; structure is `[{uid, media: {id, type, title, seconds}, temp}]`
+2. **`Playlist` object** - CyTube uses a linked list structure with `.current`, `.next` pointers
+3. **`socket.emit('moveMedia', {from: uid, after: uid|'prepend'|'append'})`** - Moves videos but causes async DOM updates
+4. **`socket.emit('delete', uid)`** - Removes from playlist
+5. **`socket.emit('jumpTo', uid)`** - Plays a specific video
+6. **`socket.on('queue', callback)`** - Fires when new video added; data has `{item: {uid, media, temp, queueby}}`
+7. **MutationObserver on `#queue`** - Fires very frequently, causes lag if handler does significant work
+
+### What NOT to Do
+
+- **DON'T** intercept `socket.emit` - breaks Add Media and other CyTube features
+- **DON'T** use MutationObserver on `#queue` with heavy handlers - causes lag
+- **DON'T** insert custom elements (dividers) into `#queue` - disrupts CyTube's DOM management
+- **DON'T** call `socket.emit('moveMedia')` in rapid succession - causes cascading updates
+- **DON'T** create custom playlist UI if you need native CyTube features (preview, buttons)
+
+### Potential Future Approaches (Untested)
+
+1. **Two separate `#queue` clones**: Clone the entire queue element, filter each to show only priority/pool items via CSS `display:none` on entries. Sync changes between them.
+
+2. **Server-side approach**: If you control the CyTube server, modify it to support playlist sections natively.
+
+3. **Iframe isolation**: Render priority queue in an iframe to completely isolate it from main page DOM.
+
+4. **Accept limitations**: Use CSS-only marking (gold border) and accept that videos won't be visually grouped - rely on playback logic only.
