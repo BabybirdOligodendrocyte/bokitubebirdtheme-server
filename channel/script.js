@@ -7518,24 +7518,28 @@ function isBuddySyncMessage(msgText) {
 
 // Parse incoming chat messages for buddy sync data
 function parseBuddySyncMessage(msgText) {
-    // Check for settings broadcast
-    var settingsMatch = msgText.match(/\u200B\u200CBSET:([^:]+):([^:]+):BSET\u200B\u200C/);
+    // Check for settings broadcast - try multiple patterns in case zero-width chars are stripped
+    var settingsMatch = msgText.match(/[\u200B\u200C]*BSET:([^:]+):([A-Za-z0-9+/=]+):BSET[\u200B\u200C]*/);
     if (settingsMatch) {
         var username = settingsMatch[1];
         var encoded = settingsMatch[2];
         var settings = decodeBuddySettings(encoded);
-        if (settings && username !== getMyUsername()) {
-            customBuddySettings[username] = settings;
-            // Update existing buddy if present
-            if (buddyCharacters[username]) {
-                applyCustomSettingsToBuddy(username);
+        if (settings) {
+            var myName = getMyUsername();
+            if (username !== myName) {
+                // Store settings for other users
+                customBuddySettings[username] = settings;
+                // Force update existing buddy if present
+                if (buddyCharacters[username]) {
+                    applyCustomSettingsToBuddy(username);
+                }
             }
         }
         return true; // Message was a sync message
     }
 
-    // Check for interaction broadcast (with positions)
-    var actionMatch = msgText.match(/\u200B\u200CBACT:([^:]+):([^:]+):([^:]+):([^:]+):([^:]+):([^:]+):BACT\u200B\u200C/);
+    // Check for interaction broadcast (with positions) - flexible pattern
+    var actionMatch = msgText.match(/[\u200B\u200C]*BACT:([^:]+):([^:]+):([^:]+):(\d+):([^:]+):([^:]+):BACT[\u200B\u200C]*/);
     if (actionMatch) {
         var user1 = actionMatch[1];
         var user2 = actionMatch[2];
@@ -7553,7 +7557,7 @@ function parseBuddySyncMessage(msgText) {
     }
 
     // Fallback for old format without positions
-    var oldActionMatch = msgText.match(/\u200B\u200CBACT:([^:]+):([^:]+):([^:]+):([^:]+):BACT\u200B\u200C/);
+    var oldActionMatch = msgText.match(/[\u200B\u200C]*BACT:([^:]+):([^:]+):([^:]+):(\d+):BACT[\u200B\u200C]*/);
     if (oldActionMatch) {
         var user1 = oldActionMatch[1];
         var user2 = oldActionMatch[2];
@@ -7722,21 +7726,38 @@ function getBuddyPhrase(buddy, phraseType, defaultPhrases, seededRandom) {
 
 // Initialize sync message listener
 function initBuddySyncListener() {
-    // Add CSS to hide sync messages as a fallback
-    var hideStyle = document.createElement('style');
-    hideStyle.textContent = '#messagebuffer > div { transition: none; } .buddy-sync-hide { display: none !important; height: 0 !important; overflow: hidden !important; margin: 0 !important; padding: 0 !important; }';
-    document.head.appendChild(hideStyle);
-
-    // Listen for chat messages via socket
+    // Intercept socket chatMsg to prevent sync messages from displaying at all
     if (typeof socket !== 'undefined') {
-        socket.on('chatMsg', function(data) {
-            if (data.msg) {
+        // Store original emit handlers
+        var originalOn = socket.on.bind(socket);
+        var chatMsgHandlers = [];
+
+        // Wrap socket.on to intercept chatMsg handlers
+        socket.on = function(event, handler) {
+            if (event === 'chatMsg') {
+                // Wrap the handler to filter sync messages
+                var wrappedHandler = function(data) {
+                    if (data.msg && isBuddySyncMessage(data.msg)) {
+                        // Process sync data but don't pass to original handler
+                        parseBuddySyncMessage(data.msg);
+                        return; // Don't display this message
+                    }
+                    handler(data);
+                };
+                return originalOn(event, wrappedHandler);
+            }
+            return originalOn(event, handler);
+        };
+
+        // Also listen directly for sync messages
+        originalOn('chatMsg', function(data) {
+            if (data.msg && isBuddySyncMessage(data.msg)) {
                 parseBuddySyncMessage(data.msg);
             }
         });
     }
 
-    // Watch messagebuffer for sync messages and remove them completely
+    // Backup: Watch messagebuffer and immediately remove any sync messages that slip through
     var msgBuffer = document.getElementById('messagebuffer');
     if (msgBuffer) {
         var observer = new MutationObserver(function(mutations) {
@@ -7744,66 +7765,41 @@ function initBuddySyncListener() {
                 mutation.addedNodes.forEach(function(node) {
                     if (node.nodeType === 1) {
                         var text = node.textContent || '';
-                        // Check if it's a sync message
                         if (isBuddySyncMessage(text)) {
-                            // Process the sync data first
                             parseBuddySyncMessage(text);
-                            // Hide immediately, then remove after a short delay
-                            node.classList.add('buddy-sync-hide');
-                            setTimeout(function() {
-                                if (node.parentNode) {
-                                    node.parentNode.removeChild(node);
-                                }
-                            }, 10);
+                            // Remove immediately - set display none first to prevent flash
+                            node.style.cssText = 'display:none!important;height:0!important;opacity:0!important;';
+                            node.remove();
                         }
                     }
                 });
             });
         });
-        observer.observe(msgBuffer, { childList: true });
-
-        // Also do a periodic cleanup of any sync messages that slipped through
-        setInterval(function() {
-            var msgs = msgBuffer.querySelectorAll(':scope > div');
-            msgs.forEach(function(msg) {
-                var text = msg.textContent || '';
-                if (isBuddySyncMessage(text) && !msg.classList.contains('buddy-sync-hide')) {
-                    parseBuddySyncMessage(text);
-                    msg.classList.add('buddy-sync-hide');
-                    setTimeout(function() {
-                        if (msg.parentNode) msg.parentNode.removeChild(msg);
-                    }, 10);
-                }
-            });
-        }, 500);
+        observer.observe(msgBuffer, { childList: true, subtree: true });
     }
 
-    // Also remove sync messages from NND overlay (scrolling chat on video)
-    // Be very careful to only target actual NND message elements, not containers
+    // Clean up NND overlay messages - target the NND chat container specifically
     setInterval(function() {
-        // NND overlay messages are typically small span/div elements with just text
-        // Only check elements that look like NND messages (no children except text)
-        document.querySelectorAll('span, div').forEach(function(el) {
-            // Skip if element has child elements (not a leaf text node)
-            if (el.children.length > 0) return;
-            // Skip if element has an id (likely important)
-            if (el.id) return;
-            // Skip known important classes
-            var cls = el.className || '';
-            if (cls.indexOf('buddy') !== -1 || cls.indexOf('chat') !== -1 ||
-                cls.indexOf('user') !== -1 || cls.indexOf('msg') !== -1 ||
-                cls.indexOf('popup') !== -1 || cls.indexOf('btn') !== -1) return;
-
-            // Check if it's a sync message
+        // NND chat typically uses a container with scrolling text
+        // Look for elements containing sync markers that are positioned for video overlay
+        var allElements = document.querySelectorAll('body > div:not(#main):not(#wrap):not(.modal):not(.buddy-character)');
+        allElements.forEach(function(el) {
             var text = el.textContent || '';
-            if (text.length < 200 && isBuddySyncMessage(text)) {
-                // This looks like an NND overlay sync message - remove it
-                if (el.parentNode) {
-                    el.parentNode.removeChild(el);
-                }
+            if (isBuddySyncMessage(text)) {
+                el.style.display = 'none';
+                el.remove();
             }
         });
-    }, 200);
+
+        // Also check any absolutely/fixed positioned elements (typical for NND overlay)
+        document.querySelectorAll('[style*="position: absolute"], [style*="position:absolute"], [style*="position: fixed"], [style*="position:fixed"]').forEach(function(el) {
+            if (el.classList.contains('buddy-character') || el.id) return;
+            var text = el.textContent || '';
+            if (text && isBuddySyncMessage(text)) {
+                el.remove();
+            }
+        });
+    }, 100);
 
     // Load my settings and broadcast on init
     loadMyBuddySettings();
