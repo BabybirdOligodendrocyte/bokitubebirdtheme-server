@@ -5402,50 +5402,43 @@ window.resetRename = resetRename;
 })();
 
 /* ========== DUAL PLAYLIST SYSTEM ========== */
-// Priority Queue + Main Playlist with playback management
-// Does NOT intercept socket.emit - Add Media works normally for everyone
+// Uses CyTube's native playlist with a divider between Priority Queue and Media Pool
+// Priority items are at the top, pool items below the divider
 (function() {
     'use strict';
 
     // === CONFIGURATION ===
     var MOD_RANK = 2;
-    var PRIORITY_QUEUE_STORAGE_KEY = 'priorityQueueItems';
+    var PRIORITY_COUNT_KEY = 'priorityQueueCount';
 
     // === STATE ===
-    var priorityQueue = [];
+    var priorityCount = 0;  // Number of items in priority section (top of playlist)
     var isInitialized = false;
-    var currentlyDragging = null;
-    var dragSourceList = null;
-    var playbackManagerActive = false;
+    var dividerElement = null;
 
     // === UTILITY FUNCTIONS ===
     function isModerator() {
         return typeof CLIENT !== 'undefined' && CLIENT.rank >= MOD_RANK;
     }
 
-    function generateUID() {
-        return 'pq_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+    function savePriorityCount() {
+        try {
+            localStorage.setItem(PRIORITY_COUNT_KEY, priorityCount.toString());
+        } catch (e) {}
     }
 
-    function savePriorityQueue() {
+    function loadPriorityCount() {
         try {
-            localStorage.setItem(PRIORITY_QUEUE_STORAGE_KEY, JSON.stringify(priorityQueue));
+            var saved = localStorage.getItem(PRIORITY_COUNT_KEY);
+            if (saved) priorityCount = parseInt(saved) || 0;
         } catch (e) {
-            console.error('[DualPlaylist] Failed to save:', e);
-        }
-    }
-
-    function loadPriorityQueue() {
-        try {
-            var saved = localStorage.getItem(PRIORITY_QUEUE_STORAGE_KEY);
-            if (saved) priorityQueue = JSON.parse(saved);
-        } catch (e) {
-            priorityQueue = [];
+            priorityCount = 0;
         }
     }
 
     // === CSS INJECTION ===
-    function injectDualPlaylistCSS() {
+    function injectCSS() {
+        if (document.getElementById('dual-playlist-css')) return;
         var css = document.createElement('style');
         css.id = 'dual-playlist-css';
         css.textContent = `
@@ -5454,138 +5447,57 @@ window.resetRename = resetRename;
                 display: none !important;
             }
 
-            /* Priority queue container */
-            #priority-queue-container {
-                background: rgba(0, 0, 0, 0.5);
-                border-radius: 8px;
-                border: 2px solid var(--tertiarycolor, #8F6409);
-                margin-bottom: 15px;
-                max-height: 300px;
-                display: flex;
-                flex-direction: column;
-            }
-
-            #priority-queue-container .panel-title {
-                padding: 10px 12px;
+            /* Priority section header */
+            #priority-section-header {
                 background: linear-gradient(135deg, var(--tertiarycolor, #8F6409), rgba(143, 100, 9, 0.6));
-                border-radius: 6px 6px 0 0;
+                padding: 8px 12px;
                 font-weight: bold;
                 color: #fff;
                 display: flex;
                 justify-content: space-between;
                 align-items: center;
+                border-radius: 4px 4px 0 0;
+                margin-bottom: 2px;
             }
 
-            #priority-queue-container .queue-badge {
+            #priority-section-header .priority-badge {
                 background: rgba(255,255,255,0.2);
-                padding: 2px 8px;
+                padding: 2px 10px;
                 border-radius: 10px;
                 font-size: 0.85em;
             }
 
-            #priority-queue-list {
-                flex: 1;
-                overflow-y: auto;
-                padding: 8px;
-                min-height: 60px;
+            /* Divider between priority and pool */
+            #playlist-divider {
+                background: linear-gradient(90deg, transparent, var(--tertiarycolor, #8F6409), transparent);
+                height: 3px;
+                margin: 10px 0;
+                position: relative;
             }
 
-            #priority-queue-list:empty::before {
-                content: "Click ⚡ on videos to add here";
-                display: block;
-                text-align: center;
-                padding: 15px 10px;
-                color: rgba(255,255,255,0.4);
-                font-style: italic;
-                font-size: 0.9em;
-            }
-
-            /* Priority queue items - CyTube style */
-            .priority-queue-item {
-                background: rgba(255,255,255,0.08);
-                border-bottom: 1px solid rgba(255,255,255,0.1);
-                transition: all 0.2s;
-            }
-
-            .priority-queue-item:hover {
-                background: rgba(255,255,255,0.12);
-            }
-
-            .priority-queue-item.dragging {
-                opacity: 0.5;
-            }
-
-            .priority-queue-item .pq-header {
-                padding: 8px 12px;
-                cursor: pointer;
-                display: flex;
-                align-items: center;
-                gap: 10px;
-            }
-
-            .priority-queue-item .pq-position {
-                font-weight: bold;
-                color: var(--tertiarycolor, #8F6409);
-                min-width: 25px;
-            }
-
-            .priority-queue-item .pq-title {
-                flex: 1;
-                overflow: hidden;
-                text-overflow: ellipsis;
-                white-space: nowrap;
-                color: #fff;
-            }
-
-            .priority-queue-item .pq-duration {
-                color: rgba(255,255,255,0.5);
+            #playlist-divider::before {
+                content: "📁 Media Pool";
+                position: absolute;
+                left: 50%;
+                top: 50%;
+                transform: translate(-50%, -50%);
+                background: var(--secondarycolor, #0F0F0F);
+                padding: 2px 15px;
                 font-size: 0.85em;
-                font-family: monospace;
+                color: rgba(255,255,255,0.7);
+                border-radius: 10px;
+                white-space: nowrap;
             }
 
-            .priority-queue-item .pq-temp-badge {
-                background: rgba(255,100,100,0.3);
-                color: #ff9999;
-                padding: 1px 6px;
-                border-radius: 3px;
-                font-size: 0.75em;
+            /* Priority item styling */
+            .queue_entry.priority-item {
+                border-left: 3px solid var(--tertiarycolor, #8F6409);
+                background: rgba(143, 100, 9, 0.1);
             }
 
-            /* Expandable buttons */
-            .priority-queue-item .pq-buttons {
-                display: none;
-                padding: 8px 12px;
-                background: rgba(0,0,0,0.2);
-                gap: 5px;
-                flex-wrap: wrap;
-            }
-
-            .priority-queue-item.pq-expanded .pq-buttons {
-                display: flex;
-            }
-
-            .priority-queue-item .pq-buttons button {
-                padding: 4px 10px;
-                font-size: 12px;
-                border: none;
-                border-radius: 4px;
-                cursor: pointer;
-                transition: all 0.2s;
-            }
-
-            .pq-btn-play { background: #5cb85c; color: #fff; }
-            .pq-btn-play:hover { background: #4cae4c; }
-            .pq-btn-next { background: #5bc0de; color: #fff; }
-            .pq-btn-next:hover { background: #46b8da; }
-            .pq-btn-temp { background: #f0ad4e; color: #fff; }
-            .pq-btn-temp:hover { background: #eea236; }
-            .pq-btn-pool { background: var(--tertiarycolor, #8F6409); color: #fff; }
-            .pq-btn-pool:hover { filter: brightness(1.2); }
-            .pq-btn-delete { background: #d9534f; color: #fff; }
-            .pq-btn-delete:hover { background: #d43f3a; }
-
-            /* Move to priority button - next to rename button */
-            .queue_entry .move-to-priority-btn {
+            /* Move buttons */
+            .queue_entry .move-to-priority-btn,
+            .queue_entry .move-to-pool-btn {
                 background: var(--tertiarycolor, #8F6409);
                 border: none;
                 color: #fff;
@@ -5598,28 +5510,14 @@ window.resetRename = resetRename;
                 transition: all 0.2s;
             }
 
-            .queue_entry .move-to-priority-btn:hover {
+            .queue_entry .move-to-priority-btn:hover,
+            .queue_entry .move-to-pool-btn:hover {
                 opacity: 1;
                 transform: scale(1.1);
             }
 
-            /* Drag feedback */
-            .drag-over {
-                border: 2px dashed var(--tertiarycolor, #8F6409) !important;
-                background: rgba(143, 100, 9, 0.2) !important;
-            }
-
-            #priority-queue-list.drag-over {
-                background: rgba(143, 100, 9, 0.15);
-            }
-
-            /* Draggable entries */
-            body.is-mod .queue_entry {
-                cursor: grab;
-            }
-
-            body.is-mod .queue_entry.dragging {
-                opacity: 0.5;
+            .queue_entry .move-to-pool-btn {
+                background: #666;
             }
 
             /* Feedback toast */
@@ -5642,275 +5540,101 @@ window.resetRename = resetRename;
             #queue-feedback.visible {
                 opacity: 1;
             }
-
-            /* Mobile */
-            @media (max-width: 768px) {
-                #priority-queue-container {
-                    max-height: 200px;
-                }
-            }
         `;
         document.head.appendChild(css);
     }
 
-    // === UI CREATION ===
-    function createPriorityQueueUI() {
-        if (document.getElementById('priority-queue-container')) return true;
-
-        // Find the queue element and its container
+    // === UI FUNCTIONS ===
+    function createPriorityHeader() {
         var queue = document.getElementById('queue');
-        if (!queue) return false;
+        if (!queue || document.getElementById('priority-section-header')) return;
 
-        // Create priority queue panel - insert BEFORE the queue's parent
-        var priorityPanel = document.createElement('div');
-        priorityPanel.id = 'priority-queue-container';
-        priorityPanel.innerHTML =
-            '<div class="panel-title">' +
-                '<span>⚡ Priority Queue</span>' +
-                '<span class="queue-badge" id="priority-queue-count">0</span>' +
-            '</div>' +
-            '<div id="priority-queue-list"></div>';
+        var header = document.createElement('div');
+        header.id = 'priority-section-header';
+        header.innerHTML = '<span>⚡ Priority Queue</span><span class="priority-badge" id="priority-count-badge">0</span>';
 
-        // Insert priority queue before the queue wrapper
-        var queueParent = queue.parentElement;
-        if (queueParent && queueParent.parentElement) {
-            queueParent.parentElement.insertBefore(priorityPanel, queueParent);
-        }
-
-        // Create feedback toast
-        if (!document.getElementById('queue-feedback')) {
-            var feedback = document.createElement('div');
-            feedback.id = 'queue-feedback';
-            document.body.appendChild(feedback);
-        }
-
-        return true;
+        queue.parentElement.insertBefore(header, queue);
     }
 
-    // === VISIBILITY ===
-    function updateVisibility() {
-        var isMod = isModerator();
-        document.body.classList.toggle('hide-playlists', !isMod);
-        document.body.classList.toggle('is-mod', isMod);
-        console.log('[DualPlaylist] isMod:', isMod);
+    function createDivider() {
+        if (dividerElement) return dividerElement;
+
+        dividerElement = document.createElement('div');
+        dividerElement.id = 'playlist-divider';
+        return dividerElement;
     }
 
-    // === RENDER PRIORITY QUEUE ===
-    function renderPriorityQueue() {
-        var list = document.getElementById('priority-queue-list');
-        var countBadge = document.getElementById('priority-queue-count');
-        if (!list) return;
+    function createFeedbackToast() {
+        if (document.getElementById('queue-feedback')) return;
+        var toast = document.createElement('div');
+        toast.id = 'queue-feedback';
+        document.body.appendChild(toast);
+    }
 
-        if (countBadge) countBadge.textContent = priorityQueue.length;
+    function showFeedback(message) {
+        var toast = document.getElementById('queue-feedback');
+        if (!toast) return;
+        toast.textContent = message;
+        toast.classList.add('visible');
+        setTimeout(function() { toast.classList.remove('visible'); }, 3000);
+    }
 
-        list.innerHTML = '';
-        priorityQueue.forEach(function(item, index) {
-            var el = document.createElement('div');
-            el.className = 'priority-queue-item' + (item.temp ? ' pq-temp' : '');
-            el.dataset.uid = item.uid;
-            el.dataset.index = index;
-            el.draggable = true;
+    // === DIVIDER MANAGEMENT ===
+    function updateDividerPosition() {
+        var queue = document.getElementById('queue');
+        if (!queue) return;
 
-            // Header row (clickable)
-            var header = document.createElement('div');
-            header.className = 'pq-header';
-            header.onclick = function() { el.classList.toggle('pq-expanded'); };
+        var entries = queue.querySelectorAll('.queue_entry');
+        var divider = createDivider();
 
-            header.innerHTML =
-                '<span class="pq-position">#' + (index + 1) + '</span>' +
-                '<span class="pq-title" title="' + escapeHtml(item.title) + '">' + escapeHtml(item.title) + '</span>' +
-                (item.temp ? '<span class="pq-temp-badge">TEMP</span>' : '') +
-                (item.duration ? '<span class="pq-duration">' + formatDuration(item.duration) + '</span>' : '');
+        // Remove existing divider
+        if (divider.parentElement) {
+            divider.parentElement.removeChild(divider);
+        }
 
-            el.appendChild(header);
+        // Ensure priority count is valid
+        if (priorityCount > entries.length) {
+            priorityCount = entries.length;
+            savePriorityCount();
+        }
 
-            // Buttons row (expandable)
-            var buttons = document.createElement('div');
-            buttons.className = 'pq-buttons';
+        // Update priority badge
+        var badge = document.getElementById('priority-count-badge');
+        if (badge) badge.textContent = priorityCount;
 
-            // Play button
-            var playBtn = document.createElement('button');
-            playBtn.className = 'pq-btn-play';
-            playBtn.innerHTML = '▶Play';
-            playBtn.onclick = function(e) {
-                e.stopPropagation();
-                playPriorityItem(item);
-            };
-            buttons.appendChild(playBtn);
+        // Mark priority items and insert divider
+        entries.forEach(function(entry, index) {
+            entry.classList.remove('priority-item');
+            removeMovementButtons(entry);
 
-            // Queue Next button
-            var nextBtn = document.createElement('button');
-            nextBtn.className = 'pq-btn-next';
-            nextBtn.innerHTML = '→Queue Next';
-            nextBtn.onclick = function(e) {
-                e.stopPropagation();
-                queuePriorityItemNext(item);
-            };
-            buttons.appendChild(nextBtn);
-
-            // Make Temporary / Permanent button
-            var tempBtn = document.createElement('button');
-            tempBtn.className = 'pq-btn-temp';
-            tempBtn.innerHTML = item.temp ? '📌Make Permanent' : '⏱Make Temporary';
-            tempBtn.onclick = function(e) {
-                e.stopPropagation();
-                togglePriorityItemTemp(item.uid);
-            };
-            buttons.appendChild(tempBtn);
-
-            // Move to Pool button
-            var poolBtn = document.createElement('button');
-            poolBtn.className = 'pq-btn-pool';
-            poolBtn.innerHTML = '📁To Pool';
-            poolBtn.onclick = function(e) {
-                e.stopPropagation();
-                movePriorityToPool(item);
-            };
-            buttons.appendChild(poolBtn);
-
-            // Delete button
-            var deleteBtn = document.createElement('button');
-            deleteBtn.className = 'pq-btn-delete';
-            deleteBtn.innerHTML = '🗑Delete';
-            deleteBtn.onclick = function(e) {
-                e.stopPropagation();
-                removePriorityItem(item.uid);
-            };
-            buttons.appendChild(deleteBtn);
-
-            el.appendChild(buttons);
-            list.appendChild(el);
+            if (index < priorityCount) {
+                entry.classList.add('priority-item');
+                addMoveToPoolButton(entry, index);
+            } else {
+                addMoveToPriorityButton(entry, index);
+            }
         });
 
-        updateMainPlaylistCount();
-    }
-
-    function formatDuration(seconds) {
-        if (!seconds) return '';
-        var h = Math.floor(seconds / 3600);
-        var m = Math.floor((seconds % 3600) / 60);
-        var s = seconds % 60;
-        if (h > 0) {
-            return h + ':' + (m < 10 ? '0' : '') + m + ':' + (s < 10 ? '0' : '') + s;
-        }
-        return m + ':' + (s < 10 ? '0' : '') + s;
-    }
-
-    function playPriorityItem(item) {
-        if (!item.mediaId) {
-            showFeedback('Cannot play: missing video data');
-            return;
-        }
-        if (typeof socket !== 'undefined') {
-            socket.emit('queue', {
-                id: item.mediaId,
-                type: item.type || 'yt',
-                pos: 'next',
-                temp: true
-            });
-            removePriorityItem(item.uid);
-            showFeedback('Playing: ' + item.title);
+        // Insert divider after priority items
+        if (priorityCount > 0 && priorityCount < entries.length) {
+            var lastPriorityItem = entries[priorityCount - 1];
+            if (lastPriorityItem.nextSibling) {
+                queue.insertBefore(divider, lastPriorityItem.nextSibling);
+            } else {
+                queue.appendChild(divider);
+            }
+        } else if (priorityCount === 0 && entries.length > 0) {
+            // No priority items - put divider at top with message
+            queue.insertBefore(divider, entries[0]);
         }
     }
 
-    function queuePriorityItemNext(item) {
-        // Move to front of priority queue
-        var index = priorityQueue.findIndex(function(i) { return i.uid === item.uid; });
-        if (index > 0) {
-            priorityQueue.splice(index, 1);
-            priorityQueue.unshift(item);
-            savePriorityQueue();
-            renderPriorityQueue();
-            showFeedback('Moved to next: ' + item.title);
-        }
+    function removeMovementButtons(entry) {
+        var btn = entry.querySelector('.move-to-priority-btn, .move-to-pool-btn');
+        if (btn) btn.remove();
     }
 
-    function togglePriorityItemTemp(uid) {
-        var item = priorityQueue.find(function(i) { return i.uid === uid; });
-        if (item) {
-            item.temp = !item.temp;
-            savePriorityQueue();
-            renderPriorityQueue();
-            showFeedback(item.temp ? 'Marked as temporary' : 'Marked as permanent');
-        }
-    }
-
-    function movePriorityToPool(item) {
-        if (!item.mediaId) {
-            showFeedback('Cannot move: missing video data');
-            removePriorityItem(item.uid);
-            return;
-        }
-        if (typeof socket !== 'undefined') {
-            socket.emit('queue', {
-                id: item.mediaId,
-                type: item.type || 'yt',
-                pos: 'end',
-                temp: item.temp || false
-            });
-            removePriorityItem(item.uid);
-            showFeedback('Moved to pool: ' + item.title);
-        }
-    }
-
-    function updateMainPlaylistCount() {
-        var countEl = document.querySelector('#main-playlist-panel .item-count');
-        var queue = document.getElementById('queue');
-        if (countEl && queue) {
-            var count = queue.querySelectorAll('.queue_entry').length;
-            countEl.textContent = count + ' video' + (count !== 1 ? 's' : '');
-        }
-    }
-
-    function escapeHtml(text) {
-        var div = document.createElement('div');
-        div.textContent = text;
-        return div.innerHTML;
-    }
-
-    // === PRIORITY QUEUE MANAGEMENT ===
-    function addToPriorityQueue(videoData) {
-        var item = {
-            uid: generateUID(),
-            cytubeUid: videoData.uid || null,
-            title: videoData.title || 'Unknown Video',
-            mediaId: videoData.mediaId || null,
-            type: videoData.type || 'yt',
-            duration: videoData.duration || videoData.seconds || 0,
-            temp: videoData.temp || false,
-            addedBy: videoData.addedBy || (typeof CLIENT !== 'undefined' ? CLIENT.name : 'Unknown'),
-            addedAt: Date.now()
-        };
-        priorityQueue.push(item);
-        savePriorityQueue();
-        renderPriorityQueue();
-        console.log('[DualPlaylist] Added:', item.title, 'mediaId:', item.mediaId);
-        return priorityQueue.length;
-    }
-
-    function removePriorityItem(uid) {
-        var index = priorityQueue.findIndex(function(item) { return item.uid === uid; });
-        if (index !== -1) {
-            priorityQueue.splice(index, 1);
-            savePriorityQueue();
-            renderPriorityQueue();
-        }
-    }
-
-    function getNextPriorityItem() {
-        return priorityQueue.length > 0 ? priorityQueue[0] : null;
-    }
-
-    function popPriorityItem() {
-        if (priorityQueue.length === 0) return null;
-        var item = priorityQueue.shift();
-        savePriorityQueue();
-        renderPriorityQueue();
-        return item;
-    }
-
-    // === MOVE TO PRIORITY BUTTON ===
-    function addMoveToPriorityButton(entry) {
+    function addMoveToPriorityButton(entry, index) {
         if (!isModerator()) return;
         if (entry.querySelector('.move-to-priority-btn')) return;
 
@@ -5921,317 +5645,190 @@ window.resetRename = resetRename;
         btn.onclick = function(e) {
             e.stopPropagation();
             e.preventDefault();
-            moveEntryToPriority(entry);
+            moveItemToPriority(entry, index);
         };
-        // Append at end, next to rename button
         entry.appendChild(btn);
     }
 
-    function moveEntryToPriority(entry) {
-        var titleEl = entry.querySelector('.qe_title');
-        var uidMatch = entry.className.match(/pluid-(\d+)/);
-        var cytubeUid = uidMatch ? parseInt(uidMatch[1]) : null;
+    function addMoveToPoolButton(entry, index) {
+        if (!isModerator()) return;
+        if (entry.querySelector('.move-to-pool-btn')) return;
 
-        // Try to get video data from multiple sources
-        var mediaId = null;
-        var mediaType = 'yt';
-        var duration = 0;
-        var isTemp = false;
-
-        // Method 1: Try CHANNEL.playlist
-        if (typeof CHANNEL !== 'undefined' && CHANNEL.playlist && cytubeUid !== null) {
-            var playlistItem = CHANNEL.playlist.find(function(item) {
-                return item && item.uid === cytubeUid;
-            });
-            if (playlistItem) {
-                if (playlistItem.media) {
-                    mediaId = playlistItem.media.id;
-                    mediaType = playlistItem.media.type;
-                    duration = playlistItem.media.seconds || 0;
-                }
-                isTemp = playlistItem.temp || false;
-            }
-        }
-
-        // Method 2: Try Playlist object (CyTube alternative)
-        if (!mediaId && typeof Playlist !== 'undefined' && Playlist.current) {
-            try {
-                var pl = Playlist;
-                var current = pl.current;
-                while (current) {
-                    if (current.uid === cytubeUid && current.media) {
-                        mediaId = current.media.id;
-                        mediaType = current.media.type;
-                        duration = current.media.seconds || 0;
-                        isTemp = current.temp || false;
-                        break;
-                    }
-                    current = current.next;
-                }
-            } catch (e) { console.log('[DualPlaylist] Playlist traversal error:', e); }
-        }
-
-        // Method 3: Try to extract from qe_time element (duration hint)
-        if (!duration) {
-            var timeEl = entry.querySelector('.qe_time');
-            if (timeEl) {
-                var timeParts = timeEl.textContent.trim().split(':');
-                if (timeParts.length === 2) {
-                    duration = parseInt(timeParts[0]) * 60 + parseInt(timeParts[1]);
-                } else if (timeParts.length === 3) {
-                    duration = parseInt(timeParts[0]) * 3600 + parseInt(timeParts[1]) * 60 + parseInt(timeParts[2]);
-                }
-            }
-        }
-
-        // Check for temp class on entry
-        if (entry.classList.contains('queue_temp')) {
-            isTemp = true;
-        }
-
-        console.log('[DualPlaylist] moveEntryToPriority - uid:', cytubeUid, 'mediaId:', mediaId, 'type:', mediaType);
-
-        var videoData = {
-            uid: cytubeUid,
-            title: titleEl ? titleEl.textContent.trim() : 'Unknown Video',
-            mediaId: mediaId,
-            type: mediaType,
-            duration: duration,
-            temp: isTemp,
-            addedBy: typeof CLIENT !== 'undefined' ? CLIENT.name : 'Mod'
+        var btn = document.createElement('button');
+        btn.className = 'move-to-pool-btn';
+        btn.innerHTML = '📁';
+        btn.title = 'Move to Media Pool';
+        btn.onclick = function(e) {
+            e.stopPropagation();
+            e.preventDefault();
+            moveItemToPool(entry, index);
         };
-
-        // Warn if no mediaId but still add to queue
-        if (!mediaId) {
-            console.warn('[DualPlaylist] No mediaId found for:', videoData.title, '- video cannot be moved back to pool');
-        }
-
-        var position = addToPriorityQueue(videoData);
-
-        // Remove from main queue
-        if (cytubeUid && typeof socket !== 'undefined') {
-            socket.emit('delete', cytubeUid);
-        }
-
-        showFeedback('Added to priority queue #' + position);
+        entry.appendChild(btn);
     }
 
-    function addAllMoveToPriorityButtons() {
-        if (!isModerator()) return;
-        document.querySelectorAll('#queue .queue_entry').forEach(addMoveToPriorityButton);
+    // === MOVEMENT FUNCTIONS ===
+    function moveItemToPriority(entry, currentIndex) {
+        var uidMatch = entry.className.match(/pluid-(\d+)/);
+        if (!uidMatch) return;
+        var uid = parseInt(uidMatch[1]);
+
+        // Move to top of playlist via CyTube
+        if (typeof socket !== 'undefined') {
+            socket.emit('moveMedia', {
+                from: uid,
+                after: 'prepend'  // Move to very top
+            });
+        }
+
+        // Increase priority count
+        priorityCount++;
+        savePriorityCount();
+
+        var titleEl = entry.querySelector('.qe_title');
+        showFeedback('Moved to priority: ' + (titleEl ? titleEl.textContent.trim() : 'Video'));
+
+        // Update UI after CyTube processes the move
+        setTimeout(updateDividerPosition, 300);
     }
 
-    // === DRAG AND DROP ===
-    function initDragAndDrop() {
-        var priorityList = document.getElementById('priority-queue-list');
-        var mainQueue = document.getElementById('queue');
-        if (!priorityList || !mainQueue) return;
+    function moveItemToPool(entry, currentIndex) {
+        var uidMatch = entry.className.match(/pluid-(\d+)/);
+        if (!uidMatch) return;
+        var uid = parseInt(uidMatch[1]);
 
-        // Priority list events
-        priorityList.addEventListener('dragstart', function(e) {
-            var item = e.target.closest('.priority-queue-item');
-            if (!item) return;
-            currentlyDragging = item;
-            dragSourceList = 'priority';
-            item.classList.add('dragging');
-            e.dataTransfer.effectAllowed = 'move';
-            e.dataTransfer.setData('text/plain', item.dataset.uid);
-        }, true);
+        // Get the UID of the divider position (last pool item or end)
+        var queue = document.getElementById('queue');
+        var entries = queue.querySelectorAll('.queue_entry');
 
-        priorityList.addEventListener('dragover', function(e) {
-            e.preventDefault();
-            priorityList.classList.add('drag-over');
-        }, true);
-
-        priorityList.addEventListener('dragleave', function(e) {
-            if (!priorityList.contains(e.relatedTarget)) {
-                priorityList.classList.remove('drag-over');
+        // Find target position (after all priority items)
+        var targetUid = 'append';  // Default to end
+        if (entries.length > priorityCount) {
+            // Move after the last item (to end of pool)
+            var lastEntry = entries[entries.length - 1];
+            var lastUidMatch = lastEntry.className.match(/pluid-(\d+)/);
+            if (lastUidMatch) {
+                targetUid = parseInt(lastUidMatch[1]);
             }
-        }, true);
+        }
 
-        priorityList.addEventListener('drop', function(e) {
-            e.preventDefault();
-            e.stopPropagation();
-            priorityList.classList.remove('drag-over');
+        // Move via CyTube
+        if (typeof socket !== 'undefined') {
+            socket.emit('moveMedia', {
+                from: uid,
+                after: targetUid
+            });
+        }
 
-            if (dragSourceList === 'main' && currentlyDragging) {
-                moveEntryToPriority(currentlyDragging);
-            } else if (dragSourceList === 'priority' && currentlyDragging) {
-                // Reorder within priority queue
-                var draggedUid = currentlyDragging.dataset.uid;
-                var targetItem = e.target.closest('.priority-queue-item');
-                if (targetItem && draggedUid !== targetItem.dataset.uid) {
-                    var fromIdx = priorityQueue.findIndex(function(i) { return i.uid === draggedUid; });
-                    var toIdx = parseInt(targetItem.dataset.index);
-                    if (fromIdx !== -1 && fromIdx !== toIdx) {
-                        var item = priorityQueue.splice(fromIdx, 1)[0];
-                        priorityQueue.splice(toIdx, 0, item);
-                        savePriorityQueue();
-                        renderPriorityQueue();
-                    }
-                }
-            }
-            cleanupDrag();
-        }, true);
+        // Decrease priority count
+        if (priorityCount > 0) {
+            priorityCount--;
+            savePriorityCount();
+        }
 
-        // Main queue events
-        mainQueue.addEventListener('dragstart', function(e) {
-            var entry = e.target.closest('.queue_entry');
-            if (!entry || !isModerator()) return;
-            if (e.target.closest('button')) return;
-            currentlyDragging = entry;
-            dragSourceList = 'main';
-            entry.classList.add('dragging');
-            e.dataTransfer.effectAllowed = 'move';
-            e.dataTransfer.setData('text/plain', 'main-entry');
-        }, true);
+        var titleEl = entry.querySelector('.qe_title');
+        showFeedback('Moved to pool: ' + (titleEl ? titleEl.textContent.trim() : 'Video'));
 
-        mainQueue.addEventListener('dragover', function(e) {
-            e.preventDefault();
-            mainQueue.classList.add('drag-over');
-        }, true);
+        // Update UI after CyTube processes the move
+        setTimeout(updateDividerPosition, 300);
+    }
 
-        mainQueue.addEventListener('dragleave', function(e) {
-            if (!mainQueue.contains(e.relatedTarget)) {
-                mainQueue.classList.remove('drag-over');
-            }
-        }, true);
+    // === INTERCEPT NEW VIDEOS ===
+    function interceptNewVideos() {
+        if (typeof socket === 'undefined') return;
 
-        mainQueue.addEventListener('drop', function(e) {
-            e.preventDefault();
-            e.stopPropagation();
-            mainQueue.classList.remove('drag-over');
+        socket.on('queue', function(data) {
+            if (!data || !data.item) return;
 
-            if (dragSourceList === 'priority' && currentlyDragging) {
-                var uid = currentlyDragging.dataset.uid;
-                var item = priorityQueue.find(function(i) { return i.uid === uid; });
-                if (item && item.mediaId && typeof socket !== 'undefined') {
-                    socket.emit('queue', {
-                        id: item.mediaId,
-                        type: item.type || 'yt',
-                        pos: 'end',
-                        temp: false
+            console.log('[DualPlaylist] New video added:', data.item.media ? data.item.media.title : 'Unknown');
+
+            // New videos go to priority queue (top)
+            // Increase priority count
+            priorityCount++;
+            savePriorityCount();
+
+            // Move the new video to the top
+            setTimeout(function() {
+                if (data.item.uid && typeof socket !== 'undefined') {
+                    socket.emit('moveMedia', {
+                        from: data.item.uid,
+                        after: 'prepend'
                     });
-                    removePriorityItem(uid);
-                    showFeedback('Moved to main playlist: ' + item.title);
-                } else if (item) {
-                    // No mediaId, can't re-queue - just remove from priority
-                    removePriorityItem(uid);
-                    showFeedback('Removed from priority (no video data to re-queue)');
                 }
-            }
-            cleanupDrag();
-        }, true);
+                setTimeout(updateDividerPosition, 300);
+            }, 200);
+        });
 
-        // Global dragend
-        document.addEventListener('dragend', cleanupDrag, true);
+        // Handle video deletion
+        socket.on('delete', function(data) {
+            // If a priority item was deleted, decrease count
+            var queue = document.getElementById('queue');
+            if (!queue) return;
 
-        enableMainQueueDragging();
-    }
+            // We need to check if the deleted item was in priority section
+            // Since it's already deleted, we'll just revalidate the count
+            setTimeout(function() {
+                var entries = queue.querySelectorAll('.queue_entry');
+                if (priorityCount > entries.length) {
+                    priorityCount = entries.length;
+                    savePriorityCount();
+                }
+                updateDividerPosition();
+            }, 300);
+        });
 
-    function cleanupDrag() {
-        if (currentlyDragging) {
-            currentlyDragging.classList.remove('dragging');
-        }
-        currentlyDragging = null;
-        dragSourceList = null;
-        document.querySelectorAll('.drag-over').forEach(function(el) {
-            el.classList.remove('drag-over');
+        // Handle playlist changes
+        socket.on('moveMedia', function() {
+            setTimeout(updateDividerPosition, 300);
+        });
+
+        socket.on('playlist', function() {
+            setTimeout(updateDividerPosition, 500);
         });
     }
 
-    function enableMainQueueDragging() {
-        if (!isModerator()) return;
-        document.querySelectorAll('#queue .queue_entry').forEach(function(entry) {
-            entry.draggable = true;
-        });
-    }
-
-    // === FEEDBACK ===
-    function showFeedback(message) {
-        var feedback = document.getElementById('queue-feedback');
-        if (!feedback) return;
-        feedback.textContent = message;
-        feedback.classList.add('visible');
-        setTimeout(function() {
-            feedback.classList.remove('visible');
-        }, 3000);
+    // === VISIBILITY ===
+    function updateVisibility() {
+        var isMod = isModerator();
+        document.body.classList.toggle('hide-playlists', !isMod);
+        console.log('[DualPlaylist] Visibility:', isMod ? 'visible' : 'hidden');
     }
 
     // === PLAYBACK MANAGEMENT ===
     function initPlaybackManager() {
         if (typeof socket === 'undefined') return;
-        if (playbackManagerActive) return;
-        playbackManagerActive = true;
 
-        socket.on('setCurrent', function() {
-            updateMainPlaylistCount();
+        socket.on('changeMedia', function() {
+            // When a video starts playing, if it was from priority, decrement count
+            setTimeout(function() {
+                var activeEntry = document.querySelector('.queue_entry.queue_active');
+                if (activeEntry && activeEntry.classList.contains('priority-item')) {
+                    // Currently playing item is from priority
+                    // When it ends, it should move to pool (handled by CyTube naturally)
+                    // We just need to decrement the count
+                }
+                updateDividerPosition();
+            }, 500);
         });
 
-        if (!isModerator()) return;
-
-        setInterval(function() {
-            var currentActive = document.querySelector('.queue_entry.queue_active');
-            if (!currentActive) {
-                playNextVideo();
-            }
-        }, 5000);
-    }
-
-    function playNextVideo() {
-        if (!isModerator()) return;
-
-        var priorityItem = getNextPriorityItem();
-        if (priorityItem && priorityItem.mediaId) {
-            console.log('[DualPlaylist] Playing priority:', priorityItem.title, 'mediaId:', priorityItem.mediaId);
-            popPriorityItem();
-            if (typeof socket !== 'undefined') {
-                socket.emit('queue', {
-                    id: priorityItem.mediaId,
-                    type: priorityItem.type || 'yt',
-                    pos: 'next',
-                    temp: true
-                });
-            }
-            return;
-        } else if (priorityItem) {
-            // No mediaId, skip this item
-            console.log('[DualPlaylist] Skipping priority item without mediaId:', priorityItem.title);
-            popPriorityItem();
-        }
-
-        // Random from main
-        var mainQueue = document.getElementById('queue');
-        if (!mainQueue) return;
-        var entries = mainQueue.querySelectorAll('.queue_entry:not(.queue_active)');
-        if (entries.length === 0) return;
-
-        var randomEntry = entries[Math.floor(Math.random() * entries.length)];
-        var uidMatch = randomEntry.className.match(/pluid-(\d+)/);
-        if (uidMatch && typeof socket !== 'undefined') {
-            socket.emit('jumpTo', parseInt(uidMatch[1]));
-        }
-    }
-
-    // === QUEUE OBSERVER ===
-    function initQueueObserver() {
-        var queue = document.getElementById('queue');
-        if (!queue) return;
-
-        var observer = new MutationObserver(function(mutations) {
-            mutations.forEach(function(mutation) {
-                mutation.addedNodes.forEach(function(node) {
-                    if (node.nodeType === 1 && node.classList && node.classList.contains('queue_entry')) {
-                        if (isModerator()) {
-                            node.draggable = true;
-                            addMoveToPriorityButton(node);
+        // Auto-play from priority when nothing is playing
+        if (isModerator()) {
+            setInterval(function() {
+                var activeEntry = document.querySelector('.queue_entry.queue_active');
+                if (!activeEntry && priorityCount > 0) {
+                    // Nothing playing but we have priority items
+                    var queue = document.getElementById('queue');
+                    if (queue) {
+                        var firstEntry = queue.querySelector('.queue_entry');
+                        if (firstEntry) {
+                            var uidMatch = firstEntry.className.match(/pluid-(\d+)/);
+                            if (uidMatch && typeof socket !== 'undefined') {
+                                socket.emit('jumpTo', parseInt(uidMatch[1]));
+                            }
                         }
                     }
-                });
-            });
-            updateMainPlaylistCount();
-        });
-        observer.observe(queue, { childList: true });
+                }
+            }, 5000);
+        }
     }
 
     // === INITIALIZATION ===
@@ -6239,81 +5836,52 @@ window.resetRename = resetRename;
         if (isInitialized) return;
         console.log('[DualPlaylist] Initializing...');
 
-        injectDualPlaylistCSS();
+        injectCSS();
 
-        var playlistRow = document.getElementById('playlistrow');
         var queue = document.getElementById('queue');
-        if (!playlistRow || !queue) {
+        if (!queue) {
             setTimeout(init, 500);
             return;
         }
 
-        loadPriorityQueue();
-        if (!createPriorityQueueUI()) {
-            setTimeout(init, 500);
-            return;
-        }
-
+        loadPriorityCount();
+        createPriorityHeader();
+        createFeedbackToast();
         updateVisibility();
-        renderPriorityQueue();
 
         setTimeout(function() {
-            initDragAndDrop();
-            addAllMoveToPriorityButtons();
-            initQueueObserver();
+            updateDividerPosition();
+            interceptNewVideos();
+            initPlaybackManager();
         }, 500);
 
-        setTimeout(initPlaybackManager, 2000);
-
+        // Handle rank changes
         if (typeof socket !== 'undefined') {
             socket.on('rank', function() {
                 updateVisibility();
-                enableMainQueueDragging();
-                addAllMoveToPriorityButtons();
+                updateDividerPosition();
             });
             socket.on('setUserRank', function(data) {
                 if (typeof CLIENT !== 'undefined' && data.name === CLIENT.name) {
                     setTimeout(function() {
                         updateVisibility();
-                        enableMainQueueDragging();
-                        addAllMoveToPriorityButtons();
+                        updateDividerPosition();
                     }, 100);
                 }
             });
-
-            // Intercept new videos and add to priority queue
-            socket.on('queue', function(data) {
-                if (!data || !data.item) return;
-
-                var media = data.item.media;
-                if (!media) return;
-
-                console.log('[DualPlaylist] New video queued:', media.title, 'uid:', data.item.uid);
-
-                // Add to priority queue with all video data
-                addToPriorityQueue({
-                    uid: data.item.uid,
-                    title: media.title,
-                    mediaId: media.id,
-                    type: media.type,
-                    duration: media.seconds || 0,
-                    temp: data.item.temp || false,
-                    addedBy: data.item.queueby || 'Unknown'
-                });
-
-                // Remove from CyTube's main queue (we manage it in priority)
-                setTimeout(function() {
-                    if (typeof socket !== 'undefined' && data.item.uid) {
-                        socket.emit('delete', data.item.uid);
-                    }
-                }, 200);
-            });
         }
 
+        // Observe queue for changes
+        var observer = new MutationObserver(function() {
+            setTimeout(updateDividerPosition, 100);
+        });
+        observer.observe(queue, { childList: true });
+
         isInitialized = true;
-        console.log('[DualPlaylist] Ready');
+        console.log('[DualPlaylist] Ready - Priority count:', priorityCount);
     }
 
+    // Start
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', function() {
             setTimeout(init, 1500);
@@ -6324,19 +5892,12 @@ window.resetRename = resetRename;
 
     // Export API
     window.DualPlaylist = {
-        addToPriorityQueue: addToPriorityQueue,
-        removePriorityItem: removePriorityItem,
-        getPriorityQueue: function() { return priorityQueue.slice(); },
-        clearPriorityQueue: function() {
-            priorityQueue = [];
-            savePriorityQueue();
-            renderPriorityQueue();
-        },
-        playNext: playNextVideo,
+        getPriorityCount: function() { return priorityCount; },
+        setPriorityCount: function(n) { priorityCount = n; savePriorityCount(); updateDividerPosition(); },
+        refresh: updateDividerPosition,
         isModerator: isModerator
     };
 })();
-
 /* ========== ENHANCED FEATURES ========== */
 
 // Mention notification sound (base64 encoded short beep)
