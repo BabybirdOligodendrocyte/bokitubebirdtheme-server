@@ -6368,6 +6368,9 @@ function initMentionNotifications() {
         }
         if (!myUsername || !data.msg) return;
 
+        // Skip buddy sync messages - they contain usernames but aren't real mentions
+        if (isBuddySyncMessage(data.msg)) return;
+
         var msgLower = data.msg.toLowerCase();
         if (msgLower.indexOf('@' + myUsername) !== -1 || msgLower.indexOf(myUsername) !== -1) {
             // Play sound
@@ -7549,7 +7552,12 @@ function applyCustomSettingsToBuddy(username) {
     var buddy = buddyCharacters[username];
     if (!buddy) return;
 
+    // Check both customBuddySettings (for other users) and myBuddySettings (for own buddy)
+    var myName = getMyUsername();
     var settings = customBuddySettings[username];
+    if (username === myName && myBuddySettings) {
+        settings = myBuddySettings;
+    }
     if (!settings) return;
 
     // Apply sprite
@@ -7685,7 +7693,7 @@ function initBuddySyncListener() {
         });
     }
 
-    // Watch messagebuffer for sync messages and hide them
+    // Watch messagebuffer for sync messages and remove them completely
     var msgBuffer = document.getElementById('messagebuffer');
     if (msgBuffer) {
         var observer = new MutationObserver(function(mutations) {
@@ -7695,11 +7703,12 @@ function initBuddySyncListener() {
                         var text = node.textContent || '';
                         // Check if it's a sync message
                         if (isBuddySyncMessage(text)) {
-                            // Completely hide the sync message
-                            node.style.display = 'none';
-                            node.classList.add('buddy-sync-msg');
-                            // Process the sync data
+                            // Process the sync data first
                             parseBuddySyncMessage(text);
+                            // Remove the message element entirely (no empty space)
+                            if (node.parentNode) {
+                                node.parentNode.removeChild(node);
+                            }
                         }
                     }
                 });
@@ -7708,19 +7717,19 @@ function initBuddySyncListener() {
         observer.observe(msgBuffer, { childList: true });
     }
 
-    // Also hide sync messages that appear anywhere else (like NND overlay)
+    // Also remove sync messages that appear anywhere else (like NND overlay)
     setInterval(function() {
-        // Hide any element containing sync markers
+        // Find and remove any element containing sync markers
         document.querySelectorAll('*').forEach(function(el) {
-            if (el.childNodes.length === 1 && el.childNodes[0].nodeType === 3) {
-                var text = el.textContent || '';
-                if (isBuddySyncMessage(text) && !el.classList.contains('buddy-sync-msg')) {
-                    el.style.display = 'none';
-                    el.classList.add('buddy-sync-msg');
+            var text = el.textContent || '';
+            if (isBuddySyncMessage(text)) {
+                // For NND overlay, remove the element
+                if (el.parentNode && !el.id && el.className !== 'buddy-character') {
+                    el.parentNode.removeChild(el);
                 }
             }
         });
-    }, 100);
+    }, 50);
 
     // Load my settings and broadcast on init
     loadMyBuddySettings();
