@@ -6849,6 +6849,7 @@ $(document).ready(function() {
 
 /* ========== CONNECTED USERS BUDDIES ========== */
 /* Cute characters that roam chat, interact, speak, kiss, fight & more! */
+/* Deterministic assignment - same user = same character across all browsers */
 
 var BUDDY_CONFIG = {
     characterSize: 28,
@@ -6859,17 +6860,31 @@ var BUDDY_CONFIG = {
     fightDuration: 1800,
     perchDuration: 4000,
     gravity: 1.5,
-    speechDuration: 3000,
-    speechChance: 0.008
+    speechDuration: 3500,
+    speechChance: 0.006,
+    conversationChance: 0.003,
+    crazyInteractionChance: 0.4
 };
 
 var buddyCharacters = {};
 var buddyAnimationId = null;
 var buddiesInitialized = false;
 var chatWordTargets = [];
-var recentChatMessages = [];  // Store recent messages for buddies to quote
+var recentChatMessages = [];
+var activeConversations = [];  // Track ongoing conversations
 
-// Mixed sprites - birds AND cute girls!
+// Hash function for deterministic assignment
+function hashUsername(str) {
+    var hash = 0;
+    for (var i = 0; i < str.length; i++) {
+        var char = str.charCodeAt(i);
+        hash = ((hash << 5) - hash) + char;
+        hash = hash & hash;
+    }
+    return Math.abs(hash);
+}
+
+// Mixed sprites - birds AND cute characters!
 var BUDDY_SPRITES = [
     // Birds
     { body: '🐤', name: 'chick', type: 'bird' },
@@ -6880,6 +6895,8 @@ var BUDDY_SPRITES = [
     { body: '🦉', name: 'owl', type: 'bird' },
     { body: '🐧', name: 'penguin', type: 'bird' },
     { body: '🦜', name: 'parrot', type: 'bird' },
+    { body: '🦩', name: 'flamingo', type: 'bird' },
+    { body: '🦚', name: 'peacock', type: 'bird' },
     // Cute girls
     { body: '💃', name: 'dancer', type: 'girl' },
     { body: '💁‍♀️', name: 'sassy', type: 'girl' },
@@ -6889,18 +6906,33 @@ var BUDDY_SPRITES = [
     { body: '👸', name: 'princess', type: 'girl' },
     { body: '🧝‍♀️', name: 'elf', type: 'girl' },
     { body: '🧜‍♀️', name: 'mermaid', type: 'girl' },
-    { body: '🎀', name: 'ribbon', type: 'cute' },
     { body: '👩‍🦰', name: 'redhead', type: 'girl' },
-    { body: '👱‍♀️', name: 'blonde', type: 'girl' }
+    { body: '👱‍♀️', name: 'blonde', type: 'girl' },
+    { body: '🧙‍♀️', name: 'witch', type: 'magical' },
+    { body: '🦹‍♀️', name: 'hero', type: 'magical' },
+    // Cute creatures
+    { body: '🐱', name: 'cat', type: 'cute' },
+    { body: '🐰', name: 'bunny', type: 'cute' },
+    { body: '🦊', name: 'fox', type: 'cute' },
+    { body: '🐼', name: 'panda', type: 'cute' },
+    { body: '🐨', name: 'koala', type: 'cute' },
+    { body: '🦄', name: 'unicorn', type: 'magical' },
+    { body: '🐲', name: 'dragon', type: 'magical' },
+    { body: '👻', name: 'ghost', type: 'spooky' },
+    { body: '👽', name: 'alien', type: 'weird' },
+    { body: '🤖', name: 'robot', type: 'weird' }
 ];
 
 // Personality types with behavior weights
 var PERSONALITIES = {
-    flirty: { kiss: 0.4, chase: 0.25, fight: 0.05, flee: 0.1, confess: 0.2 },
-    shy: { kiss: 0.1, chase: 0.05, fight: 0.0, flee: 0.6, confess: 0.25 },
-    feisty: { kiss: 0.15, chase: 0.3, fight: 0.4, flee: 0.05, confess: 0.1 },
-    sweet: { kiss: 0.3, chase: 0.15, fight: 0.0, flee: 0.2, confess: 0.35 },
-    playful: { kiss: 0.2, chase: 0.4, fight: 0.15, flee: 0.1, confess: 0.15 }
+    flirty: { kiss: 0.35, chase: 0.2, fight: 0.05, flee: 0.1, confess: 0.15, crazy: 0.15 },
+    shy: { kiss: 0.1, chase: 0.05, fight: 0.0, flee: 0.5, confess: 0.15, crazy: 0.2 },
+    feisty: { kiss: 0.1, chase: 0.25, fight: 0.35, flee: 0.05, confess: 0.05, crazy: 0.2 },
+    sweet: { kiss: 0.25, chase: 0.1, fight: 0.0, flee: 0.15, confess: 0.3, crazy: 0.2 },
+    playful: { kiss: 0.15, chase: 0.3, fight: 0.1, flee: 0.1, confess: 0.1, crazy: 0.25 },
+    chaotic: { kiss: 0.1, chase: 0.15, fight: 0.15, flee: 0.1, confess: 0.1, crazy: 0.4 },
+    dramatic: { kiss: 0.2, chase: 0.1, fight: 0.1, flee: 0.15, confess: 0.25, crazy: 0.2 },
+    mysterious: { kiss: 0.1, chase: 0.1, fight: 0.1, flee: 0.2, confess: 0.1, crazy: 0.4 }
 };
 var PERSONALITY_NAMES = Object.keys(PERSONALITIES);
 
@@ -6910,16 +6942,147 @@ var FIGHT_MOVES = [
     { name: 'POW!', emoji: '⭐', color: '#FFD700' },
     { name: 'SLAP!', emoji: '✋', color: '#FF6B6B' },
     { name: 'KYAA!', emoji: '😤', color: '#FF69B4' },
-    { name: 'HMPH!', emoji: '💢', color: '#FF1493' }
+    { name: 'HMPH!', emoji: '💢', color: '#FF1493' },
+    { name: 'WHAM!', emoji: '💫', color: '#9400D3' },
+    { name: 'YEET!', emoji: '🌪️', color: '#00CED1' },
+    { name: 'OOF!', emoji: '😵', color: '#FF8C00' }
 ];
 
 var LOVE_CONFESSIONS = [
     "I love you~!", "Be mine forever!", "You're so cute!", "My heart is yours!",
     "I can't stop thinking about you!", "You make me so happy!", "Stay with me!",
-    "I've always liked you!", "You're my favorite!", "Let's be together!"
+    "I've always liked you!", "You're my favorite!", "Let's be together!",
+    "You complete me!", "I'm yours!", "My heart goes doki doki!", "Notice me~!",
+    "You're my sunshine!", "I'd cross oceans for you!", "Be my player 2?"
 ];
 
-var KISS_EFFECTS = ['💋', '💕', '💗', '💖', '💘', '💝', '❤️', '😘'];
+var KISS_EFFECTS = ['💋', '💕', '💗', '💖', '💘', '💝', '❤️', '😘', '💓', '💞'];
+
+// ========== MADLIB CONVERSATION TEMPLATES ==========
+var CONVERSATION_TEMPLATES = [
+    // Gossip chain
+    {
+        name: 'gossip',
+        lines: [
+            { speaker: 0, text: "Did you hear about {noun}?", mood: 'excited' },
+            { speaker: 1, text: "No! Tell me everything!", mood: 'curious' },
+            { speaker: 0, text: "Apparently {person} {verb_past} the {noun}!", mood: 'shocked' },
+            { speaker: 1, text: "{exclamation}! That's {adjective}!", mood: 'shocked' },
+            { speaker: 0, text: "I know right?! And then {person} said '{quote}'", mood: 'gossipy' },
+            { speaker: 1, text: "This is the {superlative} thing I've ever heard!", mood: 'dramatic' }
+        ]
+    },
+    // Philosophy debate
+    {
+        name: 'philosophy',
+        lines: [
+            { speaker: 0, text: "What if {noun} is just {adjective} {noun2}?", mood: 'thinking' },
+            { speaker: 1, text: "Hmm... but what IS {noun} really?", mood: 'pondering' },
+            { speaker: 0, text: "Maybe we're all just {noun2} in a {place}...", mood: 'deep' },
+            { speaker: 1, text: "*existential crisis*", mood: 'crisis' },
+            { speaker: 0, text: "Don't worry, {food} makes everything better!", mood: 'comforting' },
+            { speaker: 1, text: "You're so wise!", mood: 'admiring' }
+        ]
+    },
+    // Drama
+    {
+        name: 'drama',
+        lines: [
+            { speaker: 0, text: "I can't believe you {verb_past} my {noun}!", mood: 'angry' },
+            { speaker: 1, text: "It wasn't me! It was {person}!", mood: 'defensive' },
+            { speaker: 0, text: "*gasp* {person}?! But they're so {adjective}!", mood: 'shocked' },
+            { speaker: 1, text: "That's what they WANT you to think!", mood: 'conspiracy' },
+            { speaker: 0, text: "My whole life is a {noun}...", mood: 'dramatic' },
+            { speaker: 1, text: "*dramatic music plays*", mood: 'theatrical' }
+        ]
+    },
+    // Pickup lines
+    {
+        name: 'flirting',
+        lines: [
+            { speaker: 0, text: "Are you a {noun}? Because you're {adjective}~", mood: 'flirty' },
+            { speaker: 1, text: "O-oh my... *blushes*", mood: 'shy' },
+            { speaker: 0, text: "Your eyes are like {noun}... so {adjective}!", mood: 'romantic' },
+            { speaker: 1, text: "Nobody's ever said that to me before!", mood: 'touched' },
+            { speaker: 0, text: "Will you be my {noun}?", mood: 'hopeful' },
+            { speaker: 1, text: "YES! A thousand times yes!", mood: 'excited' }
+        ]
+    },
+    // Conspiracy theories
+    {
+        name: 'conspiracy',
+        lines: [
+            { speaker: 0, text: "The {noun} is a lie!", mood: 'paranoid' },
+            { speaker: 1, text: "What?! But I love {noun}!", mood: 'distressed' },
+            { speaker: 0, text: "{person} has been hiding the truth about {noun2}!", mood: 'revealing' },
+            { speaker: 1, text: "I knew something was {adjective}...", mood: 'suspicious' },
+            { speaker: 0, text: "We must tell everyone about {noun}!", mood: 'determined' },
+            { speaker: 1, text: "To the {place}!", mood: 'heroic' }
+        ]
+    },
+    // Food obsession
+    {
+        name: 'foodie',
+        lines: [
+            { speaker: 0, text: "I would literally {verb} for some {food}...", mood: 'hungry' },
+            { speaker: 1, text: "Omg same, {food} is life!", mood: 'agreeing' },
+            { speaker: 0, text: "What if we put {food} ON {food2}?", mood: 'genius' },
+            { speaker: 1, text: "You're a {adjective} genius!", mood: 'amazed' },
+            { speaker: 0, text: "We should open a {food} restaurant!", mood: 'entrepreneurial' },
+            { speaker: 1, text: "I'm literally {emotion} right now!", mood: 'emotional' }
+        ]
+    },
+    // Anime moment
+    {
+        name: 'anime',
+        lines: [
+            { speaker: 0, text: "Nani?! Your {noun} level is over 9000!", mood: 'shocked' },
+            { speaker: 1, text: "I've been training in the {place}!", mood: 'proud' },
+            { speaker: 0, text: "But... that's {adjective}! No one survives that!", mood: 'worried' },
+            { speaker: 1, text: "I have the power of {noun} and anime!", mood: 'powerful' },
+            { speaker: 0, text: "*dramatic wind blows*", mood: 'dramatic' },
+            { speaker: 1, text: "This isn't even my final form!", mood: 'intense' }
+        ]
+    },
+    // Time travelers
+    {
+        name: 'timetravel',
+        lines: [
+            { speaker: 0, text: "I'm from the year {year}!", mood: 'urgent' },
+            { speaker: 1, text: "What?! Is the {noun} still {adjective}?", mood: 'curious' },
+            { speaker: 0, text: "There IS no {noun} in the future!", mood: 'ominous' },
+            { speaker: 1, text: "We have to warn {person}!", mood: 'panicked' },
+            { speaker: 0, text: "It's too late... the {noun} has already {verb_past}!", mood: 'doom' },
+            { speaker: 1, text: "*timeline shatters*", mood: 'chaos' }
+        ]
+    }
+];
+
+// Madlib word banks
+var MADLIB_WORDS = {
+    noun: ['love', 'destiny', 'pizza', 'friendship', 'chaos', 'memes', 'vibes', 'drama', 'secrets', 'magic', 'truth', 'reality', 'simulation', 'cheese', 'beans', 'cats', 'dreams', 'courage', 'power'],
+    noun2: ['illusion', 'mystery', 'potato', 'adventure', 'nightmare', 'blessing', 'curse', 'prophecy', 'taco', 'rainbow', 'void', 'dimension', 'timeline'],
+    adjective: ['chaotic', 'beautiful', 'suspicious', 'absolutely unhinged', 'legendary', 'cursed', 'blessed', 'spicy', 'adorable', 'terrifying', 'magnificent', 'questionable', 'iconic'],
+    verb: ['fight', 'yeet', 'vibe', 'dance', 'scream', 'transcend', 'transform', 'evaporate', 'ascend'],
+    verb_past: ['yeeted', 'destroyed', 'blessed', 'cursed', 'befriended', 'challenged', 'summoned', 'banished', 'transformed'],
+    person: ['the moon', 'a wizard', 'my cat', 'the void', 'that one guy', 'a time traveler', 'the prophecy', 'my sleep paralysis demon', 'the algorithm'],
+    place: ['the shadow realm', 'flavor town', 'the backrooms', 'the astral plane', 'Costco', 'the void', 'Brazil', 'the multiverse', 'IKEA'],
+    food: ['pizza', 'ramen', 'tacos', 'cheese', 'boba', 'nuggets', 'sushi', 'garlic bread', 'ice cream'],
+    food2: ['pasta', 'waffles', 'nachos', 'pancakes', 'rice', 'fries', 'bread', 'soup'],
+    exclamation: ['OMG', 'NO WAY', 'WHAT', 'I CANT', 'SCREAMING', 'DECEASED', 'BRO', 'BESTIE'],
+    superlative: ['most iconic', 'wildest', 'most chaotic', 'most unhinged', 'craziest', 'most legendary'],
+    quote: ['I am inevitable', 'bruh moment', 'it be like that', 'no thoughts head empty', 'this is fine', 'we live in a society', 'and I oop'],
+    emotion: ['crying', 'screaming', 'ascending', 'vibrating', 'transcending', 'dissolving'],
+    year: ['3000', '1847', '2077', '42069', '1', 'the heat death of the universe']
+};
+
+// ========== CRAZY INTERACTION TYPES ==========
+var CRAZY_INTERACTIONS = [
+    'fireworks', 'wizardDuel', 'danceOff', 'teatime', 'stareContest',
+    'serenade', 'ghostPossession', 'transformSequence', 'pillowFight',
+    'fortuneTelling', 'dramaDeath', 'telepathy', 'fusion', 'timewarp',
+    'foodFight', 'karaoke', 'armWrestle', 'portal', 'summoning'
+];
 
 // Get the safe zone - chat area only, no video
 function getBuddyZone() {
@@ -7187,6 +7350,151 @@ function injectBuddyStyles() {
             40% { transform: scale(1); opacity: 1; }
             100% { transform: scale(1); opacity: 0; }
         }
+
+        /* ========== CRAZY INTERACTION EFFECTS ========== */
+        .buddy-firework {
+            position: fixed;
+            font-size: 24px;
+            pointer-events: none;
+            z-index: 10003;
+            animation: firework-burst 1.2s ease-out forwards;
+        }
+        .buddy-sparkle {
+            position: fixed;
+            font-size: 16px;
+            pointer-events: none;
+            z-index: 10002;
+            animation: sparkle-fade 0.8s ease-out forwards;
+        }
+        .buddy-magic {
+            position: fixed;
+            font-size: 20px;
+            pointer-events: none;
+            z-index: 10003;
+            animation: magic-spiral 1.5s ease-out forwards;
+        }
+        .buddy-portal {
+            position: fixed;
+            font-size: 40px;
+            pointer-events: none;
+            z-index: 10001;
+            animation: portal-spin 2s ease-in-out forwards;
+        }
+        .buddy-beam {
+            position: fixed;
+            height: 3px;
+            background: linear-gradient(90deg, transparent, #00ffff, #ff00ff, transparent);
+            pointer-events: none;
+            z-index: 10002;
+            animation: beam-flash 0.5s ease-out forwards;
+        }
+        .buddy-ghost-effect {
+            position: fixed;
+            font-size: 28px;
+            pointer-events: none;
+            z-index: 10003;
+            animation: ghost-float 2s ease-in-out forwards;
+        }
+        .buddy-music-note {
+            position: fixed;
+            font-size: 18px;
+            pointer-events: none;
+            z-index: 10002;
+            animation: music-float 1.5s ease-out forwards;
+        }
+        .buddy-food-projectile {
+            position: fixed;
+            font-size: 20px;
+            pointer-events: none;
+            z-index: 10002;
+        }
+        .buddy-transformation {
+            animation: transform-flash 0.3s ease-in-out 3;
+        }
+
+        @keyframes firework-burst {
+            0% { transform: scale(0) rotate(0deg); opacity: 1; }
+            50% { transform: scale(1.5) rotate(180deg); opacity: 1; }
+            100% { transform: scale(2) rotate(360deg); opacity: 0; }
+        }
+        @keyframes sparkle-fade {
+            0% { transform: scale(0) rotate(0deg); opacity: 1; }
+            50% { transform: scale(1.2) rotate(180deg); opacity: 1; }
+            100% { transform: scale(0.5) rotate(360deg); opacity: 0; }
+        }
+        @keyframes magic-spiral {
+            0% { transform: translate(0, 0) rotate(0deg) scale(0); opacity: 1; }
+            50% { transform: translate(20px, -30px) rotate(360deg) scale(1.2); opacity: 1; }
+            100% { transform: translate(40px, -60px) rotate(720deg) scale(0); opacity: 0; }
+        }
+        @keyframes portal-spin {
+            0% { transform: scale(0) rotate(0deg); opacity: 0; }
+            20% { transform: scale(1) rotate(180deg); opacity: 1; }
+            80% { transform: scale(1.2) rotate(540deg); opacity: 1; }
+            100% { transform: scale(0) rotate(720deg); opacity: 0; }
+        }
+        @keyframes beam-flash {
+            0% { opacity: 0; transform: scaleX(0); }
+            30% { opacity: 1; transform: scaleX(1); }
+            100% { opacity: 0; transform: scaleX(1.2); }
+        }
+        @keyframes ghost-float {
+            0% { transform: translateY(0) scale(1); opacity: 0.8; }
+            50% { transform: translateY(-30px) scale(1.2); opacity: 1; }
+            100% { transform: translateY(-60px) scale(0.5); opacity: 0; }
+        }
+        @keyframes music-float {
+            0% { transform: translateY(0) rotate(-20deg); opacity: 1; }
+            100% { transform: translateY(-40px) rotate(20deg); opacity: 0; }
+        }
+        @keyframes transform-flash {
+            0%, 100% { filter: brightness(1) hue-rotate(0deg); }
+            50% { filter: brightness(2) hue-rotate(180deg); }
+        }
+
+        .buddy-character.dancing { animation: buddy-dance 0.4s ease-in-out infinite; }
+        .buddy-character.singing { animation: buddy-sing 0.5s ease-in-out infinite; }
+        .buddy-character.possessed { animation: buddy-possessed 0.2s ease-in-out infinite; filter: hue-rotate(180deg); }
+        .buddy-character.dramatic-death { animation: buddy-death 2s ease-out forwards; }
+        .buddy-character.telepathy { animation: buddy-telepathy 0.8s ease-in-out infinite; }
+        .buddy-character.fused { animation: buddy-fused 0.5s ease-in-out infinite; filter: drop-shadow(0 0 10px gold); }
+        .buddy-character.timewarp { animation: buddy-timewarp 0.3s linear infinite; }
+
+        @keyframes buddy-dance {
+            0%, 100% { transform: translateY(0) rotate(-10deg); }
+            25% { transform: translateY(-8px) rotate(10deg); }
+            50% { transform: translateY(0) rotate(-10deg); }
+            75% { transform: translateY(-8px) rotate(10deg); }
+        }
+        @keyframes buddy-sing {
+            0%, 100% { transform: scale(1) translateY(0); }
+            50% { transform: scale(1.1) translateY(-5px); }
+        }
+        @keyframes buddy-possessed {
+            0%, 100% { transform: translateX(0) rotate(0deg); }
+            25% { transform: translateX(-3px) rotate(-5deg); }
+            75% { transform: translateX(3px) rotate(5deg); }
+        }
+        @keyframes buddy-death {
+            0% { transform: translateY(0) rotate(0deg); opacity: 1; }
+            30% { transform: translateY(-20px) rotate(-20deg); opacity: 1; }
+            60% { transform: translateY(0) rotate(90deg); opacity: 0.8; }
+            100% { transform: translateY(10px) rotate(90deg); opacity: 0.3; }
+        }
+        @keyframes buddy-telepathy {
+            0%, 100% { filter: drop-shadow(0 0 5px #9400D3); }
+            50% { filter: drop-shadow(0 0 20px #9400D3) brightness(1.3); }
+        }
+        @keyframes buddy-fused {
+            0%, 100% { transform: scale(1.3); }
+            50% { transform: scale(1.5); }
+        }
+        @keyframes buddy-timewarp {
+            0% { opacity: 1; filter: blur(0); }
+            50% { opacity: 0.5; filter: blur(2px); }
+            100% { opacity: 1; filter: blur(0); }
+        }
+
         @media (max-width: 768px) {
             .buddy-character { display: none; }
             .buddy-speech { display: none; }
@@ -7271,15 +7579,19 @@ function observeChatMessages() {
 function addBuddy(username) {
     if (buddyCharacters[username]) return;
     var zone = getBuddyZone();
-    var sprite = BUDDY_SPRITES[Math.floor(Math.random() * BUDDY_SPRITES.length)];
-    var personality = PERSONALITY_NAMES[Math.floor(Math.random() * PERSONALITY_NAMES.length)];
+
+    // DETERMINISTIC: Same username = same sprite & personality across all browsers
+    var hash = hashUsername(username);
+    var sprite = BUDDY_SPRITES[hash % BUDDY_SPRITES.length];
+    var personality = PERSONALITY_NAMES[(hash >> 8) % PERSONALITY_NAMES.length];
 
     var el = document.createElement('div');
     el.className = 'buddy-character idle';
     el.innerHTML = sprite.body + '<span class="buddy-nametag">' + escapeHtml(username) + '</span>';
 
-    var startX = zone.left + Math.random() * (zone.right - zone.left);
-    var startY = zone.top + Math.random() * (zone.bottom - zone.top);
+    // Starting position uses hash too for some consistency
+    var startX = zone.left + ((hash % 100) / 100) * (zone.right - zone.left);
+    var startY = zone.top + (((hash >> 4) % 100) / 100) * (zone.bottom - zone.top);
     el.style.left = startX + 'px';
     el.style.top = startY + 'px';
 
@@ -7297,6 +7609,7 @@ function addBuddy(username) {
 
     buddyCharacters[username] = {
         element: el,
+        username: username,
         x: startX,
         y: startY,
         vx: 0,
@@ -7309,7 +7622,9 @@ function addBuddy(username) {
         interacting: false,
         interactCooldown: 0,
         speechCooldown: 0,
-        currentTarget: null  // Who they're chasing/fleeing from
+        conversationCooldown: 0,
+        currentTarget: null,
+        inConversation: false
     };
 }
 
@@ -7512,14 +7827,21 @@ function startInteraction(n1, n2, b1, b2) {
     var p1 = PERSONALITIES[b1.personality] || PERSONALITIES.playful;
     var p2 = PERSONALITIES[b2.personality] || PERSONALITIES.playful;
 
-    // Calculate combined probabilities
+    // Maybe start a prolonged conversation instead
+    if (Math.random() < BUDDY_CONFIG.conversationChance * 5 && !b1.inConversation && !b2.inConversation) {
+        startConversation(n1, n2);
+        return;
+    }
+
+    // Calculate combined probabilities (now includes crazy)
     var kissChance = (p1.kiss + p2.kiss) / 2;
     var chaseChance = (p1.chase + p2.chase) / 2;
     var fightChance = (p1.fight + p2.fight) / 2;
     var confessChance = (p1.confess + p2.confess) / 2;
     var fleeChance = (p1.flee + p2.flee) / 2;
+    var crazyChance = (p1.crazy + p2.crazy) / 2;
 
-    var total = kissChance + chaseChance + fightChance + confessChance + fleeChance;
+    var total = kissChance + chaseChance + fightChance + confessChance + fleeChance + crazyChance;
     var roll = Math.random() * total;
 
     if (roll < kissChance) {
@@ -7530,6 +7852,8 @@ function startInteraction(n1, n2, b1, b2) {
         startChase(n1, n2);
     } else if (roll < kissChance + confessChance + chaseChance + fleeChance) {
         startFlee(n1, n2);
+    } else if (roll < kissChance + confessChance + chaseChance + fleeChance + crazyChance) {
+        startCrazyInteraction(n1, n2);
     } else {
         startFight(n1, n2);
     }
@@ -7828,4 +8152,835 @@ function escapeHtml(text) {
     var div = document.createElement('div');
     div.textContent = text;
     return div.innerHTML;
+}
+
+// ========== MADLIB CONVERSATION SYSTEM ==========
+
+function fillMadlib(text) {
+    return text.replace(/\{(\w+)\}/g, function(match, key) {
+        var words = MADLIB_WORDS[key];
+        if (words && words.length > 0) {
+            return words[Math.floor(Math.random() * words.length)];
+        }
+        return match;
+    });
+}
+
+function getMoodExpression(mood) {
+    var moods = {
+        excited: ['😄', '✨', '🎉'],
+        curious: ['🤔', '👀', '❓'],
+        shocked: ['😱', '😮', '🤯'],
+        gossipy: ['👀', '🤭', '💅'],
+        dramatic: ['😭', '💔', '🎭'],
+        thinking: ['🤔', '💭', '🧐'],
+        pondering: ['🤔', '💭', '✨'],
+        deep: ['🌌', '💫', '🔮'],
+        crisis: ['😵', '💀', '🌀'],
+        comforting: ['🤗', '💕', '☺️'],
+        admiring: ['🥺', '✨', '💖'],
+        angry: ['😤', '💢', '😠'],
+        defensive: ['😅', '💦', '🙅'],
+        conspiracy: ['👁️', '🔺', '🤫'],
+        theatrical: ['🎭', '✨', '🌟'],
+        flirty: ['😘', '💕', '😏'],
+        shy: ['😳', '👉👈', '☺️'],
+        romantic: ['💕', '🥰', '💖'],
+        touched: ['🥺', '💗', '😊'],
+        hopeful: ['🥺', '✨', '💫'],
+        paranoid: ['👁️', '😰', '🔍'],
+        distressed: ['😰', '😢', '💔'],
+        revealing: ['🤯', '💡', '👁️'],
+        suspicious: ['🤨', '🧐', '👀'],
+        determined: ['💪', '🔥', '✊'],
+        heroic: ['⚔️', '🦸', '✨'],
+        hungry: ['🤤', '😋', '🍽️'],
+        agreeing: ['👏', '💯', '🙌'],
+        genius: ['🧠', '💡', '✨'],
+        amazed: ['🤩', '✨', '😍'],
+        entrepreneurial: ['💰', '📈', '🚀'],
+        emotional: ['😭', '💕', '🥺'],
+        proud: ['😤', '💪', '✨'],
+        worried: ['😰', '😟', '💦'],
+        powerful: ['⚡', '🔥', '💪'],
+        intense: ['🔥', '⚡', '💥'],
+        urgent: ['⚠️', '🚨', '⏰'],
+        ominous: ['👁️', '🌑', '⚫'],
+        panicked: ['😱', '🏃', '💨'],
+        doom: ['💀', '🌑', '⚰️'],
+        chaos: ['🌀', '💥', '🔥']
+    };
+    var arr = moods[mood] || ['😊', '✨', '💫'];
+    return arr[Math.floor(Math.random() * arr.length)];
+}
+
+function startConversation(n1, n2) {
+    var b1 = buddyCharacters[n1], b2 = buddyCharacters[n2];
+    if (!b1 || !b2) return;
+
+    b1.interacting = b2.interacting = true;
+    b1.inConversation = b2.inConversation = true;
+
+    var template = CONVERSATION_TEMPLATES[Math.floor(Math.random() * CONVERSATION_TEMPLATES.length)];
+    var buddies = [b1, b2];
+    var lineIndex = 0;
+
+    function nextLine() {
+        if (lineIndex >= template.lines.length) {
+            endConversation(n1, n2);
+            return;
+        }
+
+        var line = template.lines[lineIndex];
+        var speaker = buddies[line.speaker];
+        var text = fillMadlib(line.text);
+        var expr = getMoodExpression(line.mood);
+
+        showSpeechBubble(speaker, text, line.mood);
+        showExpression(speaker, expr);
+
+        lineIndex++;
+        setTimeout(nextLine, 2000 + Math.random() * 1000);
+    }
+
+    // Start the conversation
+    nextLine();
+}
+
+function endConversation(n1, n2) {
+    var b1 = buddyCharacters[n1], b2 = buddyCharacters[n2];
+    if (b1) {
+        b1.interacting = false;
+        b1.inConversation = false;
+        b1.interactCooldown = 10000;
+        b1.conversationCooldown = 15000;
+        b1.state = 'idle';
+        setAnim(b1, 'idle');
+    }
+    if (b2) {
+        b2.interacting = false;
+        b2.inConversation = false;
+        b2.interactCooldown = 10000;
+        b2.conversationCooldown = 15000;
+        b2.state = 'idle';
+        setAnim(b2, 'idle');
+    }
+}
+
+// ========== CRAZY INTERACTIONS ==========
+
+function startCrazyInteraction(n1, n2) {
+    var type = CRAZY_INTERACTIONS[Math.floor(Math.random() * CRAZY_INTERACTIONS.length)];
+
+    switch(type) {
+        case 'fireworks': startFireworks(n1, n2); break;
+        case 'wizardDuel': startWizardDuel(n1, n2); break;
+        case 'danceOff': startDanceOff(n1, n2); break;
+        case 'teatime': startTeatime(n1, n2); break;
+        case 'stareContest': startStareContest(n1, n2); break;
+        case 'serenade': startSerenade(n1, n2); break;
+        case 'ghostPossession': startGhostPossession(n1, n2); break;
+        case 'transformSequence': startTransformSequence(n1, n2); break;
+        case 'pillowFight': startPillowFight(n1, n2); break;
+        case 'fortuneTelling': startFortuneTelling(n1, n2); break;
+        case 'dramaDeath': startDramaDeath(n1, n2); break;
+        case 'telepathy': startTelepathy(n1, n2); break;
+        case 'fusion': startFusion(n1, n2); break;
+        case 'timewarp': startTimewarp(n1, n2); break;
+        case 'foodFight': startFoodFight(n1, n2); break;
+        case 'karaoke': startKaraoke(n1, n2); break;
+        case 'armWrestle': startArmWrestle(n1, n2); break;
+        case 'portal': startPortal(n1, n2); break;
+        case 'summoning': startSummoning(n1, n2); break;
+        default: startFireworks(n1, n2);
+    }
+}
+
+// FIREWORKS
+function startFireworks(n1, n2) {
+    var b1 = buddyCharacters[n1], b2 = buddyCharacters[n2];
+    if (!b1 || !b2) return;
+
+    b1.interacting = b2.interacting = true;
+    showExpression(b1, '🎆');
+    showExpression(b2, '🎇');
+    showSpeechBubble(b1, "Let's celebrate!", 'excited');
+
+    var mx = (b1.x + b2.x) / 2, my = (b1.y + b2.y) / 2;
+    var fireworks = ['🎆', '🎇', '✨', '💥', '🌟', '⭐', '🔥', '💫'];
+    var count = 0;
+
+    var interval = setInterval(function() {
+        for (var i = 0; i < 3; i++) {
+            var fw = fireworks[Math.floor(Math.random() * fireworks.length)];
+            createFirework(mx + (Math.random() - 0.5) * 80, my + (Math.random() - 0.5) * 60, fw);
+        }
+        if (++count >= 8) clearInterval(interval);
+    }, 200);
+
+    setTimeout(function() { endCrazyInteraction(n1, n2); }, 3000);
+}
+
+function createFirework(x, y, emoji) {
+    var e = document.createElement('div');
+    e.className = 'buddy-firework';
+    e.textContent = emoji;
+    e.style.left = x + 'px';
+    e.style.top = y + 'px';
+    document.body.appendChild(e);
+    setTimeout(function() { e.remove(); }, 1200);
+}
+
+// WIZARD DUEL
+function startWizardDuel(n1, n2) {
+    var b1 = buddyCharacters[n1], b2 = buddyCharacters[n2];
+    if (!b1 || !b2) return;
+
+    b1.interacting = b2.interacting = true;
+    showExpression(b1, '🧙');
+    showExpression(b2, '🔮');
+    showSpeechBubble(b1, "EXPECTO PATRONUM!", 'powerful');
+
+    var spells = ['⚡', '🔥', '❄️', '💫', '✨', '🌟', '💥', '🌀'];
+    var count = 0;
+
+    var interval = setInterval(function() {
+        var spell = spells[Math.floor(Math.random() * spells.length)];
+        createMagic(b1.x + 15, b1.y, spell);
+        createMagic(b2.x + 15, b2.y, spell);
+
+        if (count === 2) showSpeechBubble(b2, "AVADA KEDAVRA!", 'intense');
+        if (++count >= 5) clearInterval(interval);
+    }, 400);
+
+    setTimeout(function() {
+        showExpression(b1, '😵');
+        showExpression(b2, '🏆');
+        showSpeechBubble(b2, "I win this round!", 'proud');
+        setTimeout(function() { endCrazyInteraction(n1, n2); }, 1500);
+    }, 2500);
+}
+
+function createMagic(x, y, emoji) {
+    var e = document.createElement('div');
+    e.className = 'buddy-magic';
+    e.textContent = emoji;
+    e.style.left = x + 'px';
+    e.style.top = y + 'px';
+    document.body.appendChild(e);
+    setTimeout(function() { e.remove(); }, 1500);
+}
+
+// DANCE OFF
+function startDanceOff(n1, n2) {
+    var b1 = buddyCharacters[n1], b2 = buddyCharacters[n2];
+    if (!b1 || !b2) return;
+
+    b1.interacting = b2.interacting = true;
+    b1.element.classList.add('dancing');
+    b2.element.classList.add('dancing');
+    showExpression(b1, '💃');
+    showExpression(b2, '🕺');
+    showSpeechBubble(b1, "Dance battle!", 'excited');
+
+    var notes = ['🎵', '🎶', '💃', '🕺', '✨', '🌟'];
+    var count = 0;
+
+    var interval = setInterval(function() {
+        var note = notes[Math.floor(Math.random() * notes.length)];
+        createMusicNote(b1.x + Math.random() * 20, b1.y - 10, note);
+        createMusicNote(b2.x + Math.random() * 20, b2.y - 10, note);
+        if (++count >= 8) clearInterval(interval);
+    }, 300);
+
+    setTimeout(function() {
+        b1.element.classList.remove('dancing');
+        b2.element.classList.remove('dancing');
+        showSpeechBubble(b2, "You've got moves!", 'amazed');
+        endCrazyInteraction(n1, n2);
+    }, 3000);
+}
+
+function createMusicNote(x, y, emoji) {
+    var e = document.createElement('div');
+    e.className = 'buddy-music-note';
+    e.textContent = emoji;
+    e.style.left = x + 'px';
+    e.style.top = y + 'px';
+    document.body.appendChild(e);
+    setTimeout(function() { e.remove(); }, 1500);
+}
+
+// TEA TIME
+function startTeatime(n1, n2) {
+    var b1 = buddyCharacters[n1], b2 = buddyCharacters[n2];
+    if (!b1 || !b2) return;
+
+    b1.interacting = b2.interacting = true;
+    showExpression(b1, '🍵');
+    showExpression(b2, '☕');
+    showSpeechBubble(b1, "Tea time~!", 'sweet');
+
+    setTimeout(function() {
+        showSpeechBubble(b2, "How delightful!", 'happy');
+        createSparkle((b1.x + b2.x) / 2, (b1.y + b2.y) / 2, '🫖');
+    }, 1000);
+
+    setTimeout(function() {
+        showSpeechBubble(b1, "*sips elegantly*", 'fancy');
+    }, 2000);
+
+    setTimeout(function() {
+        showExpression(b1, '😌');
+        showExpression(b2, '😌');
+        endCrazyInteraction(n1, n2);
+    }, 3500);
+}
+
+function createSparkle(x, y, emoji) {
+    var e = document.createElement('div');
+    e.className = 'buddy-sparkle';
+    e.textContent = emoji;
+    e.style.left = x + 'px';
+    e.style.top = y + 'px';
+    document.body.appendChild(e);
+    setTimeout(function() { e.remove(); }, 800);
+}
+
+// STARE CONTEST
+function startStareContest(n1, n2) {
+    var b1 = buddyCharacters[n1], b2 = buddyCharacters[n2];
+    if (!b1 || !b2) return;
+
+    b1.interacting = b2.interacting = true;
+    showExpression(b1, '👁️');
+    showExpression(b2, '👁️');
+    showSpeechBubble(b1, "Staring contest. GO!", 'intense');
+
+    setTimeout(function() {
+        showSpeechBubble(b2, "...", 'focused');
+    }, 1500);
+
+    setTimeout(function() {
+        showSpeechBubble(b1, "*intense staring*", 'focused');
+    }, 2500);
+
+    setTimeout(function() {
+        var loser = Math.random() < 0.5 ? b1 : b2;
+        var winner = loser === b1 ? b2 : b1;
+        showExpression(loser, '😣');
+        showExpression(winner, '🏆');
+        showSpeechBubble(loser, "I BLINKED!", 'shocked');
+        showSpeechBubble(winner, "VICTORY!", 'excited');
+        endCrazyInteraction(n1, n2);
+    }, 4000);
+}
+
+// SERENADE
+function startSerenade(n1, n2) {
+    var b1 = buddyCharacters[n1], b2 = buddyCharacters[n2];
+    if (!b1 || !b2) return;
+
+    b1.interacting = b2.interacting = true;
+    b1.element.classList.add('singing');
+    showExpression(b1, '🎤');
+    showExpression(b2, '🥰');
+
+    var lyrics = [
+        "🎵 You are my sunshine~ 🎵",
+        "🎶 My only sunshine~ 🎶",
+        "✨ You make me happy~ ✨",
+        "💕 When skies are gray~ 💕"
+    ];
+
+    var i = 0;
+    var interval = setInterval(function() {
+        if (i < lyrics.length) {
+            showSpeechBubble(b1, lyrics[i], 'romantic');
+            createMusicNote(b1.x + Math.random() * 30, b1.y - 20, '🎵');
+            i++;
+        }
+    }, 1200);
+
+    setTimeout(function() {
+        clearInterval(interval);
+        b1.element.classList.remove('singing');
+        showSpeechBubble(b2, "That was beautiful! 😭", 'touched');
+        showExpression(b1, '😊');
+        endCrazyInteraction(n1, n2);
+    }, 5000);
+}
+
+// GHOST POSSESSION
+function startGhostPossession(n1, n2) {
+    var b1 = buddyCharacters[n1], b2 = buddyCharacters[n2];
+    if (!b1 || !b2) return;
+
+    b1.interacting = b2.interacting = true;
+    showExpression(b1, '👻');
+    showSpeechBubble(b1, "I shall possess you!", 'spooky');
+
+    createGhostEffect(b1.x, b1.y);
+
+    setTimeout(function() {
+        b2.element.classList.add('possessed');
+        showExpression(b2, '😵');
+        showSpeechBubble(b2, "*speaks in tongues*", 'chaos');
+    }, 1000);
+
+    setTimeout(function() {
+        showSpeechBubble(b2, "THE POWER COMPELS ME", 'possessed');
+    }, 2000);
+
+    setTimeout(function() {
+        b2.element.classList.remove('possessed');
+        showExpression(b2, '😅');
+        showSpeechBubble(b2, "What... happened?", 'confused');
+        endCrazyInteraction(n1, n2);
+    }, 3500);
+}
+
+function createGhostEffect(x, y) {
+    var e = document.createElement('div');
+    e.className = 'buddy-ghost-effect';
+    e.textContent = '👻';
+    e.style.left = x + 'px';
+    e.style.top = y + 'px';
+    document.body.appendChild(e);
+    setTimeout(function() { e.remove(); }, 2000);
+}
+
+// TRANSFORMATION SEQUENCE
+function startTransformSequence(n1, n2) {
+    var b1 = buddyCharacters[n1], b2 = buddyCharacters[n2];
+    if (!b1 || !b2) return;
+
+    b1.interacting = b2.interacting = true;
+    showSpeechBubble(b1, "TRANSFORMATION SEQUENCE!", 'powerful');
+    showExpression(b1, '✨');
+    showExpression(b2, '✨');
+
+    b1.element.classList.add('buddy-transformation');
+    b2.element.classList.add('buddy-transformation');
+
+    var sparkles = ['✨', '💫', '⭐', '🌟', '💖'];
+    var count = 0;
+    var interval = setInterval(function() {
+        createSparkle(b1.x + (Math.random() - 0.5) * 40, b1.y + (Math.random() - 0.5) * 40, sparkles[count % sparkles.length]);
+        createSparkle(b2.x + (Math.random() - 0.5) * 40, b2.y + (Math.random() - 0.5) * 40, sparkles[count % sparkles.length]);
+        if (++count >= 10) clearInterval(interval);
+    }, 150);
+
+    setTimeout(function() {
+        b1.element.classList.remove('buddy-transformation');
+        b2.element.classList.remove('buddy-transformation');
+        showSpeechBubble(b1, "ULTIMATE FORM ACHIEVED!", 'excited');
+        showExpression(b1, '💪');
+        showExpression(b2, '💪');
+        endCrazyInteraction(n1, n2);
+    }, 2500);
+}
+
+// PILLOW FIGHT
+function startPillowFight(n1, n2) {
+    var b1 = buddyCharacters[n1], b2 = buddyCharacters[n2];
+    if (!b1 || !b2) return;
+
+    b1.interacting = b2.interacting = true;
+    setAnim(b1, 'fighting');
+    setAnim(b2, 'fighting');
+    showSpeechBubble(b1, "PILLOW FIGHT!", 'excited');
+
+    var pillows = ['🛏️', '🪶', '💨', '✨'];
+    var count = 0;
+    var interval = setInterval(function() {
+        var p = pillows[Math.floor(Math.random() * pillows.length)];
+        createFightEffect((b1.x + b2.x) / 2 + (Math.random() - 0.5) * 30, (b1.y + b2.y) / 2, { emoji: p, name: 'FLOOF!', color: '#FFF' });
+        if (++count >= 6) clearInterval(interval);
+    }, 300);
+
+    setTimeout(function() {
+        showSpeechBubble(b2, "*feathers everywhere*", 'laughing');
+        showExpression(b1, '😂');
+        showExpression(b2, '😂');
+        endCrazyInteraction(n1, n2);
+    }, 2500);
+}
+
+// FORTUNE TELLING
+function startFortuneTelling(n1, n2) {
+    var b1 = buddyCharacters[n1], b2 = buddyCharacters[n2];
+    if (!b1 || !b2) return;
+
+    b1.interacting = b2.interacting = true;
+    showExpression(b1, '🔮');
+    showSpeechBubble(b1, "I see your future...", 'mysterious');
+
+    setTimeout(function() {
+        createMagic(b1.x + 15, b1.y, '🔮');
+    }, 800);
+
+    var fortunes = [
+        "You will find {noun} in the {place}!",
+        "Beware of {person}... they seek your {noun}!",
+        "Love will find you when you least expect {food}!",
+        "Your destiny involves {adjective} {noun}!",
+        "The stars say: {quote}!",
+        "{person} holds the key to your {noun}!"
+    ];
+
+    setTimeout(function() {
+        var fortune = fillMadlib(fortunes[Math.floor(Math.random() * fortunes.length)]);
+        showSpeechBubble(b1, fortune, 'mystical');
+        showExpression(b2, '😮');
+    }, 2000);
+
+    setTimeout(function() {
+        showSpeechBubble(b2, "Amazing! How did you know?!", 'amazed');
+        endCrazyInteraction(n1, n2);
+    }, 4000);
+}
+
+// DRAMATIC DEATH
+function startDramaDeath(n1, n2) {
+    var b1 = buddyCharacters[n1], b2 = buddyCharacters[n2];
+    if (!b1 || !b2) return;
+
+    b1.interacting = b2.interacting = true;
+    showSpeechBubble(b1, "Tell my family... I love {food}...", 'dramatic');
+    showExpression(b2, '😱');
+
+    setTimeout(function() {
+        b1.element.classList.add('dramatic-death');
+        showSpeechBubble(b1, "*dramatically falls*", 'dying');
+    }, 1000);
+
+    setTimeout(function() {
+        showSpeechBubble(b2, "NOOOOOO!", 'devastated');
+        showExpression(b2, '😭');
+    }, 1500);
+
+    setTimeout(function() {
+        showSpeechBubble(b1, "jk I'm fine lol", 'trolling');
+        b1.element.classList.remove('dramatic-death');
+        showExpression(b1, '😏');
+        showExpression(b2, '😤');
+        endCrazyInteraction(n1, n2);
+    }, 3500);
+}
+
+// TELEPATHY
+function startTelepathy(n1, n2) {
+    var b1 = buddyCharacters[n1], b2 = buddyCharacters[n2];
+    if (!b1 || !b2) return;
+
+    b1.interacting = b2.interacting = true;
+    b1.element.classList.add('telepathy');
+    b2.element.classList.add('telepathy');
+    showExpression(b1, '🧠');
+    showExpression(b2, '🧠');
+    showSpeechBubble(b1, "*sending thoughts*", 'psychic');
+
+    // Create beam between them
+    createBeam(b1.x + 15, b1.y + 10, b2.x + 15, b2.y + 10);
+
+    setTimeout(function() {
+        var thought = fillMadlib("I'm thinking about {noun}!");
+        showSpeechBubble(b2, thought, 'receiving');
+    }, 1500);
+
+    setTimeout(function() {
+        showSpeechBubble(b1, "DID YOU GET THAT?!", 'excited');
+        showSpeechBubble(b2, "YES! TELEPATHY WORKS!", 'amazed');
+    }, 2500);
+
+    setTimeout(function() {
+        b1.element.classList.remove('telepathy');
+        b2.element.classList.remove('telepathy');
+        endCrazyInteraction(n1, n2);
+    }, 4000);
+}
+
+function createBeam(x1, y1, x2, y2) {
+    var e = document.createElement('div');
+    e.className = 'buddy-beam';
+    var length = Math.sqrt(Math.pow(x2 - x1, 2) + Math.pow(y2 - y1, 2));
+    var angle = Math.atan2(y2 - y1, x2 - x1) * 180 / Math.PI;
+    e.style.left = x1 + 'px';
+    e.style.top = y1 + 'px';
+    e.style.width = length + 'px';
+    e.style.transform = 'rotate(' + angle + 'deg)';
+    e.style.transformOrigin = '0 50%';
+    document.body.appendChild(e);
+    setTimeout(function() { e.remove(); }, 500);
+}
+
+// FUSION
+function startFusion(n1, n2) {
+    var b1 = buddyCharacters[n1], b2 = buddyCharacters[n2];
+    if (!b1 || !b2) return;
+
+    b1.interacting = b2.interacting = true;
+    showSpeechBubble(b1, "FUUUU...", 'intense');
+    showSpeechBubble(b2, "...SION!", 'intense');
+    showExpression(b1, '🤝');
+    showExpression(b2, '🤝');
+
+    setTimeout(function() {
+        showSpeechBubble(b1, "HA!", 'powerful');
+        b1.element.classList.add('fused');
+        b2.element.style.opacity = '0.3';
+        for (var i = 0; i < 8; i++) {
+            setTimeout(function() {
+                createSparkle(b1.x + (Math.random() - 0.5) * 50, b1.y + (Math.random() - 0.5) * 50, '✨');
+            }, i * 100);
+        }
+    }, 1500);
+
+    setTimeout(function() {
+        showSpeechBubble(b1, "WE ARE ONE!", 'powerful');
+        showExpression(b1, '💪');
+    }, 2500);
+
+    setTimeout(function() {
+        b1.element.classList.remove('fused');
+        b2.element.style.opacity = '1';
+        showSpeechBubble(b1, "*defuses*", 'dizzy');
+        showExpression(b1, '😵');
+        showExpression(b2, '😵');
+        endCrazyInteraction(n1, n2);
+    }, 4000);
+}
+
+// TIMEWARP
+function startTimewarp(n1, n2) {
+    var b1 = buddyCharacters[n1], b2 = buddyCharacters[n2];
+    if (!b1 || !b2) return;
+
+    b1.interacting = b2.interacting = true;
+    showSpeechBubble(b1, "INITIATING TIMEWARP!", 'urgent');
+    showExpression(b1, '⏰');
+    showExpression(b2, '🌀');
+
+    b1.element.classList.add('timewarp');
+    b2.element.classList.add('timewarp');
+
+    setTimeout(function() {
+        createPortalEffect((b1.x + b2.x) / 2, (b1.y + b2.y) / 2);
+    }, 500);
+
+    setTimeout(function() {
+        var year = MADLIB_WORDS.year[Math.floor(Math.random() * MADLIB_WORDS.year.length)];
+        showSpeechBubble(b1, "We're in the year " + year + "!", 'shocked');
+    }, 1500);
+
+    setTimeout(function() {
+        showSpeechBubble(b2, "WHAT HAVE WE DONE?!", 'panicked');
+    }, 2500);
+
+    setTimeout(function() {
+        b1.element.classList.remove('timewarp');
+        b2.element.classList.remove('timewarp');
+        showSpeechBubble(b1, "*returns to present*", 'relieved');
+        endCrazyInteraction(n1, n2);
+    }, 4000);
+}
+
+function createPortalEffect(x, y) {
+    var e = document.createElement('div');
+    e.className = 'buddy-portal';
+    e.textContent = '🌀';
+    e.style.left = (x - 20) + 'px';
+    e.style.top = (y - 20) + 'px';
+    document.body.appendChild(e);
+    setTimeout(function() { e.remove(); }, 2000);
+}
+
+// FOOD FIGHT
+function startFoodFight(n1, n2) {
+    var b1 = buddyCharacters[n1], b2 = buddyCharacters[n2];
+    if (!b1 || !b2) return;
+
+    b1.interacting = b2.interacting = true;
+    showSpeechBubble(b1, "FOOD FIGHT!", 'chaotic');
+    showExpression(b1, '😈');
+    showExpression(b2, '😈');
+
+    var foods = ['🍕', '🌮', '🍔', '🍟', '🥧', '🍰', '🍩', '🥗', '🍝', '🍜'];
+    var count = 0;
+
+    var interval = setInterval(function() {
+        var food = foods[Math.floor(Math.random() * foods.length)];
+        throwFood(b1.x, b1.y, b2.x, b2.y, food);
+        food = foods[Math.floor(Math.random() * foods.length)];
+        throwFood(b2.x, b2.y, b1.x, b1.y, food);
+        if (++count >= 5) clearInterval(interval);
+    }, 350);
+
+    setTimeout(function() {
+        showSpeechBubble(b1, "*covered in food*", 'messy');
+        showSpeechBubble(b2, "Worth it!", 'satisfied');
+        showExpression(b1, '😋');
+        showExpression(b2, '😋');
+        endCrazyInteraction(n1, n2);
+    }, 2500);
+}
+
+function throwFood(x1, y1, x2, y2, food) {
+    var e = document.createElement('div');
+    e.className = 'buddy-food-projectile';
+    e.textContent = food;
+    e.style.left = x1 + 'px';
+    e.style.top = y1 + 'px';
+    e.style.transition = 'all 0.3s ease-out';
+    document.body.appendChild(e);
+
+    setTimeout(function() {
+        e.style.left = x2 + 'px';
+        e.style.top = y2 + 'px';
+    }, 10);
+
+    setTimeout(function() {
+        createSparkle(x2, y2, '💥');
+        e.remove();
+    }, 300);
+}
+
+// KARAOKE
+function startKaraoke(n1, n2) {
+    var b1 = buddyCharacters[n1], b2 = buddyCharacters[n2];
+    if (!b1 || !b2) return;
+
+    b1.interacting = b2.interacting = true;
+    b1.element.classList.add('singing');
+    b2.element.classList.add('singing');
+    showExpression(b1, '🎤');
+    showExpression(b2, '🎤');
+    showSpeechBubble(b1, "🎵 We're no strangers to looove~", 'singing');
+
+    setTimeout(function() {
+        showSpeechBubble(b2, "🎶 You know the rules and SO DO I~", 'singing');
+    }, 1500);
+
+    setTimeout(function() {
+        showSpeechBubble(b1, "🎵 NEVER GONNA GIVE YOU UP!", 'powerful');
+        for (var i = 0; i < 5; i++) {
+            createMusicNote(b1.x + Math.random() * 40 - 20, b1.y - 20, '🎵');
+            createMusicNote(b2.x + Math.random() * 40 - 20, b2.y - 20, '🎶');
+        }
+    }, 3000);
+
+    setTimeout(function() {
+        b1.element.classList.remove('singing');
+        b2.element.classList.remove('singing');
+        showSpeechBubble(b2, "We just got rickrolled!", 'shocked');
+        endCrazyInteraction(n1, n2);
+    }, 4500);
+}
+
+// ARM WRESTLE
+function startArmWrestle(n1, n2) {
+    var b1 = buddyCharacters[n1], b2 = buddyCharacters[n2];
+    if (!b1 || !b2) return;
+
+    b1.interacting = b2.interacting = true;
+    showSpeechBubble(b1, "ARM WRESTLE!", 'competitive');
+    showExpression(b1, '💪');
+    showExpression(b2, '💪');
+
+    setTimeout(function() {
+        showSpeechBubble(b2, "*struggling*", 'straining');
+    }, 1000);
+
+    setTimeout(function() {
+        showSpeechBubble(b1, "HNNNNG!", 'effort');
+    }, 2000);
+
+    setTimeout(function() {
+        var winner = Math.random() < 0.5 ? b1 : b2;
+        var loser = winner === b1 ? b2 : b1;
+        showSpeechBubble(winner, "VICTORY IS MINE!", 'triumphant');
+        showSpeechBubble(loser, "My arm! 😭", 'defeated');
+        showExpression(winner, '🏆');
+        showExpression(loser, '😫');
+        endCrazyInteraction(n1, n2);
+    }, 3000);
+}
+
+// PORTAL
+function startPortal(n1, n2) {
+    var b1 = buddyCharacters[n1], b2 = buddyCharacters[n2];
+    if (!b1 || !b2) return;
+
+    b1.interacting = b2.interacting = true;
+    showSpeechBubble(b1, "Opening portal to " + fillMadlib("{place}") + "!", 'excited');
+    showExpression(b1, '🌀');
+
+    createPortalEffect(b1.x + 30, b1.y);
+
+    setTimeout(function() {
+        createPortalEffect(b2.x - 10, b2.y);
+        showExpression(b2, '😮');
+    }, 800);
+
+    setTimeout(function() {
+        showSpeechBubble(b2, "I can see " + fillMadlib("{person}") + " on the other side!", 'amazed');
+    }, 1500);
+
+    setTimeout(function() {
+        showSpeechBubble(b1, "*closes portal*", 'relieved');
+        showSpeechBubble(b2, "That was wild!", 'excited');
+        endCrazyInteraction(n1, n2);
+    }, 3000);
+}
+
+// SUMMONING
+function startSummoning(n1, n2) {
+    var b1 = buddyCharacters[n1], b2 = buddyCharacters[n2];
+    if (!b1 || !b2) return;
+
+    b1.interacting = b2.interacting = true;
+    showSpeechBubble(b1, "We shall summon {noun}!", 'mystical');
+    showExpression(b1, '🕯️');
+    showExpression(b2, '🕯️');
+
+    var summonEffects = ['🔥', '⚡', '🌟', '💀', '👁️', '🌙'];
+    var count = 0;
+    var mx = (b1.x + b2.x) / 2, my = (b1.y + b2.y) / 2;
+
+    var interval = setInterval(function() {
+        var effect = summonEffects[Math.floor(Math.random() * summonEffects.length)];
+        createMagic(mx + (Math.random() - 0.5) * 50, my + (Math.random() - 0.5) * 40, effect);
+        if (++count >= 8) clearInterval(interval);
+    }, 200);
+
+    setTimeout(function() {
+        var summons = ['a pizza 🍕', 'chaos incarnate 🌀', 'the void 🕳️', 'a very confused cat 🐱', 'pure vibes ✨', 'the algorithm 🤖'];
+        var summoned = summons[Math.floor(Math.random() * summons.length)];
+        showSpeechBubble(b1, "WE SUMMONED " + summoned + "!", 'shocked');
+        showExpression(b1, '😱');
+        showExpression(b2, '😱');
+    }, 2000);
+
+    setTimeout(function() {
+        showSpeechBubble(b2, "Close the portal! CLOSE IT!", 'panicked');
+        endCrazyInteraction(n1, n2);
+    }, 3500);
+}
+
+// Generic end for crazy interactions
+function endCrazyInteraction(n1, n2) {
+    var b1 = buddyCharacters[n1], b2 = buddyCharacters[n2];
+    if (b1) {
+        b1.interacting = false;
+        b1.interactCooldown = 6000;
+        b1.state = 'idle';
+        setAnim(b1, 'idle');
+    }
+    if (b2) {
+        b2.interacting = false;
+        b2.interactCooldown = 6000;
+        b2.state = 'idle';
+        setAnim(b2, 'idle');
+    }
 }
