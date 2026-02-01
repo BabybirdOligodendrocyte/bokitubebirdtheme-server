@@ -1289,6 +1289,43 @@ function hexToRgba(hex, opacity) {
         .custom-color-row .textstyle-btn {
             flex: 1 !important;
         }
+        .buddy-slider-row {
+            display: flex !important;
+            align-items: center !important;
+            gap: 10px !important;
+            margin-bottom: 8px !important;
+            padding: 6px 10px !important;
+            background: #252530 !important;
+            border-radius: 6px !important;
+        }
+        .buddy-slider-row label {
+            flex: 1 !important;
+            color: #aaa !important;
+            font-size: 12px !important;
+        }
+        .buddy-slider-row label span {
+            color: #fc0 !important;
+            font-weight: bold !important;
+        }
+        .buddy-slider-row input[type="range"] {
+            flex: 2 !important;
+            height: 6px !important;
+            -webkit-appearance: none !important;
+            background: #444 !important;
+            border-radius: 3px !important;
+        }
+        .buddy-slider-row input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none !important;
+            width: 16px !important;
+            height: 16px !important;
+            border-radius: 50% !important;
+            background: #fc0 !important;
+            cursor: pointer !important;
+        }
+        .sprite-grid .textstyle-btn {
+            min-width: 40px !important;
+            padding: 4px !important;
+        }
         #textstyle-preview {
             padding: 16px !important;
             background: #111 !important;
@@ -2324,6 +2361,429 @@ function toggleTextStylePopup() {
     else openTextStylePopup();
 }
 
+// ========== BUDDY SETTINGS POPUP ==========
+var currentBuddyTab = 'appearance';
+
+function createBuddySettingsPopup() {
+    if (document.getElementById('buddy-settings-overlay')) return;
+    var o = document.createElement('div');
+    o.id = 'buddy-settings-overlay';
+    o.className = 'textstyle-popup-overlay';
+    o.onclick = function(e) { if (e.target === o) closeBuddySettingsPopup(); };
+
+    var p = document.createElement('div');
+    p.id = 'buddy-settings-popup';
+    p.className = 'textstyle-popup';
+    p.innerHTML = '<div class="popup-header" id="buddy-settings-header"><span>🐦 Buddy Settings</span><button class="popup-close" onclick="closeBuddySettingsPopup()">×</button></div>' +
+        '<div id="buddy-tabs" class="textstyle-tabs">' +
+        '<button class="style-tab active" data-tab="appearance" onclick="switchBuddyTab(\'appearance\')">🎨 Look</button>' +
+        '<button class="style-tab" data-tab="personality" onclick="switchBuddyTab(\'personality\')">💭 Personality</button>' +
+        '<button class="style-tab" data-tab="behavior" onclick="switchBuddyTab(\'behavior\')">🏃 Behavior</button>' +
+        '<button class="style-tab" data-tab="phrases" onclick="switchBuddyTab(\'phrases\')">💬 Phrases</button>' +
+        '</div>' +
+        '<div id="buddy-tab-content"></div>';
+    o.appendChild(p);
+    document.body.appendChild(o);
+    makeDraggable(p, document.getElementById('buddy-settings-header'));
+    renderBuddyTabContent('appearance');
+}
+
+function switchBuddyTab(tab) {
+    currentBuddyTab = tab;
+    document.querySelectorAll('#buddy-tabs .style-tab').forEach(function(t) { t.classList.remove('active'); });
+    document.querySelector('#buddy-tabs .style-tab[data-tab="' + tab + '"]').classList.add('active');
+    renderBuddyTabContent(tab);
+}
+
+function renderBuddyTabContent(tab) {
+    var container = document.getElementById('buddy-tab-content');
+    if (!container) return;
+
+    var settings = myBuddySettings || JSON.parse(JSON.stringify(DEFAULT_BUDDY_SETTINGS));
+
+    if (tab === 'appearance') {
+        // APPEARANCE TAB
+        var spriteOptions = BUDDY_SPRITES.map(function(s, i) {
+            var act = settings.spriteIndex === i ? ' active' : '';
+            return '<button class="textstyle-btn sprite-btn' + act + '" onclick="selectBuddySprite(' + i + ')" style="font-size:24px">' + s.body + '</button>';
+        }).join('');
+
+        var sizeOptions = Object.keys(BUDDY_SIZES).map(function(s) {
+            var act = settings.size === s ? ' active' : '';
+            return '<button class="textstyle-btn' + act + '" onclick="selectBuddySize(\'' + s + '\')">' + s.charAt(0).toUpperCase() + s.slice(1) + '</button>';
+        }).join('');
+
+        container.innerHTML = '<div class="textstyle-popup-scroll">' +
+            '<div class="textstyle-section"><h4>Choose Sprite</h4>' +
+            '<button class="textstyle-btn' + (settings.spriteIndex === -1 ? ' active' : '') + '" onclick="selectBuddySprite(-1)" style="width:100%;margin-bottom:8px">🎲 Random (based on username)</button>' +
+            '<div class="textstyle-grid sprite-grid">' + spriteOptions + '</div></div>' +
+            '<div class="textstyle-section"><h4>Custom Sprite URL</h4>' +
+            '<input type="text" id="buddy-custom-sprite" class="form-control" placeholder="https://example.com/sprite.gif" value="' + (settings.customSpriteUrl || '') + '" style="width:100%;margin-bottom:8px">' +
+            '<button class="textstyle-btn" onclick="applyCustomBuddySprite()" style="width:100%">Apply Custom Sprite</button>' +
+            '<p style="font-size:11px;color:#888;margin-top:4px">Supports GIFs! Direct image link required.</p></div>' +
+            '<div class="textstyle-section"><h4>Size</h4><div class="textstyle-grid">' + sizeOptions + '</div></div>' +
+            '<div class="textstyle-section"><h4>Color Adjustments</h4>' +
+            '<div class="buddy-slider-row"><label>Hue Rotate: <span id="hue-val">' + settings.hueRotate + '°</span></label><input type="range" min="0" max="360" value="' + settings.hueRotate + '" oninput="updateBuddyHue(this.value)"></div>' +
+            '<div class="buddy-slider-row"><label>Saturation: <span id="sat-val">' + settings.saturation + '%</span></label><input type="range" min="50" max="200" value="' + settings.saturation + '" oninput="updateBuddySaturation(this.value)"></div>' +
+            '<div class="buddy-slider-row"><label>Brightness: <span id="bright-val">' + settings.brightness + '%</span></label><input type="range" min="50" max="150" value="' + settings.brightness + '" oninput="updateBuddyBrightness(this.value)"></div></div>' +
+            '<div class="textstyle-section"><h4>Glow Effect</h4>' +
+            '<div class="custom-color-row"><label>Color: </label><input type="color" id="buddy-glow-color" value="' + (settings.glowColor || '#FFD700') + '" onchange="updateBuddyGlowColor(this.value)"></div>' +
+            '<div class="buddy-slider-row"><label>Intensity: <span id="glow-val">' + settings.glowIntensity + 'px</span></label><input type="range" min="0" max="20" value="' + settings.glowIntensity + '" oninput="updateBuddyGlowIntensity(this.value)"></div></div>' +
+            '<div class="textstyle-section"><h4>Display Name</h4>' +
+            '<input type="text" id="buddy-display-name" class="form-control" placeholder="Leave empty to use username" value="' + (settings.displayName || '') + '" style="width:100%" onchange="updateBuddyDisplayName(this.value)"></div>' +
+            '<div class="textstyle-section"><h4>Preview</h4><div id="buddy-preview" style="height:80px;background:#111;border-radius:6px;position:relative;display:flex;align-items:center;justify-content:center;font-size:32px"></div></div>' +
+            '</div>';
+        updateBuddyPreview();
+
+    } else if (tab === 'personality') {
+        // PERSONALITY TAB
+        var personalityOptions = Object.keys(PERSONALITIES).map(function(p) {
+            var act = settings.personality === p ? ' active' : '';
+            var pers = PERSONALITIES[p];
+            return '<button class="textstyle-btn' + act + '" onclick="selectBuddyPersonality(\'' + p + '\')" title="' + (pers.desc || '') + '">' + p.charAt(0).toUpperCase() + p.slice(1) + '</button>';
+        }).join('');
+
+        container.innerHTML = '<div class="textstyle-popup-scroll">' +
+            '<div class="textstyle-section"><h4>Personality Type</h4>' +
+            '<button class="textstyle-btn' + (settings.personality === null ? ' active' : '') + '" onclick="selectBuddyPersonality(null)" style="width:100%;margin-bottom:8px">🎲 Random (based on username)</button>' +
+            '<div class="textstyle-grid">' + personalityOptions + '</div></div>' +
+            '<div class="textstyle-section"><h4>Interaction Preferences</h4>' +
+            '<p style="font-size:11px;color:#888;margin-bottom:8px">-1 = use personality default, 0-100 = custom chance</p>' +
+            '<div class="buddy-slider-row"><label>Kiss: <span id="kiss-val">' + (settings.kissChance === -1 ? 'Default' : settings.kissChance + '%') + '</span></label><input type="range" min="-1" max="100" value="' + settings.kissChance + '" oninput="updateBuddyChance(\'kiss\', this.value)"></div>' +
+            '<div class="buddy-slider-row"><label>Chase: <span id="chase-val">' + (settings.chaseChance === -1 ? 'Default' : settings.chaseChance + '%') + '</span></label><input type="range" min="-1" max="100" value="' + settings.chaseChance + '" oninput="updateBuddyChance(\'chase\', this.value)"></div>' +
+            '<div class="buddy-slider-row"><label>Fight: <span id="fight-val">' + (settings.fightChance === -1 ? 'Default' : settings.fightChance + '%') + '</span></label><input type="range" min="-1" max="100" value="' + settings.fightChance + '" oninput="updateBuddyChance(\'fight\', this.value)"></div>' +
+            '<div class="buddy-slider-row"><label>Flee: <span id="flee-val">' + (settings.fleeChance === -1 ? 'Default' : settings.fleeChance + '%') + '</span></label><input type="range" min="-1" max="100" value="' + settings.fleeChance + '" oninput="updateBuddyChance(\'flee\', this.value)"></div>' +
+            '<div class="buddy-slider-row"><label>Confess: <span id="confess-val">' + (settings.confessChance === -1 ? 'Default' : settings.confessChance + '%') + '</span></label><input type="range" min="-1" max="100" value="' + settings.confessChance + '" oninput="updateBuddyChance(\'confess\', this.value)"></div>' +
+            '<div class="buddy-slider-row"><label>Crazy: <span id="crazy-val">' + (settings.crazyChance === -1 ? 'Default' : settings.crazyChance + '%') + '</span></label><input type="range" min="-1" max="100" value="' + settings.crazyChance + '" oninput="updateBuddyChance(\'crazy\', this.value)"></div>' +
+            '</div></div>';
+
+    } else if (tab === 'behavior') {
+        // BEHAVIOR TAB
+        var idleOptions = Object.keys(IDLE_STYLES).map(function(s) {
+            var act = settings.idleStyle === s ? ' active' : '';
+            return '<button class="textstyle-btn' + act + '" onclick="selectBuddyIdleStyle(\'' + s + '\')">' + s.charAt(0).toUpperCase() + s.slice(1) + '</button>';
+        }).join('');
+
+        var movementOptions = ['default', 'smooth', 'bouncy', 'floaty', 'erratic', 'teleporty'].map(function(m) {
+            var act = settings.movementStyle === m ? ' active' : '';
+            return '<button class="textstyle-btn' + act + '" onclick="selectBuddyMovementStyle(\'' + m + '\')">' + m.charAt(0).toUpperCase() + m.slice(1) + '</button>';
+        }).join('');
+
+        var socialOptions = ['social', 'neutral', 'shy', 'aggressive'].map(function(s) {
+            var act = settings.socialTendency === s ? ' active' : '';
+            return '<button class="textstyle-btn' + act + '" onclick="selectBuddySocialTendency(\'' + s + '\')">' + s.charAt(0).toUpperCase() + s.slice(1) + '</button>';
+        }).join('');
+
+        var posOptions = ['ground', 'high', 'chatFollow', 'roam'].map(function(p) {
+            var act = settings.positionPreference === p ? ' active' : '';
+            var label = p === 'chatFollow' ? 'Follow Chat' : p.charAt(0).toUpperCase() + p.slice(1);
+            return '<button class="textstyle-btn' + act + '" onclick="selectBuddyPosition(\'' + p + '\')">' + label + '</button>';
+        }).join('');
+
+        container.innerHTML = '<div class="textstyle-popup-scroll">' +
+            '<div class="textstyle-section"><h4>Idle Style</h4><div class="textstyle-grid">' + idleOptions + '</div></div>' +
+            '<div class="textstyle-section"><h4>Movement Style</h4><div class="textstyle-grid">' + movementOptions + '</div></div>' +
+            '<div class="textstyle-section"><h4>Social Tendency</h4><div class="textstyle-grid">' + socialOptions + '</div></div>' +
+            '<div class="textstyle-section"><h4>Position Preference</h4><div class="textstyle-grid">' + posOptions + '</div></div>' +
+            '<div class="textstyle-section"><h4>Fine Tuning</h4>' +
+            '<div class="buddy-slider-row"><label>Speed: <span id="speed-val">' + settings.movementSpeed + 'x</span></label><input type="range" min="50" max="200" value="' + (settings.movementSpeed * 100) + '" oninput="updateBuddySpeed(this.value)"></div>' +
+            '<div class="buddy-slider-row"><label>Interaction Rate: <span id="interact-val">' + settings.interactionFrequency + 'x</span></label><input type="range" min="50" max="200" value="' + (settings.interactionFrequency * 100) + '" oninput="updateBuddyInteractRate(this.value)"></div>' +
+            '<div class="buddy-slider-row"><label>Chattiness: <span id="chat-val">' + settings.chattiness + 'x</span></label><input type="range" min="50" max="200" value="' + (settings.chattiness * 100) + '" oninput="updateBuddyChattiness(this.value)"></div>' +
+            '<div class="buddy-slider-row"><label>Energy: <span id="energy-val">' + settings.energyLevel + 'x</span></label><input type="range" min="50" max="200" value="' + (settings.energyLevel * 100) + '" oninput="updateBuddyEnergy(this.value)"></div>' +
+            '</div></div>';
+
+    } else if (tab === 'phrases') {
+        // PHRASES TAB
+        var phrases = settings.customPhrases || [];
+        var phraseInputs = '';
+        for (var i = 0; i < 5; i++) {
+            phraseInputs += '<input type="text" class="form-control buddy-phrase-input" data-index="' + i + '" placeholder="Custom phrase ' + (i+1) + '" value="' + (phrases[i] || '') + '" style="margin-bottom:4px" onchange="updateBuddyPhrase(' + i + ', this.value)">';
+        }
+
+        container.innerHTML = '<div class="textstyle-popup-scroll">' +
+            '<div class="textstyle-section"><h4>Catchphrase</h4>' +
+            '<input type="text" id="buddy-catchphrase" class="form-control" placeholder="e.g. \'Kawaii desu!\'" value="' + (settings.catchphrase || '') + '" onchange="updateBuddyCatchphrase(this.value)">' +
+            '<p style="font-size:11px;color:#888">Said randomly during idle</p></div>' +
+            '<div class="textstyle-section"><h4>Custom Phrases</h4>' +
+            '<p style="font-size:11px;color:#888;margin-bottom:4px">Used in interactions and conversations</p>' +
+            phraseInputs + '</div>' +
+            '<div class="textstyle-section"><h4>Greeting</h4>' +
+            '<input type="text" id="buddy-greeting" class="form-control" placeholder="e.g. \'Hello there!\'" value="' + (settings.greeting || '') + '" onchange="updateBuddyGreeting(this.value)"></div>' +
+            '<div class="textstyle-section"><h4>Victory Line</h4>' +
+            '<input type="text" id="buddy-victory" class="form-control" placeholder="e.g. \'I win!\'" value="' + (settings.victoryLine || '') + '" onchange="updateBuddyVictory(this.value)"></div>' +
+            '<div class="textstyle-section"><h4>Defeat Line</h4>' +
+            '<input type="text" id="buddy-defeat" class="form-control" placeholder="e.g. \'Next time...\'" value="' + (settings.defeatLine || '') + '" onchange="updateBuddyDefeat(this.value)"></div>' +
+            '<div class="textstyle-section"><h4>Love Line</h4>' +
+            '<input type="text" id="buddy-love" class="form-control" placeholder="e.g. \'Senpai noticed me!\'" value="' + (settings.loveLine || '') + '" onchange="updateBuddyLove(this.value)"></div>' +
+            '</div>';
+    }
+}
+
+function updateBuddyPreview() {
+    var preview = document.getElementById('buddy-preview');
+    if (!preview) return;
+
+    var settings = myBuddySettings || DEFAULT_BUDDY_SETTINGS;
+    var sprite = '';
+
+    if (settings.customSpriteUrl) {
+        sprite = '<img src="' + escapeHtml(settings.customSpriteUrl) + '" style="max-height:60px;max-width:60px;object-fit:contain">';
+    } else {
+        var idx = settings.spriteIndex >= 0 ? settings.spriteIndex : 0;
+        sprite = BUDDY_SPRITES[idx] ? BUDDY_SPRITES[idx].body : '🐦';
+    }
+
+    var filters = [];
+    if (settings.hueRotate) filters.push('hue-rotate(' + settings.hueRotate + 'deg)');
+    if (settings.saturation !== 100) filters.push('saturate(' + settings.saturation + '%)');
+    if (settings.brightness !== 100) filters.push('brightness(' + settings.brightness + '%)');
+    if (settings.glowIntensity > 0) {
+        var glowColor = settings.glowColor || '#FFD700';
+        filters.push('drop-shadow(0 0 ' + settings.glowIntensity + 'px ' + glowColor + ')');
+    }
+
+    var filterStyle = filters.length ? 'filter:' + filters.join(' ') + ';' : '';
+    preview.innerHTML = '<div style="' + filterStyle + '">' + sprite + '</div>';
+}
+
+function openBuddySettingsPopup() {
+    createBuddySettingsPopup();
+    document.getElementById('buddy-settings-overlay').classList.add('visible');
+}
+
+function closeBuddySettingsPopup() {
+    var o = document.getElementById('buddy-settings-overlay');
+    if (o) o.classList.remove('visible');
+}
+
+function toggleBuddySettingsPopup() {
+    var o = document.getElementById('buddy-settings-overlay');
+    if (o && o.classList.contains('visible')) closeBuddySettingsPopup();
+    else openBuddySettingsPopup();
+}
+
+// Buddy Settings Update Functions
+function selectBuddySprite(index) {
+    if (!myBuddySettings) myBuddySettings = JSON.parse(JSON.stringify(DEFAULT_BUDDY_SETTINGS));
+    myBuddySettings.spriteIndex = index;
+    myBuddySettings.customSpriteUrl = null;
+    saveMyBuddySettings();
+    broadcastMyBuddySettings();
+    renderBuddyTabContent('appearance');
+    applyMyBuddySettings();
+}
+
+function applyCustomBuddySprite() {
+    var url = document.getElementById('buddy-custom-sprite').value.trim();
+    if (!myBuddySettings) myBuddySettings = JSON.parse(JSON.stringify(DEFAULT_BUDDY_SETTINGS));
+    myBuddySettings.customSpriteUrl = url || null;
+    if (url) myBuddySettings.spriteIndex = -1;
+    saveMyBuddySettings();
+    broadcastMyBuddySettings();
+    updateBuddyPreview();
+    applyMyBuddySettings();
+}
+
+function selectBuddySize(size) {
+    if (!myBuddySettings) myBuddySettings = JSON.parse(JSON.stringify(DEFAULT_BUDDY_SETTINGS));
+    myBuddySettings.size = size;
+    saveMyBuddySettings();
+    broadcastMyBuddySettings();
+    renderBuddyTabContent('appearance');
+    applyMyBuddySettings();
+}
+
+function updateBuddyHue(val) {
+    if (!myBuddySettings) myBuddySettings = JSON.parse(JSON.stringify(DEFAULT_BUDDY_SETTINGS));
+    myBuddySettings.hueRotate = parseInt(val);
+    document.getElementById('hue-val').textContent = val + '°';
+    saveMyBuddySettings();
+    updateBuddyPreview();
+    applyMyBuddySettings();
+}
+
+function updateBuddySaturation(val) {
+    if (!myBuddySettings) myBuddySettings = JSON.parse(JSON.stringify(DEFAULT_BUDDY_SETTINGS));
+    myBuddySettings.saturation = parseInt(val);
+    document.getElementById('sat-val').textContent = val + '%';
+    saveMyBuddySettings();
+    updateBuddyPreview();
+    applyMyBuddySettings();
+}
+
+function updateBuddyBrightness(val) {
+    if (!myBuddySettings) myBuddySettings = JSON.parse(JSON.stringify(DEFAULT_BUDDY_SETTINGS));
+    myBuddySettings.brightness = parseInt(val);
+    document.getElementById('bright-val').textContent = val + '%';
+    saveMyBuddySettings();
+    updateBuddyPreview();
+    applyMyBuddySettings();
+}
+
+function updateBuddyGlowColor(color) {
+    if (!myBuddySettings) myBuddySettings = JSON.parse(JSON.stringify(DEFAULT_BUDDY_SETTINGS));
+    myBuddySettings.glowColor = color;
+    saveMyBuddySettings();
+    updateBuddyPreview();
+    applyMyBuddySettings();
+}
+
+function updateBuddyGlowIntensity(val) {
+    if (!myBuddySettings) myBuddySettings = JSON.parse(JSON.stringify(DEFAULT_BUDDY_SETTINGS));
+    myBuddySettings.glowIntensity = parseInt(val);
+    document.getElementById('glow-val').textContent = val + 'px';
+    saveMyBuddySettings();
+    updateBuddyPreview();
+    applyMyBuddySettings();
+}
+
+function updateBuddyDisplayName(name) {
+    if (!myBuddySettings) myBuddySettings = JSON.parse(JSON.stringify(DEFAULT_BUDDY_SETTINGS));
+    myBuddySettings.displayName = name || null;
+    saveMyBuddySettings();
+    broadcastMyBuddySettings();
+    applyMyBuddySettings();
+}
+
+function selectBuddyPersonality(personality) {
+    if (!myBuddySettings) myBuddySettings = JSON.parse(JSON.stringify(DEFAULT_BUDDY_SETTINGS));
+    myBuddySettings.personality = personality;
+    saveMyBuddySettings();
+    broadcastMyBuddySettings();
+    renderBuddyTabContent('personality');
+    applyMyBuddySettings();
+}
+
+function updateBuddyChance(type, val) {
+    if (!myBuddySettings) myBuddySettings = JSON.parse(JSON.stringify(DEFAULT_BUDDY_SETTINGS));
+    var v = parseInt(val);
+    myBuddySettings[type + 'Chance'] = v;
+    document.getElementById(type + '-val').textContent = v === -1 ? 'Default' : v + '%';
+    saveMyBuddySettings();
+    broadcastMyBuddySettings();
+}
+
+function selectBuddyIdleStyle(style) {
+    if (!myBuddySettings) myBuddySettings = JSON.parse(JSON.stringify(DEFAULT_BUDDY_SETTINGS));
+    myBuddySettings.idleStyle = style;
+    saveMyBuddySettings();
+    broadcastMyBuddySettings();
+    renderBuddyTabContent('behavior');
+    applyMyBuddySettings();
+}
+
+function selectBuddyMovementStyle(style) {
+    if (!myBuddySettings) myBuddySettings = JSON.parse(JSON.stringify(DEFAULT_BUDDY_SETTINGS));
+    myBuddySettings.movementStyle = style;
+    saveMyBuddySettings();
+    broadcastMyBuddySettings();
+    renderBuddyTabContent('behavior');
+}
+
+function selectBuddySocialTendency(tendency) {
+    if (!myBuddySettings) myBuddySettings = JSON.parse(JSON.stringify(DEFAULT_BUDDY_SETTINGS));
+    myBuddySettings.socialTendency = tendency;
+    saveMyBuddySettings();
+    broadcastMyBuddySettings();
+    renderBuddyTabContent('behavior');
+}
+
+function selectBuddyPosition(pos) {
+    if (!myBuddySettings) myBuddySettings = JSON.parse(JSON.stringify(DEFAULT_BUDDY_SETTINGS));
+    myBuddySettings.positionPreference = pos;
+    saveMyBuddySettings();
+    broadcastMyBuddySettings();
+    renderBuddyTabContent('behavior');
+}
+
+function updateBuddySpeed(val) {
+    if (!myBuddySettings) myBuddySettings = JSON.parse(JSON.stringify(DEFAULT_BUDDY_SETTINGS));
+    myBuddySettings.movementSpeed = val / 100;
+    document.getElementById('speed-val').textContent = (val / 100).toFixed(1) + 'x';
+    saveMyBuddySettings();
+    broadcastMyBuddySettings();
+}
+
+function updateBuddyInteractRate(val) {
+    if (!myBuddySettings) myBuddySettings = JSON.parse(JSON.stringify(DEFAULT_BUDDY_SETTINGS));
+    myBuddySettings.interactionFrequency = val / 100;
+    document.getElementById('interact-val').textContent = (val / 100).toFixed(1) + 'x';
+    saveMyBuddySettings();
+    broadcastMyBuddySettings();
+}
+
+function updateBuddyChattiness(val) {
+    if (!myBuddySettings) myBuddySettings = JSON.parse(JSON.stringify(DEFAULT_BUDDY_SETTINGS));
+    myBuddySettings.chattiness = val / 100;
+    document.getElementById('chat-val').textContent = (val / 100).toFixed(1) + 'x';
+    saveMyBuddySettings();
+    broadcastMyBuddySettings();
+}
+
+function updateBuddyEnergy(val) {
+    if (!myBuddySettings) myBuddySettings = JSON.parse(JSON.stringify(DEFAULT_BUDDY_SETTINGS));
+    myBuddySettings.energyLevel = val / 100;
+    document.getElementById('energy-val').textContent = (val / 100).toFixed(1) + 'x';
+    saveMyBuddySettings();
+    broadcastMyBuddySettings();
+}
+
+function updateBuddyCatchphrase(text) {
+    if (!myBuddySettings) myBuddySettings = JSON.parse(JSON.stringify(DEFAULT_BUDDY_SETTINGS));
+    myBuddySettings.catchphrase = text || null;
+    saveMyBuddySettings();
+    broadcastMyBuddySettings();
+}
+
+function updateBuddyPhrase(index, text) {
+    if (!myBuddySettings) myBuddySettings = JSON.parse(JSON.stringify(DEFAULT_BUDDY_SETTINGS));
+    if (!myBuddySettings.customPhrases) myBuddySettings.customPhrases = [];
+    myBuddySettings.customPhrases[index] = text || '';
+    saveMyBuddySettings();
+    broadcastMyBuddySettings();
+}
+
+function updateBuddyGreeting(text) {
+    if (!myBuddySettings) myBuddySettings = JSON.parse(JSON.stringify(DEFAULT_BUDDY_SETTINGS));
+    myBuddySettings.greeting = text || null;
+    saveMyBuddySettings();
+    broadcastMyBuddySettings();
+}
+
+function updateBuddyVictory(text) {
+    if (!myBuddySettings) myBuddySettings = JSON.parse(JSON.stringify(DEFAULT_BUDDY_SETTINGS));
+    myBuddySettings.victoryLine = text || null;
+    saveMyBuddySettings();
+    broadcastMyBuddySettings();
+}
+
+function updateBuddyDefeat(text) {
+    if (!myBuddySettings) myBuddySettings = JSON.parse(JSON.stringify(DEFAULT_BUDDY_SETTINGS));
+    myBuddySettings.defeatLine = text || null;
+    saveMyBuddySettings();
+    broadcastMyBuddySettings();
+}
+
+function updateBuddyLove(text) {
+    if (!myBuddySettings) myBuddySettings = JSON.parse(JSON.stringify(DEFAULT_BUDDY_SETTINGS));
+    myBuddySettings.loveLine = text || null;
+    saveMyBuddySettings();
+    broadcastMyBuddySettings();
+}
+
+function applyMyBuddySettings() {
+    var myName = getMyUsername();
+    if (!myName || !myBuddySettings) return;
+
+    // Apply to own buddy if exists
+    var buddy = buddyCharacters[myName];
+    if (buddy) {
+        applyCustomSettingsToBuddy(myName);
+    }
+}
+
+// ========== END BUDDY SETTINGS POPUP ==========
+
 function selectStyleColor(c) {
     // Clear gradient and custom color if selecting solid color
     if (textStyleSettings.color === c) {
@@ -2830,6 +3290,9 @@ $('<button id="favorites-btn" class="btn btn-sm btn-default" title="Favorites"><
 
 $('<button id="font-tags-btn" class="btn btn-sm btn-default" title="Text Style"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="#FFF" viewBox="0 0 24 24"><path d="M5 4v3h5.5v12h3V7H19V4z"/></svg></button>')
     .insertAfter("#favorites-btn").on("click", toggleTextStylePopup);
+
+$('<button id="buddy-settings-btn" class="btn btn-sm btn-default" title="Buddy Settings">🐦</button>')
+    .insertAfter("#font-tags-btn").on("click", toggleBuddySettingsPopup);
 
 $("#favorites-btn").after($("#voteskip"));
 $('#newpollbtn').prependTo($("#leftcontrols"));
