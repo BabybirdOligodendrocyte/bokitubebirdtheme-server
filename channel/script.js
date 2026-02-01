@@ -5454,27 +5454,15 @@ window.resetRename = resetRename;
                 display: none !important;
             }
 
-            /* Dual playlist layout */
-            #dual-playlist-wrapper {
-                display: flex;
-                flex-direction: row;
-                gap: 15px;
-                width: 100%;
-                margin-top: 10px;
-            }
-
-            /* Priority queue - LEFT SIDE */
+            /* Priority queue container */
             #priority-queue-container {
-                flex: 0 0 300px;
-                max-width: 350px;
-                min-width: 250px;
                 background: rgba(0, 0, 0, 0.5);
                 border-radius: 8px;
                 border: 2px solid var(--tertiarycolor, #8F6409);
+                margin-bottom: 15px;
+                max-height: 300px;
                 display: flex;
                 flex-direction: column;
-                max-height: 500px;
-                order: -1;
             }
 
             #priority-queue-container .panel-title {
@@ -5499,39 +5487,17 @@ window.resetRename = resetRename;
                 flex: 1;
                 overflow-y: auto;
                 padding: 8px;
-                min-height: 80px;
+                min-height: 60px;
             }
 
             #priority-queue-list:empty::before {
                 content: "Click ⚡ on videos to add here";
                 display: block;
                 text-align: center;
-                padding: 20px 10px;
+                padding: 15px 10px;
                 color: rgba(255,255,255,0.4);
                 font-style: italic;
                 font-size: 0.9em;
-            }
-
-            /* Main playlist panel */
-            #main-playlist-panel {
-                flex: 1;
-                min-width: 0;
-            }
-
-            #main-playlist-panel .panel-title {
-                padding: 8px 12px;
-                background: rgba(0, 0, 0, 0.4);
-                border-radius: 8px 8px 0 0;
-                font-weight: bold;
-                color: #fff;
-                display: flex;
-                justify-content: space-between;
-                align-items: center;
-            }
-
-            #main-playlist-panel .item-count {
-                font-size: 0.85em;
-                opacity: 0.7;
             }
 
             /* Priority queue items */
@@ -5579,25 +5545,25 @@ window.resetRename = resetRename;
                 cursor: pointer;
                 padding: 2px 6px;
                 opacity: 0.6;
+                font-size: 16px;
             }
 
             .priority-queue-item .pq-remove:hover {
                 opacity: 1;
             }
 
-            /* Move to priority button */
+            /* Move to priority button - next to rename button */
             .queue_entry .move-to-priority-btn {
                 background: var(--tertiarycolor, #8F6409);
                 border: none;
                 color: #fff;
                 cursor: pointer;
-                padding: 3px 8px;
-                font-size: 12px;
-                border-radius: 4px;
-                margin-right: 8px;
+                padding: 2px 6px;
+                font-size: 11px;
+                border-radius: 3px;
+                margin-left: 5px;
                 opacity: 0.8;
                 transition: all 0.2s;
-                flex-shrink: 0;
             }
 
             .queue_entry .move-to-priority-btn:hover {
@@ -5647,13 +5613,8 @@ window.resetRename = resetRename;
 
             /* Mobile */
             @media (max-width: 768px) {
-                #dual-playlist-wrapper {
-                    flex-direction: column;
-                }
                 #priority-queue-container {
-                    max-width: 100%;
                     max-height: 200px;
-                    order: -1;
                 }
             }
         `;
@@ -5662,25 +5623,13 @@ window.resetRename = resetRename;
 
     // === UI CREATION ===
     function createPriorityQueueUI() {
-        var playlistRow = document.getElementById('playlistrow');
-        if (!playlistRow) return false;
-        if (document.getElementById('dual-playlist-wrapper')) return true;
+        if (document.getElementById('priority-queue-container')) return true;
 
-        var wrapper = document.createElement('div');
-        wrapper.id = 'dual-playlist-wrapper';
+        // Find the queue element and its container
+        var queue = document.getElementById('queue');
+        if (!queue) return false;
 
-        // Main playlist panel
-        var mainPanel = document.createElement('div');
-        mainPanel.id = 'main-playlist-panel';
-        mainPanel.innerHTML = '<div class="panel-title"><span>Main Playlist</span><span class="item-count"></span></div>';
-
-        var existingQueue = document.getElementById('queue');
-        var queueWrapper = existingQueue ? existingQueue.parentElement : null;
-        if (queueWrapper) {
-            mainPanel.appendChild(queueWrapper);
-        }
-
-        // Priority queue panel (LEFT via CSS order: -1)
+        // Create priority queue panel - insert BEFORE the queue's parent
         var priorityPanel = document.createElement('div');
         priorityPanel.id = 'priority-queue-container';
         priorityPanel.innerHTML =
@@ -5690,11 +5639,13 @@ window.resetRename = resetRename;
             '</div>' +
             '<div id="priority-queue-list"></div>';
 
-        wrapper.appendChild(mainPanel);
-        wrapper.appendChild(priorityPanel);
-        playlistRow.innerHTML = '';
-        playlistRow.appendChild(wrapper);
+        // Insert priority queue before the queue wrapper
+        var queueParent = queue.parentElement;
+        if (queueParent && queueParent.parentElement) {
+            queueParent.parentElement.insertBefore(priorityPanel, queueParent);
+        }
 
+        // Create feedback toast
         if (!document.getElementById('queue-feedback')) {
             var feedback = document.createElement('div');
             feedback.id = 'queue-feedback';
@@ -5764,7 +5715,7 @@ window.resetRename = resetRename;
             uid: generateUID(),
             cytubeUid: videoData.uid || null,
             title: videoData.title || 'Unknown Video',
-            link: videoData.link || '',
+            mediaId: videoData.mediaId || null,
             type: videoData.type || 'yt',
             addedBy: videoData.addedBy || (typeof CLIENT !== 'undefined' ? CLIENT.name : 'Unknown'),
             addedAt: Date.now()
@@ -5772,7 +5723,7 @@ window.resetRename = resetRename;
         priorityQueue.push(item);
         savePriorityQueue();
         renderPriorityQueue();
-        console.log('[DualPlaylist] Added:', item.title);
+        console.log('[DualPlaylist] Added:', item.title, 'mediaId:', item.mediaId);
         return priorityQueue.length;
     }
 
@@ -5811,25 +5762,41 @@ window.resetRename = resetRename;
             e.preventDefault();
             moveEntryToPriority(entry);
         };
-        entry.insertBefore(btn, entry.firstChild);
+        // Append at end, next to rename button
+        entry.appendChild(btn);
     }
 
     function moveEntryToPriority(entry) {
         var titleEl = entry.querySelector('.qe_title');
         var uidMatch = entry.className.match(/pluid-(\d+)/);
+        var cytubeUid = uidMatch ? parseInt(uidMatch[1]) : null;
+
+        // Try to get video data from CyTube's internal playlist
+        var mediaId = null;
+        var mediaType = 'yt';
+        if (typeof CHANNEL !== 'undefined' && CHANNEL.playlist && cytubeUid !== null) {
+            var playlistItem = CHANNEL.playlist.find(function(item) {
+                return item && item.uid === cytubeUid;
+            });
+            if (playlistItem && playlistItem.media) {
+                mediaId = playlistItem.media.id;
+                mediaType = playlistItem.media.type;
+            }
+        }
 
         var videoData = {
-            uid: uidMatch ? uidMatch[1] : null,
+            uid: cytubeUid,
             title: titleEl ? titleEl.textContent.trim() : 'Unknown Video',
-            link: titleEl && titleEl.href ? titleEl.href : '',
+            mediaId: mediaId,
+            type: mediaType,
             addedBy: typeof CLIENT !== 'undefined' ? CLIENT.name : 'Mod'
         };
 
         var position = addToPriorityQueue(videoData);
 
         // Remove from main queue
-        if (videoData.uid && typeof socket !== 'undefined') {
-            socket.emit('delete', parseInt(videoData.uid));
+        if (cytubeUid && typeof socket !== 'undefined') {
+            socket.emit('delete', cytubeUid);
         }
 
         showFeedback('Added to priority queue #' + position);
@@ -5924,14 +5891,19 @@ window.resetRename = resetRename;
             if (dragSourceList === 'priority' && currentlyDragging) {
                 var uid = currentlyDragging.dataset.uid;
                 var item = priorityQueue.find(function(i) { return i.uid === uid; });
-                if (item && typeof socket !== 'undefined') {
+                if (item && item.mediaId && typeof socket !== 'undefined') {
                     socket.emit('queue', {
-                        id: item.link || item.title,
+                        id: item.mediaId,
                         type: item.type || 'yt',
                         pos: 'end',
                         temp: false
                     });
                     removePriorityItem(uid);
+                    showFeedback('Moved to main playlist: ' + item.title);
+                } else if (item) {
+                    // No mediaId, can't re-queue - just remove from priority
+                    removePriorityItem(uid);
+                    showFeedback('Removed from priority (no video data to re-queue)');
                 }
             }
             cleanupDrag();
@@ -5996,18 +5968,22 @@ window.resetRename = resetRename;
         if (!isModerator()) return;
 
         var priorityItem = getNextPriorityItem();
-        if (priorityItem) {
-            console.log('[DualPlaylist] Playing priority:', priorityItem.title);
+        if (priorityItem && priorityItem.mediaId) {
+            console.log('[DualPlaylist] Playing priority:', priorityItem.title, 'mediaId:', priorityItem.mediaId);
             popPriorityItem();
             if (typeof socket !== 'undefined') {
                 socket.emit('queue', {
-                    id: priorityItem.link || priorityItem.title,
+                    id: priorityItem.mediaId,
                     type: priorityItem.type || 'yt',
                     pos: 'next',
                     temp: true
                 });
             }
             return;
+        } else if (priorityItem) {
+            // No mediaId, skip this item
+            console.log('[DualPlaylist] Skipping priority item without mediaId:', priorityItem.title);
+            popPriorityItem();
         }
 
         // Random from main
