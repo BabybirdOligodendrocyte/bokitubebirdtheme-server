@@ -584,3 +584,66 @@ Detects and converts:
 - `openImpersonatePopup(username, usernameStyle, msgStyle, usernameClasses, msgClasses)` - Opens popup
 - `sendImpersonateMessage()` - Builds and sends the formatted message
 - `initClickToMention()` - Sets up shift+click handler on usernames
+
+## Screenspam System (2026-02)
+
+NicoNico-style feature that displays messages across the video screen with zany animations. Users type `/screenspam <message>` to trigger a random visual effect.
+
+### Usage
+- **Command:** `/screenspam <message>` - displays message on video with random effect
+- **Character Limit:** 50 characters max
+- **Cooldown:** 30 seconds per user
+- **Access:** All users
+
+### Animation Effects Pool (15 effects)
+| Effect | Description |
+|--------|-------------|
+| `scroll-left` | Classic NicoNico scroll from right to left |
+| `scroll-right` | Scroll from left to right |
+| `drop` | Falls from top with rotation |
+| `explode` | Appears center, scales up then spins away |
+| `bounce` | Bounces up and down repeatedly |
+| `spin-fly` | Flies across screen while spinning 1080° |
+| `zigzag` | Moves in zigzag pattern across screen |
+| `shake-grow` | Shakes violently while growing larger |
+| `flash` | Flashes/blinks in center with scale changes |
+| `rain` | Falls from top like rain |
+| `wave` | Moves in wave pattern |
+| `popup` | Pops up at random position with rotation |
+| `glitch` | Glitch effect with color shifting |
+| `rainbow` | Rainbow hue rotation effect |
+| `multi-rain` | Creates 5 copies that rain down staggered |
+
+### Color Variations
+8 color options randomly applied:
+- Red, Green, Cyan, Magenta, Yellow, Orange, Hot Pink, Rainbow gradient
+
+### Key Functions
+| Function | Purpose |
+|----------|---------|
+| `initScreenspamCommand()` | Sets up /screenspam command interception |
+| `initScreenspamReceiver()` | Listens for screenspam messages from other users |
+| `displayScreenspam(message, username)` | Displays the effect on screen |
+| `createScreenspamOverlay()` | Creates overlay container over video |
+| `checkScreenspamCooldown(username)` | Checks if user is on cooldown |
+| `setScreenspamCooldown(username)` | Sets cooldown for user |
+| `showCooldownToast(seconds)` | Shows error toast with remaining time |
+
+### Message Format
+Messages use invisible zero-width character markers:
+```
+\u200B\u200C\u200BSCREENSPAM:content:SCREENSPAM\u200B\u200C\u200B
+```
+
+### CSS Classes
+- `#screenspam-overlay` - Container positioned over video
+- `.screenspam-msg` - Base message styling (Impact font, text shadows)
+- `.screenspam-color-0` through `.screenspam-color-7` - Color variants
+- `.screenspam-cooldown-toast` - Error/cooldown notification
+
+### Configuration Variables
+```javascript
+var SCREENSPAM_COOLDOWN = 30000;  // 30 seconds
+var SCREENSPAM_DURATION = 5000;   // 5 seconds display
+var SCREENSPAM_MAX_LENGTH = 50;   // Max characters
+```

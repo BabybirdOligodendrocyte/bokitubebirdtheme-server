@@ -6087,6 +6087,557 @@ function addSettingsButton() {
     btn.appendTo('#leftcontrols');
 }
 
+/* ========== SCREENSPAM SYSTEM ========== */
+/* /screenspam command - displays message across video in zany ways */
+
+// Screenspam configuration
+var SCREENSPAM_COOLDOWN = 30000; // 30 seconds per user
+var SCREENSPAM_DURATION = 5000; // 5 seconds display
+var SCREENSPAM_MAX_LENGTH = 50; // Max characters
+var screenspamCooldowns = {}; // Track cooldowns per user
+var screenspamMarker = '\u200B\u200C\u200B'; // Zero-width chars as marker
+
+// Inject screenspam CSS
+(function() {
+    var screenspamStyles = document.createElement('style');
+    screenspamStyles.id = 'screenspam-styles';
+    screenspamStyles.textContent = `
+        /* Screenspam overlay container */
+        #screenspam-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            overflow: hidden;
+            z-index: 9999;
+        }
+
+        /* Base screenspam message */
+        .screenspam-msg {
+            position: absolute;
+            font-family: 'Impact', 'Arial Black', sans-serif;
+            font-weight: bold;
+            color: #fff;
+            text-shadow:
+                -2px -2px 0 #000,
+                2px -2px 0 #000,
+                -2px 2px 0 #000,
+                2px 2px 0 #000,
+                0 0 20px rgba(255,255,255,0.5);
+            white-space: nowrap;
+            pointer-events: none;
+            z-index: 10000;
+        }
+
+        /* Screenspam animations */
+        @keyframes screenspam-scroll-left {
+            0% { transform: translateX(100vw); }
+            100% { transform: translateX(-100%); }
+        }
+        @keyframes screenspam-scroll-right {
+            0% { transform: translateX(-100%); }
+            100% { transform: translateX(100vw); }
+        }
+        @keyframes screenspam-drop {
+            0% { transform: translateY(-100px) rotate(-10deg); opacity: 0; }
+            10% { opacity: 1; }
+            50% { transform: translateY(50vh) rotate(5deg); }
+            70% { transform: translateY(40vh) rotate(-3deg); }
+            100% { transform: translateY(50vh) rotate(0deg); opacity: 0; }
+        }
+        @keyframes screenspam-explode {
+            0% { transform: scale(0) rotate(0deg); opacity: 0; }
+            20% { transform: scale(1.5) rotate(10deg); opacity: 1; }
+            40% { transform: scale(1.2) rotate(-5deg); }
+            60% { transform: scale(1.3) rotate(3deg); }
+            80% { transform: scale(1.1) rotate(-2deg); }
+            100% { transform: scale(0) rotate(720deg); opacity: 0; }
+        }
+        @keyframes screenspam-bounce {
+            0%, 100% { transform: translateY(0) scale(1); }
+            25% { transform: translateY(-30vh) scale(1.1) rotate(5deg); }
+            50% { transform: translateY(0) scale(0.95); }
+            75% { transform: translateY(-15vh) scale(1.05) rotate(-3deg); }
+        }
+        @keyframes screenspam-spin-fly {
+            0% { transform: translate(-100%, 50%) rotate(0deg) scale(0.5); opacity: 0; }
+            20% { opacity: 1; }
+            100% { transform: translate(100vw, -50%) rotate(1080deg) scale(1.5); opacity: 0; }
+        }
+        @keyframes screenspam-zigzag {
+            0% { transform: translate(-100%, 0); }
+            25% { transform: translate(25vw, 30vh); }
+            50% { transform: translate(50vw, -20vh); }
+            75% { transform: translate(75vw, 40vh); }
+            100% { transform: translate(100vw, 0); }
+        }
+        @keyframes screenspam-shake-grow {
+            0% { transform: scale(0.1); opacity: 0; }
+            10% { transform: scale(1); opacity: 1; }
+            15% { transform: scale(1) translateX(-10px); }
+            20% { transform: scale(1.1) translateX(10px); }
+            25% { transform: scale(1) translateX(-8px); }
+            30% { transform: scale(1.15) translateX(8px); }
+            35% { transform: scale(1.1) translateX(-5px); }
+            40% { transform: scale(1.2) translateX(5px); }
+            90% { transform: scale(1.2); opacity: 1; }
+            100% { transform: scale(3); opacity: 0; }
+        }
+        @keyframes screenspam-spiral {
+            0% { transform: translate(-50%, -50%) rotate(0deg) scale(0); opacity: 0; }
+            20% { opacity: 1; }
+            100% {
+                transform: translate(
+                    calc(-50% + 40vw * cos(720deg)),
+                    calc(-50% + 40vh * sin(720deg))
+                ) rotate(720deg) scale(1.5);
+                opacity: 0;
+            }
+        }
+        @keyframes screenspam-flash {
+            0%, 100% { opacity: 0; transform: scale(0.5); }
+            10%, 90% { opacity: 1; transform: scale(1); }
+            20% { opacity: 0.3; transform: scale(1.2); }
+            30% { opacity: 1; transform: scale(1); }
+            40% { opacity: 0.5; transform: scale(1.1); }
+            50% { opacity: 1; transform: scale(1); }
+            60% { opacity: 0.7; transform: scale(1.15); }
+        }
+        @keyframes screenspam-rain {
+            0% { transform: translateY(-100%) rotate(5deg); opacity: 0; }
+            10% { opacity: 1; }
+            90% { opacity: 1; }
+            100% { transform: translateY(100vh) rotate(-5deg); opacity: 0; }
+        }
+        @keyframes screenspam-wave {
+            0% { transform: translateX(-100%) translateY(0); }
+            25% { transform: translateX(0) translateY(-20vh); }
+            50% { transform: translateX(50vw) translateY(20vh); }
+            75% { transform: translateX(75vw) translateY(-10vh); }
+            100% { transform: translateX(100vw) translateY(0); opacity: 0; }
+        }
+        @keyframes screenspam-popup {
+            0% { transform: scale(0) rotate(-180deg); opacity: 0; }
+            30% { transform: scale(1.3) rotate(10deg); opacity: 1; }
+            50% { transform: scale(1) rotate(-5deg); }
+            70% { transform: scale(1.1) rotate(2deg); }
+            85% { transform: scale(1) rotate(0deg); opacity: 1; }
+            100% { transform: scale(0) rotate(180deg); opacity: 0; }
+        }
+        @keyframes screenspam-glitch {
+            0%, 100% { transform: translate(0, 0); filter: hue-rotate(0deg); }
+            10% { transform: translate(-5px, 3px); filter: hue-rotate(90deg); }
+            20% { transform: translate(5px, -3px); filter: hue-rotate(180deg); }
+            30% { transform: translate(-3px, -5px); filter: hue-rotate(270deg); }
+            40% { transform: translate(3px, 5px); filter: hue-rotate(0deg); }
+            50% { transform: translate(-5px, -3px) skewX(5deg); filter: hue-rotate(90deg); }
+            60% { transform: translate(5px, 3px) skewX(-5deg); filter: hue-rotate(180deg); }
+            70% { transform: translate(0, -5px); filter: hue-rotate(270deg); }
+            80% { transform: translate(-3px, 0); filter: hue-rotate(0deg); }
+            90% { transform: translate(3px, 3px); filter: hue-rotate(90deg); }
+        }
+        @keyframes screenspam-rainbow {
+            0% { filter: hue-rotate(0deg); transform: scale(1); }
+            50% { filter: hue-rotate(180deg); transform: scale(1.1); }
+            100% { filter: hue-rotate(360deg); transform: scale(1); opacity: 0; }
+        }
+        @keyframes screenspam-typewriter {
+            0% { width: 0; opacity: 1; }
+            80% { width: 100%; opacity: 1; }
+            100% { width: 100%; opacity: 0; }
+        }
+
+        /* Screenspam color variations */
+        .screenspam-color-0 { color: #ff0000; text-shadow: -2px -2px 0 #000, 2px -2px 0 #000, -2px 2px 0 #000, 2px 2px 0 #000, 0 0 30px #ff0000; }
+        .screenspam-color-1 { color: #00ff00; text-shadow: -2px -2px 0 #000, 2px -2px 0 #000, -2px 2px 0 #000, 2px 2px 0 #000, 0 0 30px #00ff00; }
+        .screenspam-color-2 { color: #00ffff; text-shadow: -2px -2px 0 #000, 2px -2px 0 #000, -2px 2px 0 #000, 2px 2px 0 #000, 0 0 30px #00ffff; }
+        .screenspam-color-3 { color: #ff00ff; text-shadow: -2px -2px 0 #000, 2px -2px 0 #000, -2px 2px 0 #000, 2px 2px 0 #000, 0 0 30px #ff00ff; }
+        .screenspam-color-4 { color: #ffff00; text-shadow: -2px -2px 0 #000, 2px -2px 0 #000, -2px 2px 0 #000, 2px 2px 0 #000, 0 0 30px #ffff00; }
+        .screenspam-color-5 { color: #ff6600; text-shadow: -2px -2px 0 #000, 2px -2px 0 #000, -2px 2px 0 #000, 2px 2px 0 #000, 0 0 30px #ff6600; }
+        .screenspam-color-6 { color: #ff69b4; text-shadow: -2px -2px 0 #000, 2px -2px 0 #000, -2px 2px 0 #000, 2px 2px 0 #000, 0 0 30px #ff69b4; }
+        .screenspam-color-7 {
+            background: linear-gradient(90deg, #ff0000, #ff7f00, #ffff00, #00ff00, #0000ff, #4b0082, #9400d3);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            filter: drop-shadow(0 0 10px rgba(255,255,255,0.8));
+        }
+
+        /* Cooldown indicator */
+        .screenspam-cooldown-toast {
+            position: fixed;
+            bottom: 100px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(255, 50, 50, 0.9);
+            color: #fff;
+            padding: 10px 20px;
+            border-radius: 8px;
+            font-weight: bold;
+            z-index: 999999;
+            animation: toast-fade 2s ease-out forwards;
+        }
+        @keyframes toast-fade {
+            0% { opacity: 1; transform: translateX(-50%) translateY(0); }
+            70% { opacity: 1; }
+            100% { opacity: 0; transform: translateX(-50%) translateY(-20px); }
+        }
+    `;
+    document.head.appendChild(screenspamStyles);
+})();
+
+// Pool of animation effects
+var SCREENSPAM_EFFECTS = [
+    {
+        name: 'scroll-left',
+        apply: function(el, container) {
+            var height = container.offsetHeight;
+            el.style.top = (Math.random() * (height - 60)) + 'px';
+            el.style.left = '0';
+            el.style.fontSize = (30 + Math.random() * 30) + 'px';
+            el.style.animation = 'screenspam-scroll-left ' + (3 + Math.random() * 2) + 's linear forwards';
+        }
+    },
+    {
+        name: 'scroll-right',
+        apply: function(el, container) {
+            var height = container.offsetHeight;
+            el.style.top = (Math.random() * (height - 60)) + 'px';
+            el.style.left = '0';
+            el.style.fontSize = (30 + Math.random() * 30) + 'px';
+            el.style.animation = 'screenspam-scroll-right ' + (3 + Math.random() * 2) + 's linear forwards';
+        }
+    },
+    {
+        name: 'drop',
+        apply: function(el, container) {
+            el.style.left = (10 + Math.random() * 80) + '%';
+            el.style.top = '0';
+            el.style.fontSize = (40 + Math.random() * 40) + 'px';
+            el.style.animation = 'screenspam-drop 5s ease-in-out forwards';
+        }
+    },
+    {
+        name: 'explode',
+        apply: function(el, container) {
+            el.style.left = '50%';
+            el.style.top = '50%';
+            el.style.transform = 'translate(-50%, -50%)';
+            el.style.fontSize = (50 + Math.random() * 50) + 'px';
+            el.style.animation = 'screenspam-explode 5s ease-out forwards';
+        }
+    },
+    {
+        name: 'bounce',
+        apply: function(el, container) {
+            el.style.left = (20 + Math.random() * 60) + '%';
+            el.style.bottom = '10%';
+            el.style.fontSize = (35 + Math.random() * 35) + 'px';
+            el.style.animation = 'screenspam-bounce 1s ease-in-out 5';
+            setTimeout(function() { el.style.opacity = '0'; }, 4800);
+        }
+    },
+    {
+        name: 'spin-fly',
+        apply: function(el, container) {
+            el.style.top = '50%';
+            el.style.left = '0';
+            el.style.fontSize = (40 + Math.random() * 30) + 'px';
+            el.style.animation = 'screenspam-spin-fly 5s ease-in-out forwards';
+        }
+    },
+    {
+        name: 'zigzag',
+        apply: function(el, container) {
+            el.style.top = '30%';
+            el.style.left = '0';
+            el.style.fontSize = (35 + Math.random() * 25) + 'px';
+            el.style.animation = 'screenspam-zigzag 5s ease-in-out forwards';
+        }
+    },
+    {
+        name: 'shake-grow',
+        apply: function(el, container) {
+            el.style.left = '50%';
+            el.style.top = '50%';
+            el.style.transform = 'translate(-50%, -50%)';
+            el.style.fontSize = (45 + Math.random() * 35) + 'px';
+            el.style.animation = 'screenspam-shake-grow 5s ease-out forwards';
+        }
+    },
+    {
+        name: 'flash',
+        apply: function(el, container) {
+            el.style.left = '50%';
+            el.style.top = '50%';
+            el.style.transform = 'translate(-50%, -50%)';
+            el.style.fontSize = (60 + Math.random() * 40) + 'px';
+            el.style.animation = 'screenspam-flash 5s ease-in-out forwards';
+        }
+    },
+    {
+        name: 'rain',
+        apply: function(el, container) {
+            el.style.left = (5 + Math.random() * 90) + '%';
+            el.style.top = '0';
+            el.style.fontSize = (25 + Math.random() * 25) + 'px';
+            el.style.animation = 'screenspam-rain ' + (3 + Math.random() * 2) + 's linear forwards';
+        }
+    },
+    {
+        name: 'wave',
+        apply: function(el, container) {
+            el.style.top = '40%';
+            el.style.left = '0';
+            el.style.fontSize = (35 + Math.random() * 30) + 'px';
+            el.style.animation = 'screenspam-wave 5s ease-in-out forwards';
+        }
+    },
+    {
+        name: 'popup',
+        apply: function(el, container) {
+            el.style.left = (15 + Math.random() * 70) + '%';
+            el.style.top = (20 + Math.random() * 60) + '%';
+            el.style.fontSize = (50 + Math.random() * 40) + 'px';
+            el.style.animation = 'screenspam-popup 5s ease-out forwards';
+        }
+    },
+    {
+        name: 'glitch',
+        apply: function(el, container) {
+            el.style.left = '50%';
+            el.style.top = '50%';
+            el.style.transform = 'translate(-50%, -50%)';
+            el.style.fontSize = (45 + Math.random() * 35) + 'px';
+            el.style.animation = 'screenspam-glitch 0.5s ease-in-out 10';
+            setTimeout(function() { el.style.opacity = '0'; }, 4800);
+        }
+    },
+    {
+        name: 'rainbow',
+        apply: function(el, container) {
+            el.style.left = '50%';
+            el.style.top = '50%';
+            el.style.transform = 'translate(-50%, -50%)';
+            el.style.fontSize = (55 + Math.random() * 35) + 'px';
+            el.style.animation = 'screenspam-rainbow 5s linear forwards';
+        }
+    },
+    {
+        name: 'multi-rain',
+        apply: function(el, container) {
+            // Create multiple copies for rain effect
+            var text = el.textContent;
+            var colorClass = el.className.match(/screenspam-color-\d/);
+            el.remove();
+
+            for (var i = 0; i < 5; i++) {
+                var copy = document.createElement('div');
+                copy.className = 'screenspam-msg ' + (colorClass ? colorClass[0] : 'screenspam-color-' + Math.floor(Math.random() * 8));
+                copy.textContent = text;
+                copy.style.left = (5 + i * 20 + Math.random() * 10) + '%';
+                copy.style.top = '-50px';
+                copy.style.fontSize = (25 + Math.random() * 20) + 'px';
+                copy.style.animation = 'screenspam-rain ' + (3 + Math.random() * 2) + 's linear forwards';
+                copy.style.animationDelay = (i * 0.3) + 's';
+                container.appendChild(copy);
+
+                (function(elem) {
+                    setTimeout(function() { elem.remove(); }, SCREENSPAM_DURATION + 1000);
+                })(copy);
+            }
+        }
+    }
+];
+
+// Create screenspam overlay
+function createScreenspamOverlay() {
+    var videoContainer = document.getElementById('video-container');
+    if (!videoContainer) {
+        videoContainer = document.getElementById('videowrap');
+    }
+    if (!videoContainer) return null;
+
+    var overlay = document.getElementById('screenspam-overlay');
+    if (!overlay) {
+        overlay = document.createElement('div');
+        overlay.id = 'screenspam-overlay';
+        videoContainer.style.position = 'relative';
+        videoContainer.appendChild(overlay);
+    }
+    return overlay;
+}
+
+// Display screenspam message with random effect
+function displayScreenspam(message, username) {
+    var overlay = createScreenspamOverlay();
+    if (!overlay) return;
+
+    // Pick random effect
+    var effect = SCREENSPAM_EFFECTS[Math.floor(Math.random() * SCREENSPAM_EFFECTS.length)];
+
+    // Pick random color
+    var colorIndex = Math.floor(Math.random() * 8);
+
+    // Create message element
+    var el = document.createElement('div');
+    el.className = 'screenspam-msg screenspam-color-' + colorIndex;
+    el.textContent = message;
+
+    // Check if message contains emotes/images (parse HTML for img tags)
+    var tempDiv = document.createElement('div');
+    tempDiv.innerHTML = message;
+    if (tempDiv.querySelector('img')) {
+        el.innerHTML = message;
+    }
+
+    overlay.appendChild(el);
+
+    // Apply random effect
+    effect.apply(el, overlay);
+
+    // Remove after duration
+    setTimeout(function() {
+        if (el.parentNode) el.remove();
+    }, SCREENSPAM_DURATION + 500);
+}
+
+// Check and apply cooldown
+function checkScreenspamCooldown(username) {
+    var now = Date.now();
+    var lastUse = screenspamCooldowns[username] || 0;
+    var remaining = SCREENSPAM_COOLDOWN - (now - lastUse);
+
+    if (remaining > 0) {
+        return remaining;
+    }
+    return 0;
+}
+
+function setScreenspamCooldown(username) {
+    screenspamCooldowns[username] = Date.now();
+}
+
+// Show cooldown toast
+function showCooldownToast(seconds) {
+    var existing = document.querySelector('.screenspam-cooldown-toast');
+    if (existing) existing.remove();
+
+    var toast = document.createElement('div');
+    toast.className = 'screenspam-cooldown-toast';
+    toast.textContent = 'Screenspam cooldown: ' + Math.ceil(seconds) + 's remaining';
+    document.body.appendChild(toast);
+
+    setTimeout(function() {
+        if (toast.parentNode) toast.remove();
+    }, 2000);
+}
+
+// Intercept /screenspam command
+function initScreenspamCommand() {
+    var chatline = document.getElementById('chatline');
+    if (!chatline) return;
+
+    chatline.addEventListener('keydown', function(e) {
+        if (e.key !== 'Enter' || e.shiftKey) return;
+
+        var msg = chatline.value.trim();
+        if (!msg.toLowerCase().startsWith('/screenspam ')) return;
+
+        // Extract message content
+        var content = msg.substring(12).trim();
+
+        // Validate length
+        if (content.length === 0) {
+            e.preventDefault();
+            e.stopImmediatePropagation();
+            showCooldownToast(0);
+            var toast = document.querySelector('.screenspam-cooldown-toast');
+            if (toast) toast.textContent = 'Screenspam requires a message!';
+            return;
+        }
+
+        if (content.length > SCREENSPAM_MAX_LENGTH) {
+            e.preventDefault();
+            e.stopImmediatePropagation();
+            var toast = document.createElement('div');
+            toast.className = 'screenspam-cooldown-toast';
+            toast.textContent = 'Message too long! Max ' + SCREENSPAM_MAX_LENGTH + ' characters.';
+            document.body.appendChild(toast);
+            setTimeout(function() { toast.remove(); }, 2000);
+            return;
+        }
+
+        // Check cooldown
+        var myUsername = (CLIENT && CLIENT.name) ? CLIENT.name : 'anonymous';
+        var remaining = checkScreenspamCooldown(myUsername);
+
+        if (remaining > 0) {
+            e.preventDefault();
+            e.stopImmediatePropagation();
+            showCooldownToast(remaining / 1000);
+            return;
+        }
+
+        // Set cooldown
+        setScreenspamCooldown(myUsername);
+
+        // Modify message to include screenspam marker
+        // The marker is invisible zero-width characters that other clients will detect
+        e.preventDefault();
+        e.stopImmediatePropagation();
+
+        // Send with special marker format: [SCREENSPAM]content[/SCREENSPAM]
+        var markedMessage = screenspamMarker + 'SCREENSPAM:' + content + ':SCREENSPAM' + screenspamMarker;
+
+        if (typeof socket !== 'undefined' && socket.emit) {
+            socket.emit('chatMsg', { msg: markedMessage });
+        }
+
+        // Clear input
+        chatline.value = '';
+    }, true); // Use capture phase to run before other handlers
+}
+
+// Process incoming messages for screenspam
+function initScreenspamReceiver() {
+    if (typeof socket === 'undefined') return;
+
+    socket.on('chatMsg', function(data) {
+        if (!data.msg) return;
+
+        // Check for screenspam marker
+        var markerPattern = screenspamMarker + 'SCREENSPAM:';
+        var endMarker = ':SCREENSPAM' + screenspamMarker;
+
+        if (data.msg.indexOf(markerPattern) !== -1) {
+            var startIdx = data.msg.indexOf(markerPattern) + markerPattern.length;
+            var endIdx = data.msg.indexOf(endMarker);
+
+            if (endIdx > startIdx) {
+                var screenspamContent = data.msg.substring(startIdx, endIdx);
+
+                // Display the screenspam effect
+                displayScreenspam(screenspamContent, data.username);
+
+                // Hide the chat message (it's just for triggering the effect)
+                setTimeout(function() {
+                    var msgs = document.querySelectorAll('#messagebuffer > div');
+                    for (var i = msgs.length - 1; i >= 0; i--) {
+                        var msgEl = msgs[i];
+                        if (msgEl.textContent.indexOf('SCREENSPAM:') !== -1) {
+                            msgEl.style.display = 'none';
+                            break;
+                        }
+                    }
+                }, 100);
+            }
+        }
+    });
+}
+
 // Initialize all enhanced features
 $(document).ready(function() {
     setTimeout(function() {
@@ -6097,6 +6648,11 @@ $(document).ready(function() {
         initKeyboardShortcuts();
         addReplyButtonsToExistingMessages();
         addSettingsButton();
+
+        // Initialize screenspam system
+        initScreenspamCommand();
+        initScreenspamReceiver();
+        createScreenspamOverlay();
 
         // Apply saved settings
         applyEmoteSize();
