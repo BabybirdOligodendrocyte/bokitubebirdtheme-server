@@ -7740,31 +7740,9 @@ function getBuddyPhrase(buddy, phraseType, defaultPhrases, seededRandom) {
 
 // Initialize sync message listener
 function initBuddySyncListener() {
-    // Intercept socket chatMsg to prevent sync messages from displaying at all
+    // Listen for chat messages via socket (don't intercept, just listen)
     if (typeof socket !== 'undefined') {
-        // Store original emit handlers
-        var originalOn = socket.on.bind(socket);
-        var chatMsgHandlers = [];
-
-        // Wrap socket.on to intercept chatMsg handlers
-        socket.on = function(event, handler) {
-            if (event === 'chatMsg') {
-                // Wrap the handler to filter sync messages
-                var wrappedHandler = function(data) {
-                    if (data.msg && isBuddySyncMessage(data.msg)) {
-                        // Process sync data but don't pass to original handler
-                        parseBuddySyncMessage(data.msg);
-                        return; // Don't display this message
-                    }
-                    handler(data);
-                };
-                return originalOn(event, wrappedHandler);
-            }
-            return originalOn(event, handler);
-        };
-
-        // Also listen directly for sync messages
-        originalOn('chatMsg', function(data) {
+        socket.on('chatMsg', function(data) {
             if (data.msg && isBuddySyncMessage(data.msg)) {
                 parseBuddySyncMessage(data.msg);
             }
@@ -7775,22 +7753,23 @@ function initBuddySyncListener() {
     function cleanupExistingMessages() {
         var msgBuffer = document.getElementById('messagebuffer');
         if (msgBuffer) {
-            var msgs = msgBuffer.querySelectorAll(':scope > div');
-            msgs.forEach(function(msg) {
+            var msgs = msgBuffer.children;
+            for (var i = msgs.length - 1; i >= 0; i--) {
+                var msg = msgs[i];
                 var text = msg.textContent || '';
                 if (isBuddySyncMessage(text)) {
                     parseBuddySyncMessage(text);
                     msg.remove();
                 }
-            });
+            }
         }
     }
-    // Run cleanup immediately and after a delay (for late-loaded history)
-    cleanupExistingMessages();
-    setTimeout(cleanupExistingMessages, 1000);
-    setTimeout(cleanupExistingMessages, 3000);
+    // Run cleanup after delays for late-loaded history
+    setTimeout(cleanupExistingMessages, 500);
+    setTimeout(cleanupExistingMessages, 2000);
+    setTimeout(cleanupExistingMessages, 5000);
 
-    // Watch messagebuffer for NEW sync messages
+    // Watch messagebuffer for NEW sync messages - remove them after they appear
     var msgBuffer = document.getElementById('messagebuffer');
     if (msgBuffer) {
         var observer = new MutationObserver(function(mutations) {
@@ -7800,51 +7779,42 @@ function initBuddySyncListener() {
                         var text = node.textContent || '';
                         if (isBuddySyncMessage(text)) {
                             parseBuddySyncMessage(text);
-                            node.remove();
+                            // Small delay to ensure message is fully processed
+                            setTimeout(function() {
+                                if (node.parentNode) node.remove();
+                            }, 50);
                         }
                     }
                 });
             });
         });
-        observer.observe(msgBuffer, { childList: true, subtree: true });
+        observer.observe(msgBuffer, { childList: true });
     }
 
-    // NND Chat Cleanup - ONLY target NND overlay elements, NOT chat elements
-    // NND overlay elements are typically outside #main/#wrap and have specific characteristics
-    var nndObserver = new MutationObserver(function(mutations) {
-        mutations.forEach(function(mutation) {
-            mutation.addedNodes.forEach(function(node) {
-                if (node.nodeType === 1) {
-                    // Skip if inside important containers
-                    if (node.closest('#main, #wrap, #messagebuffer, #userlist, #chatline, .modal')) return;
-
-                    var text = node.textContent || '';
-                    if (isBuddySyncMessage(text)) {
-                        // Only remove if it looks like an NND element (has animation/transform)
-                        var style = window.getComputedStyle(node);
-                        if (style.animation !== 'none' ||
-                            style.transform !== 'none' ||
-                            style.position === 'fixed' ||
-                            (style.position === 'absolute' && !node.closest('#main, #wrap'))) {
-                            node.remove();
-                        }
-                    }
+    // NND overlay cleanup - check the video player area specifically
+    // NND creates elements that scroll across, usually in a container over the video
+    setInterval(function() {
+        // Look for NND container (usually has specific class or is positioned over video)
+        var videowrap = document.getElementById('videowrap');
+        if (videowrap) {
+            // Check all descendants of videowrap for sync messages
+            var elements = videowrap.querySelectorAll('*');
+            elements.forEach(function(el) {
+                var text = el.textContent || '';
+                if (isBuddySyncMessage(text) && el.tagName !== 'VIDEO' && el.tagName !== 'IFRAME') {
+                    el.remove();
                 }
             });
-        });
-    });
-    nndObserver.observe(document.body, { childList: true, subtree: false }); // Only direct children
+        }
 
-    // Periodic cleanup for NND overlay - be very targeted
-    setInterval(function() {
-        // Only look at direct children of body that aren't main UI containers
+        // Also check body's direct children that aren't main UI
         var bodyChildren = document.body.children;
         for (var i = bodyChildren.length - 1; i >= 0; i--) {
             var el = bodyChildren[i];
-            // Skip important containers
             if (el.id === 'main' || el.id === 'wrap' || el.id === 'footer' ||
+                el.tagName === 'SCRIPT' || el.tagName === 'STYLE' || el.tagName === 'LINK' ||
                 el.classList.contains('modal') || el.classList.contains('buddy-character') ||
-                el.tagName === 'SCRIPT' || el.tagName === 'STYLE' || el.tagName === 'LINK') {
+                el.classList.contains('buddy-speech')) {
                 continue;
             }
             var text = el.textContent || '';
