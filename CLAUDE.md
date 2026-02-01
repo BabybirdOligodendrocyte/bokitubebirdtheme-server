@@ -587,36 +587,40 @@ Detects and converts:
 
 ## Screenspam System (2026-02)
 
-NicoNico-style feature that displays messages across the video screen with zany animations. Users type `/screenspam <message>` to trigger a random visual effect.
+NicoNico-style feature that displays messages across the video screen with CRAZY overwhelming animations. Users type `/screenspam <message>` to trigger a random visual effect. Messages are hidden from the normal NicoNico chat overlay.
 
 ### Usage
 - **Command:** `/screenspam <message>` - displays message on video with random effect
 - **Character Limit:** 50 characters max
-- **Cooldown:** 30 seconds per user
+- **Cooldown:** None (spam away!)
 - **Access:** All users
+- **NND Integration:** Screenspam messages are automatically hidden from the normal NicoNico scrolling chat
 
-### Animation Effects Pool (15 effects)
+### Animation Effects Pool (18 CRAZY effects)
 | Effect | Description |
 |--------|-------------|
-| `scroll-left` | Classic NicoNico scroll from right to left |
-| `scroll-right` | Scroll from left to right |
-| `drop` | Falls from top with rotation |
-| `explode` | Appears center, scales up then spins away |
-| `bounce` | Bounces up and down repeatedly |
-| `spin-fly` | Flies across screen while spinning 1080° |
-| `zigzag` | Moves in zigzag pattern across screen |
-| `shake-grow` | Shakes violently while growing larger |
-| `flash` | Flashes/blinks in center with scale changes |
-| `rain` | Falls from top like rain |
-| `wave` | Moves in wave pattern |
-| `popup` | Pops up at random position with rotation |
-| `glitch` | Glitch effect with color shifting |
-| `rainbow` | Rainbow hue rotation effect |
-| `multi-rain` | Creates 5 copies that rain down staggered |
+| `nuke` | Starts tiny, becomes MASSIVE with blinding brightness |
+| `seizure` | Rapid chaotic position/scale/rotation/color changes |
+| `tornado` | Spins up from bottom while growing and moving chaotically |
+| `pinball` | Bounces off walls at crazy angles |
+| `rubber` | Stretches and snaps like a rubber band |
+| `drunk` | Stumbles across screen with skewing |
+| `earthquake` | Violently shakes while growing |
+| `blackhole` | Gets sucked into center then EXPLODES outward |
+| `glitchnightmare` | Extreme glitching with clip-path and color inversion |
+| `firework` | Shoots up and explodes in multiple directions |
+| `jello` | Wobbly jello stretching effect |
+| `matrix` | Digital rain style falling with green glow |
+| `yoyo` | Swings up and down like a yo-yo |
+| `portal` | Spins into a portal with hue shifting |
+| `helicopter` | Spins like helicopter blades across screen |
+| `supernova` | Massive explosion with blinding flash |
+| `slots` | Spins vertically like slot machine reels |
+| `chaos-multi` | Creates 8 copies with random different effects |
 
 ### Color Variations
-8 color options randomly applied:
-- Red, Green, Cyan, Magenta, Yellow, Orange, Hot Pink, Rainbow gradient
+8 color options randomly applied with INTENSE glows:
+- Red, Green, Cyan, Magenta, Yellow, Orange, Hot Pink, Animated Rainbow gradient
 
 ### Key Functions
 | Function | Purpose |
@@ -625,9 +629,6 @@ NicoNico-style feature that displays messages across the video screen with zany 
 | `initScreenspamReceiver()` | Listens for screenspam messages from other users |
 | `displayScreenspam(message, username)` | Displays the effect on screen |
 | `createScreenspamOverlay()` | Creates overlay container over video |
-| `checkScreenspamCooldown(username)` | Checks if user is on cooldown |
-| `setScreenspamCooldown(username)` | Sets cooldown for user |
-| `showCooldownToast(seconds)` | Shows error toast with remaining time |
 
 ### Message Format
 Messages use invisible zero-width character markers:
@@ -637,13 +638,12 @@ Messages use invisible zero-width character markers:
 
 ### CSS Classes
 - `#screenspam-overlay` - Container positioned over video
-- `.screenspam-msg` - Base message styling (Impact font, text shadows)
-- `.screenspam-color-0` through `.screenspam-color-7` - Color variants
-- `.screenspam-cooldown-toast` - Error/cooldown notification
+- `.screenspam-msg` - Base message styling (Impact font, intense text shadows)
+- `.screenspam-color-0` through `.screenspam-color-7` - Color variants with triple glow layers
+- `.screenspam-cooldown-toast` - Error notification
 
 ### Configuration Variables
 ```javascript
-var SCREENSPAM_COOLDOWN = 30000;  // 30 seconds
 var SCREENSPAM_DURATION = 5000;   // 5 seconds display
 var SCREENSPAM_MAX_LENGTH = 50;   // Max characters
 ```
