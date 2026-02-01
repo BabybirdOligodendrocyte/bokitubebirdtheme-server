@@ -448,6 +448,73 @@ if (tab === 'message') {
 - `replyStyleSettings` - Custom reply styling preferences
 - `emoteFavorites` - Array of favorite emote names
 - `playlistCustomNames` - Custom names for playlist items
+- `priorityQueueItems` - Priority queue video items (dual playlist system)
+- `dualPlaylistPlaybackState` - Playback state for dual playlist system
+
+## Dual Playlist System (2026-02)
+
+A dual playlist system with a main playlist (mod-only visible) and priority queue (visible to mods only). Manages video playback between two playlists with visibility and permission controls.
+
+### Visibility & Permissions
+- **Main Playlist**: Only visible to rank 2+ (moderators)
+- **Priority Queue**: Only visible to rank 2+ (moderators)
+- **Non-mods**: Cannot see either playlist, but can add videos
+- **Add Media**: All users can add videos; non-mods receive feedback "Video added to queue, position #X"
+
+### UI Layout
+- Priority queue appears as a separate panel to the right of main playlist
+- Both playlists visible simultaneously to moderators
+- Responsive: stacks vertically on mobile (< 768px)
+
+### Drag & Drop
+- **Bidirectional**: Videos can be dragged between priority queue ↔ main playlist
+- **Internal reordering**: Mods can reorder within each playlist
+- **Visual feedback**: Highlighting during drag operations
+- Only mods have drag-drop capability
+
+### Playback Logic
+1. **Priority First**: Always play from priority queue if it contains videos
+2. **FIFO Order**: Priority queue plays in order added
+3. **After Priority Video Plays**: Removed from priority queue, moved to main playlist
+4. **When Priority Empty**: Select ONE random video from main playlist
+5. **Never Interrupt**: Current video finishes before switching to priority queue
+
+### Key Functions
+| Function | Purpose |
+|----------|---------|
+| `addToPriorityQueue(videoData)` | Add video to priority queue |
+| `removePriorityItem(uid)` | Remove item from priority queue |
+| `getNextPriorityItem()` | Get first item (FIFO) from priority queue |
+| `popPriorityItem()` | Remove and return first item from priority queue |
+| `playNextVideo()` | Play next video (priority first, then random main) |
+| `interceptVideoAdditions()` | Intercept socket 'queue' events |
+| `showQueueFeedback(position, title)` | Show toast notification for non-mods |
+
+### CSS Classes
+- `.hide-playlists` - Applied to body when user is not a mod
+- `.is-mod` - Applied to body when user is a mod
+- `#dual-playlist-wrapper` - Container for both playlists
+- `#main-playlist-panel` - Main playlist container
+- `#priority-queue-container` - Priority queue container
+- `.priority-queue-item` - Individual priority queue item
+- `.drag-over` - Applied during drag hover
+- `.dragging` - Applied to item being dragged
+
+### Global API
+```javascript
+window.DualPlaylist = {
+    addToPriorityQueue: fn(videoData),
+    removePriorityItem: fn(uid),
+    getPriorityQueue: fn() -> array,
+    clearPriorityQueue: fn(),
+    playNext: fn(),
+    isModerator: fn() -> boolean
+};
+```
+
+### localStorage Keys
+- `priorityQueueItems` - JSON array of priority queue items
+- `dualPlaylistPlaybackState` - Playback state tracking
 
 ## Cytube Chat Filters (Channel Configuration)
 
