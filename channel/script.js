@@ -6872,6 +6872,363 @@ var buddiesInitialized = false;
 var chatWordTargets = [];
 var recentChatMessages = [];
 var activeConversations = [];  // Track ongoing conversations
+var customBuddySettings = {};  // Store custom settings received from other users
+var myBuddySettings = null;    // Current user's custom settings
+var lastSettingsBroadcast = 0; // Debounce settings broadcast
+
+// ========== BUDDY SETTINGS SCHEMA ==========
+var DEFAULT_BUDDY_SETTINGS = {
+    // Appearance
+    spriteIndex: -1,           // -1 = use hash, 0+ = specific sprite
+    customSpriteUrl: null,     // URL to custom image
+    hueRotate: 0,              // 0-360 degrees
+    saturation: 100,           // 50-200%
+    brightness: 100,           // 50-150%
+    glowColor: null,           // hex color or null
+    glowIntensity: 0,          // 0-20px
+    size: 'medium',            // small, medium, large
+    displayName: null,         // custom name or null for username
+
+    // Personality
+    personality: null,         // null = use hash, or specific personality name
+    kissChance: -1,            // -1 = use personality, 0-100 = override
+    chaseChance: -1,
+    fightChance: -1,
+    fleeChance: -1,
+    confessChance: -1,
+    crazyChance: -1,
+    conversationChance: -1,
+
+    // Behavior/Stance
+    idleStyle: 'default',      // default, calm, bouncy, sleepy, hyperactive, dramatic, robotic
+    movementSpeed: 1.0,        // 0.5-2.0 multiplier
+    movementStyle: 'default',  // default, smooth, bouncy, floaty, erratic, teleporty
+    socialTendency: 'neutral', // social, neutral, shy, aggressive
+    positionPreference: 'roam',// ground, high, chatFollow, roam
+    interactionFrequency: 1.0, // 0.5-2.0 multiplier
+    chattiness: 1.0,           // 0.5-2.0 multiplier
+    energyLevel: 1.0,          // 0.5-2.0 multiplier
+
+    // Phrases
+    catchphrase: null,         // main phrase used often
+    customPhrases: [],         // array of up to 5 custom phrases
+    greeting: null,            // said when appearing
+    victoryLine: null,         // said when winning
+    defeatLine: null,          // said when losing
+    loveLine: null             // said in romantic moments
+};
+
+// Size configurations
+var BUDDY_SIZES = {
+    small: 20,
+    medium: 28,
+    large: 38
+};
+
+// Idle style animations
+var IDLE_STYLES = {
+    default: 'idle',
+    calm: 'idle',
+    bouncy: 'hopping',
+    sleepy: 'idle',
+    hyperactive: 'hopping',
+    dramatic: 'idle',
+    robotic: 'idle'
+};
+
+// ========== SETTINGS SYNC SYSTEM ==========
+
+// Get current user's username
+function getMyUsername() {
+    if (typeof CLIENT !== 'undefined' && CLIENT.name) {
+        return CLIENT.name;
+    }
+    // Fallback: try to get from userlist
+    var myName = $('#userlist .userlist_item.userlist_owner span').first().text().trim();
+    if (!myName) {
+        myName = localStorage.getItem('cytube_username') || null;
+    }
+    return myName;
+}
+
+// Load my settings from localStorage
+function loadMyBuddySettings() {
+    try {
+        var saved = localStorage.getItem('myBuddySettings');
+        if (saved) {
+            myBuddySettings = JSON.parse(saved);
+            // Merge with defaults for any missing fields
+            myBuddySettings = Object.assign({}, DEFAULT_BUDDY_SETTINGS, myBuddySettings);
+        } else {
+            myBuddySettings = Object.assign({}, DEFAULT_BUDDY_SETTINGS);
+        }
+    } catch (e) {
+        myBuddySettings = Object.assign({}, DEFAULT_BUDDY_SETTINGS);
+    }
+    return myBuddySettings;
+}
+
+// Save my settings to localStorage
+function saveMyBuddySettings() {
+    try {
+        localStorage.setItem('myBuddySettings', JSON.stringify(myBuddySettings));
+    } catch (e) {
+        console.warn('Could not save buddy settings:', e);
+    }
+}
+
+// Encode settings to base64 for broadcast
+function encodeBuddySettings(settings) {
+    try {
+        return btoa(unescape(encodeURIComponent(JSON.stringify(settings))));
+    } catch (e) {
+        return null;
+    }
+}
+
+// Decode settings from base64
+function decodeBuddySettings(encoded) {
+    try {
+        return JSON.parse(decodeURIComponent(escape(atob(encoded))));
+    } catch (e) {
+        return null;
+    }
+}
+
+// Broadcast my settings via hidden chat message
+function broadcastMyBuddySettings() {
+    var myName = getMyUsername();
+    if (!myName || !myBuddySettings) return;
+
+    // Debounce - don't broadcast more than once per 2 seconds
+    var now = Date.now();
+    if (now - lastSettingsBroadcast < 2000) return;
+    lastSettingsBroadcast = now;
+
+    var encoded = encodeBuddySettings(myBuddySettings);
+    if (!encoded) return;
+
+    // Hidden message format using zero-width characters
+    var hiddenMsg = '\u200B\u200CBSET:' + myName + ':' + encoded + ':BSET\u200B\u200C';
+
+    // Send via socket if available
+    if (typeof socket !== 'undefined' && socket.emit) {
+        socket.emit('chatMsg', { msg: hiddenMsg, meta: {} });
+    }
+}
+
+// Broadcast an interaction for sync
+function broadcastInteraction(user1, user2, interactionType, seed) {
+    var hiddenMsg = '\u200B\u200CBACT:' + user1 + ':' + user2 + ':' + interactionType + ':' + seed + ':BACT\u200B\u200C';
+
+    if (typeof socket !== 'undefined' && socket.emit) {
+        socket.emit('chatMsg', { msg: hiddenMsg, meta: {} });
+    }
+}
+
+// Parse incoming chat messages for buddy sync data
+function parseBuddySyncMessage(msgText) {
+    // Check for settings broadcast
+    var settingsMatch = msgText.match(/\u200B\u200CBSET:([^:]+):([^:]+):BSET\u200B\u200C/);
+    if (settingsMatch) {
+        var username = settingsMatch[1];
+        var encoded = settingsMatch[2];
+        var settings = decodeBuddySettings(encoded);
+        if (settings && username !== getMyUsername()) {
+            customBuddySettings[username] = settings;
+            // Update existing buddy if present
+            if (buddyCharacters[username]) {
+                applyCustomSettingsToBuddy(username);
+            }
+        }
+        return true; // Message was a sync message
+    }
+
+    // Check for interaction broadcast
+    var actionMatch = msgText.match(/\u200B\u200CBACT:([^:]+):([^:]+):([^:]+):([^:]+):BACT\u200B\u200C/);
+    if (actionMatch) {
+        var user1 = actionMatch[1];
+        var user2 = actionMatch[2];
+        var actionType = actionMatch[3];
+        var seed = parseInt(actionMatch[4]);
+
+        // Only process if we didn't initiate this (to avoid double-triggering)
+        var myName = getMyUsername();
+        if (user1 !== myName) {
+            handleSyncedInteraction(user1, user2, actionType, seed);
+        }
+        return true;
+    }
+
+    return false; // Not a sync message
+}
+
+// Apply custom settings to an existing buddy
+function applyCustomSettingsToBuddy(username) {
+    var buddy = buddyCharacters[username];
+    if (!buddy) return;
+
+    var settings = customBuddySettings[username];
+    if (!settings) return;
+
+    // Apply sprite
+    if (settings.customSpriteUrl) {
+        buddy.element.innerHTML = '<img src="' + escapeHtml(settings.customSpriteUrl) + '" style="width:100%;height:100%;object-fit:contain;">' +
+            '<span class="buddy-nametag">' + escapeHtml(settings.displayName || username) + '</span>';
+        buddy.isCustomSprite = true;
+    } else if (settings.spriteIndex >= 0 && settings.spriteIndex < BUDDY_SPRITES.length) {
+        buddy.sprite = BUDDY_SPRITES[settings.spriteIndex];
+        buddy.element.innerHTML = buddy.sprite.body + '<span class="buddy-nametag">' + escapeHtml(settings.displayName || username) + '</span>';
+        buddy.isCustomSprite = false;
+    }
+
+    // Apply size
+    var size = BUDDY_SIZES[settings.size] || BUDDY_SIZES.medium;
+    buddy.element.style.fontSize = size + 'px';
+
+    // Apply color filters
+    var filters = [];
+    if (settings.hueRotate) filters.push('hue-rotate(' + settings.hueRotate + 'deg)');
+    if (settings.saturation !== 100) filters.push('saturate(' + settings.saturation + '%)');
+    if (settings.brightness !== 100) filters.push('brightness(' + settings.brightness + '%)');
+    if (settings.glowColor && settings.glowIntensity > 0) {
+        filters.push('drop-shadow(0 0 ' + settings.glowIntensity + 'px ' + settings.glowColor + ')');
+    }
+    buddy.element.style.filter = filters.length > 0 ? filters.join(' ') : '';
+
+    // Apply personality override
+    if (settings.personality && PERSONALITIES[settings.personality]) {
+        buddy.personality = settings.personality;
+    }
+
+    // Store settings reference
+    buddy.customSettings = settings;
+}
+
+// Handle a synced interaction from another client
+function handleSyncedInteraction(user1, user2, actionType, seed) {
+    var b1 = buddyCharacters[user1];
+    var b2 = buddyCharacters[user2];
+    if (!b1 || !b2) return;
+    if (b1.interacting || b2.interacting) return;
+
+    // Route through startInteraction with sync flag
+    startInteraction(user1, user2, b1, b2, true, actionType, seed);
+}
+
+// Legacy handler for backwards compatibility - kept for reference
+function handleSyncedInteractionLegacy(user1, user2, actionType, seed) {
+    var b1 = buddyCharacters[user1];
+    var b2 = buddyCharacters[user2];
+    if (!b1 || !b2) return;
+    if (b1.interacting || b2.interacting) return;
+
+    // Use the seed for deterministic random
+    var seededRandom = createSeededRandom(seed);
+
+    // Trigger the same interaction
+    switch (actionType) {
+        case 'kiss': startKiss(user1, user2, seededRandom); break;
+        case 'confess': startConfess(user1, user2, seededRandom); break;
+        case 'chase': startChase(user1, user2, seededRandom); break;
+        case 'flee': startFlee(user1, user2, seededRandom); break;
+        case 'fight': startFight(user1, user2, seededRandom); break;
+        case 'conversation': startConversation(user1, user2, seededRandom); break;
+        // Crazy interactions
+        case 'fireworks': startFireworks(user1, user2, seededRandom); break;
+        case 'wizardDuel': startWizardDuel(user1, user2, seededRandom); break;
+        case 'danceOff': startDanceOff(user1, user2, seededRandom); break;
+        case 'teatime': startTeatime(user1, user2, seededRandom); break;
+        case 'stareContest': startStareContest(user1, user2, seededRandom); break;
+        case 'serenade': startSerenade(user1, user2, seededRandom); break;
+        case 'ghostPossession': startGhostPossession(user1, user2, seededRandom); break;
+        case 'transformSequence': startTransformSequence(user1, user2, seededRandom); break;
+        case 'pillowFight': startPillowFight(user1, user2, seededRandom); break;
+        case 'fortuneTelling': startFortuneTelling(user1, user2, seededRandom); break;
+        case 'dramaDeath': startDramaDeath(user1, user2, seededRandom); break;
+        case 'telepathy': startTelepathy(user1, user2, seededRandom); break;
+        case 'fusion': startFusion(user1, user2, seededRandom); break;
+        case 'timewarp': startTimewarp(user1, user2, seededRandom); break;
+        case 'foodFight': startFoodFight(user1, user2, seededRandom); break;
+        case 'karaoke': startKaraoke(user1, user2, seededRandom); break;
+        case 'armWrestle': startArmWrestle(user1, user2, seededRandom); break;
+        case 'portal': startPortal(user1, user2, seededRandom); break;
+        case 'summoning': startSummoning(user1, user2, seededRandom); break;
+    }
+}
+
+// Create a seeded random function for deterministic results
+function createSeededRandom(seed) {
+    return function() {
+        seed = (seed * 9301 + 49297) % 233280;
+        return seed / 233280;
+    };
+}
+
+// Get custom phrase for a buddy, or fall back to default
+function getBuddyPhrase(buddy, phraseType, defaultPhrases, seededRandom) {
+    var rng = seededRandom || Math.random;
+    var settings = buddy.customSettings || customBuddySettings[buddy.username];
+
+    if (settings) {
+        // Check for specific phrase type
+        if (phraseType === 'victory' && settings.victoryLine) return settings.victoryLine;
+        if (phraseType === 'defeat' && settings.defeatLine) return settings.defeatLine;
+        if (phraseType === 'love' && settings.loveLine) return settings.loveLine;
+        if (phraseType === 'greeting' && settings.greeting) return settings.greeting;
+        if (phraseType === 'catchphrase' && settings.catchphrase) return settings.catchphrase;
+
+        // Check custom phrases
+        if (settings.customPhrases && settings.customPhrases.length > 0) {
+            // 50% chance to use custom phrase
+            if (rng() < 0.5) {
+                return settings.customPhrases[Math.floor(rng() * settings.customPhrases.length)];
+            }
+        }
+    }
+
+    // Fall back to default
+    if (Array.isArray(defaultPhrases)) {
+        return defaultPhrases[Math.floor(rng() * defaultPhrases.length)];
+    }
+    return defaultPhrases;
+}
+
+// Initialize sync message listener
+function initBuddySyncListener() {
+    if (typeof socket !== 'undefined') {
+        socket.on('chatMsg', function(data) {
+            if (data.msg) {
+                parseBuddySyncMessage(data.msg);
+            }
+        });
+    }
+
+    // Also watch messagebuffer for sync messages
+    var msgBuffer = document.getElementById('messagebuffer');
+    if (msgBuffer) {
+        var observer = new MutationObserver(function(mutations) {
+            mutations.forEach(function(mutation) {
+                mutation.addedNodes.forEach(function(node) {
+                    if (node.nodeType === 1) {
+                        var text = node.textContent || '';
+                        if (parseBuddySyncMessage(text)) {
+                            // Hide the sync message from view
+                            node.style.display = 'none';
+                        }
+                    }
+                });
+            });
+        });
+        observer.observe(msgBuffer, { childList: true });
+    }
+
+    // Load my settings and broadcast on init
+    loadMyBuddySettings();
+    setTimeout(function() {
+        broadcastMyBuddySettings();
+    }, 3000); // Delay to ensure connection is ready
+}
 
 // Hash function for deterministic assignment
 function hashUsername(str) {
@@ -7142,6 +7499,7 @@ function initConnectedBuddies() {
     buddiesInitialized = true;
 
     injectBuddyStyles();
+    initBuddySyncListener();  // Initialize sync system
 
     setTimeout(function() {
         scanChatForWords();
@@ -7580,16 +7938,65 @@ function addBuddy(username) {
     if (buddyCharacters[username]) return;
     var zone = getBuddyZone();
 
+    // Check for custom settings (from sync or if it's our own buddy)
+    var customSettings = customBuddySettings[username];
+    var myName = getMyUsername();
+    if (username === myName && myBuddySettings) {
+        customSettings = myBuddySettings;
+    }
+
     // DETERMINISTIC: Same username = same sprite & personality across all browsers
     var hash = hashUsername(username);
-    var sprite = BUDDY_SPRITES[hash % BUDDY_SPRITES.length];
-    var personality = PERSONALITY_NAMES[(hash >> 8) % PERSONALITY_NAMES.length];
+    var sprite, personality, displayName;
+
+    // Apply custom settings or use defaults
+    if (customSettings && customSettings.spriteIndex >= 0) {
+        sprite = BUDDY_SPRITES[customSettings.spriteIndex] || BUDDY_SPRITES[hash % BUDDY_SPRITES.length];
+    } else {
+        sprite = BUDDY_SPRITES[hash % BUDDY_SPRITES.length];
+    }
+
+    if (customSettings && customSettings.personality) {
+        personality = customSettings.personality;
+    } else {
+        personality = PERSONALITY_NAMES[(hash >> 8) % PERSONALITY_NAMES.length];
+    }
+
+    displayName = (customSettings && customSettings.displayName) ? customSettings.displayName : username;
 
     var el = document.createElement('div');
     el.className = 'buddy-character idle';
-    el.innerHTML = sprite.body + '<span class="buddy-nametag">' + escapeHtml(username) + '</span>';
 
-    // Starting position uses hash too for some consistency
+    // Custom sprite URL or emoji
+    if (customSettings && customSettings.customSpriteUrl) {
+        el.innerHTML = '<img src="' + escapeHtml(customSettings.customSpriteUrl) + '" style="width:100%;height:100%;object-fit:contain;">' +
+            '<span class="buddy-nametag">' + escapeHtml(displayName) + '</span>';
+    } else {
+        el.innerHTML = sprite.body + '<span class="buddy-nametag">' + escapeHtml(displayName) + '</span>';
+    }
+
+    // Apply size
+    var size = BUDDY_SIZES.medium;
+    if (customSettings && customSettings.size && BUDDY_SIZES[customSettings.size]) {
+        size = BUDDY_SIZES[customSettings.size];
+    }
+    el.style.fontSize = size + 'px';
+
+    // Apply color filters
+    if (customSettings) {
+        var filters = [];
+        if (customSettings.hueRotate) filters.push('hue-rotate(' + customSettings.hueRotate + 'deg)');
+        if (customSettings.saturation && customSettings.saturation !== 100) filters.push('saturate(' + customSettings.saturation + '%)');
+        if (customSettings.brightness && customSettings.brightness !== 100) filters.push('brightness(' + customSettings.brightness + '%)');
+        if (customSettings.glowColor && customSettings.glowIntensity > 0) {
+            filters.push('drop-shadow(0 0 ' + customSettings.glowIntensity + 'px ' + customSettings.glowColor + ')');
+        }
+        if (filters.length > 0) {
+            el.style.filter = filters.join(' ');
+        }
+    }
+
+    // Starting position uses hash for some consistency
     var startX = zone.left + ((hash % 100) / 100) * (zone.right - zone.left);
     var startY = zone.top + (((hash >> 4) % 100) / 100) * (zone.bottom - zone.top);
     el.style.left = startX + 'px';
@@ -7616,6 +8023,7 @@ function addBuddy(username) {
         vy: 0,
         sprite: sprite,
         personality: personality,
+        customSettings: customSettings,
         state: 'idle',
         stateTime: 0,
         target: null,
@@ -7823,46 +8231,101 @@ function checkInteractions(names) {
 }
 
 // Start an interaction based on personalities
-function startInteraction(n1, n2, b1, b2) {
+// If fromSync is true, this was triggered by another client's broadcast
+function startInteraction(n1, n2, b1, b2, fromSync, syncedType, syncedSeed) {
     var p1 = PERSONALITIES[b1.personality] || PERSONALITIES.playful;
     var p2 = PERSONALITIES[b2.personality] || PERSONALITIES.playful;
 
-    // Maybe start a prolonged conversation instead
-    if (Math.random() < BUDDY_CONFIG.conversationChance * 5 && !b1.inConversation && !b2.inConversation) {
-        startConversation(n1, n2);
-        return;
+    var seed, seededRandom, interactionType;
+
+    if (fromSync && syncedType && syncedSeed) {
+        // This is a synced interaction - use the provided type and seed
+        seed = syncedSeed;
+        seededRandom = createSeededRandom(seed);
+        interactionType = syncedType;
+    } else {
+        // This is a locally-initiated interaction - generate seed and determine type
+        seed = Math.floor(Math.random() * 1000000);
+        seededRandom = createSeededRandom(seed);
+
+        // Maybe start a prolonged conversation instead
+        if (seededRandom() < BUDDY_CONFIG.conversationChance * 5 && !b1.inConversation && !b2.inConversation) {
+            interactionType = 'conversation';
+        } else {
+            // Calculate combined probabilities (now includes crazy)
+            var kissChance = (p1.kiss + p2.kiss) / 2;
+            var chaseChance = (p1.chase + p2.chase) / 2;
+            var fightChance = (p1.fight + p2.fight) / 2;
+            var confessChance = (p1.confess + p2.confess) / 2;
+            var fleeChance = (p1.flee + p2.flee) / 2;
+            var crazyChance = (p1.crazy + p2.crazy) / 2;
+
+            var total = kissChance + chaseChance + fightChance + confessChance + fleeChance + crazyChance;
+            var roll = seededRandom() * total;
+
+            if (roll < kissChance) {
+                interactionType = 'kiss';
+            } else if (roll < kissChance + confessChance) {
+                interactionType = 'confess';
+            } else if (roll < kissChance + confessChance + chaseChance) {
+                interactionType = 'chase';
+            } else if (roll < kissChance + confessChance + chaseChance + fleeChance) {
+                interactionType = 'flee';
+            } else if (roll < kissChance + confessChance + chaseChance + fleeChance + crazyChance) {
+                // For crazy interactions, we need to pick one specifically
+                var crazyIndex = Math.floor(seededRandom() * CRAZY_INTERACTIONS.length);
+                interactionType = CRAZY_INTERACTIONS[crazyIndex];
+            } else {
+                interactionType = 'fight';
+            }
+        }
+
+        // Broadcast this interaction to other clients
+        broadcastInteraction(n1, n2, interactionType, seed);
     }
 
-    // Calculate combined probabilities (now includes crazy)
-    var kissChance = (p1.kiss + p2.kiss) / 2;
-    var chaseChance = (p1.chase + p2.chase) / 2;
-    var fightChance = (p1.fight + p2.fight) / 2;
-    var confessChance = (p1.confess + p2.confess) / 2;
-    var fleeChance = (p1.flee + p2.flee) / 2;
-    var crazyChance = (p1.crazy + p2.crazy) / 2;
+    // Reset the seeded random for consistent effect generation
+    seededRandom = createSeededRandom(seed);
+    // Skip the rolls we already did
+    seededRandom(); seededRandom();
 
-    var total = kissChance + chaseChance + fightChance + confessChance + fleeChance + crazyChance;
-    var roll = Math.random() * total;
-
-    if (roll < kissChance) {
-        startKiss(n1, n2);
-    } else if (roll < kissChance + confessChance) {
-        startConfess(n1, n2);
-    } else if (roll < kissChance + confessChance + chaseChance) {
-        startChase(n1, n2);
-    } else if (roll < kissChance + confessChance + chaseChance + fleeChance) {
-        startFlee(n1, n2);
-    } else if (roll < kissChance + confessChance + chaseChance + fleeChance + crazyChance) {
-        startCrazyInteraction(n1, n2);
-    } else {
-        startFight(n1, n2);
+    // Execute the interaction with seeded random
+    switch (interactionType) {
+        case 'kiss': startKiss(n1, n2, seededRandom); break;
+        case 'confess': startConfess(n1, n2, seededRandom); break;
+        case 'chase': startChase(n1, n2, seededRandom); break;
+        case 'flee': startFlee(n1, n2, seededRandom); break;
+        case 'fight': startFight(n1, n2, seededRandom); break;
+        case 'conversation': startConversation(n1, n2, seededRandom); break;
+        // Crazy interactions
+        case 'fireworks': startFireworks(n1, n2, seededRandom); break;
+        case 'wizardDuel': startWizardDuel(n1, n2, seededRandom); break;
+        case 'danceOff': startDanceOff(n1, n2, seededRandom); break;
+        case 'teatime': startTeatime(n1, n2, seededRandom); break;
+        case 'stareContest': startStareContest(n1, n2, seededRandom); break;
+        case 'serenade': startSerenade(n1, n2, seededRandom); break;
+        case 'ghostPossession': startGhostPossession(n1, n2, seededRandom); break;
+        case 'transformSequence': startTransformSequence(n1, n2, seededRandom); break;
+        case 'pillowFight': startPillowFight(n1, n2, seededRandom); break;
+        case 'fortuneTelling': startFortuneTelling(n1, n2, seededRandom); break;
+        case 'dramaDeath': startDramaDeath(n1, n2, seededRandom); break;
+        case 'telepathy': startTelepathy(n1, n2, seededRandom); break;
+        case 'fusion': startFusion(n1, n2, seededRandom); break;
+        case 'timewarp': startTimewarp(n1, n2, seededRandom); break;
+        case 'foodFight': startFoodFight(n1, n2, seededRandom); break;
+        case 'karaoke': startKaraoke(n1, n2, seededRandom); break;
+        case 'armWrestle': startArmWrestle(n1, n2, seededRandom); break;
+        case 'portal': startPortal(n1, n2, seededRandom); break;
+        case 'summoning': startSummoning(n1, n2, seededRandom); break;
+        default: startKiss(n1, n2, seededRandom);
     }
 }
 
 // Kissing interaction
-function startKiss(n1, n2) {
+function startKiss(n1, n2, seededRandom) {
     var b1 = buddyCharacters[n1], b2 = buddyCharacters[n2];
     if (!b1 || !b2) return;
+    var rng = seededRandom || Math.random;
 
     b1.interacting = b2.interacting = true;
     setAnim(b1, 'kissing');
@@ -7874,28 +8337,41 @@ function startKiss(n1, n2) {
 
     var mx = (b1.x + b2.x) / 2, my = (b1.y + b2.y) / 2;
 
+    // Pre-generate heart effects for sync (use rng for determinism)
+    var hearts = [];
+    for (var i = 0; i < 6; i++) {
+        hearts.push({
+            heart: KISS_EFFECTS[Math.floor(rng() * KISS_EFFECTS.length)],
+            offsetX: (rng() - 0.5) * 30
+        });
+    }
+
     // Spawn floating hearts
     var count = 0;
     var heartInterval = setInterval(function() {
-        var heart = KISS_EFFECTS[Math.floor(Math.random() * KISS_EFFECTS.length)];
-        createKissEffect(mx + (Math.random() - 0.5) * 30, my - 10, heart);
+        var h = hearts[count];
+        createKissEffect(mx + h.offsetX, my - 10, h.heart);
         if (++count >= 6) clearInterval(heartInterval);
     }, 200);
 
     // Heart burst in middle
     createHeartBurst(mx, my);
 
-    setTimeout(function() { endKiss(n1, n2); }, 2000);
+    setTimeout(function() { endKiss(n1, n2, rng); }, 2000);
 }
 
-function endKiss(n1, n2) {
+function endKiss(n1, n2, rng) {
     var b1 = buddyCharacters[n1], b2 = buddyCharacters[n2];
+    var r = rng || Math.random;
+    var exprs = ['💕', '💗', '😊', '✨'];
+    var e1 = exprs[Math.floor(r() * 4)];
+    var e2 = exprs[Math.floor(r() * 4)];
     if (b1) {
         b1.interacting = false;
         b1.interactCooldown = 6000;
         b1.state = 'idle';
         setAnim(b1, 'in-love');
-        showExpression(b1, ['💕', '💗', '😊', '✨'][Math.floor(Math.random() * 4)]);
+        showExpression(b1, e1);
         setTimeout(function() { if (b1) setAnim(b1, 'idle'); }, 2000);
     }
     if (b2) {
@@ -7903,7 +8379,7 @@ function endKiss(n1, n2) {
         b2.interactCooldown = 6000;
         b2.state = 'idle';
         setAnim(b2, 'in-love');
-        showExpression(b2, ['💕', '💗', '😊', '✨'][Math.floor(Math.random() * 4)]);
+        showExpression(b2, e2);
         setTimeout(function() { if (b2) setAnim(b2, 'idle'); }, 2000);
     }
 }
@@ -7929,29 +8405,32 @@ function createHeartBurst(x, y) {
 }
 
 // Love confession
-function startConfess(n1, n2) {
+function startConfess(n1, n2, seededRandom) {
     var b1 = buddyCharacters[n1], b2 = buddyCharacters[n2];
     if (!b1 || !b2) return;
+    var rng = seededRandom || Math.random;
 
     b1.interacting = b2.interacting = true;
     setAnim(b1, 'in-love');
 
-    var confession = LOVE_CONFESSIONS[Math.floor(Math.random() * LOVE_CONFESSIONS.length)];
+    var confession = LOVE_CONFESSIONS[Math.floor(rng() * LOVE_CONFESSIONS.length)];
     showSpeechBubble(b1, confession, 'love');
     showExpression(b1, '💝');
 
+    // Pre-select reaction for sync
+    var reactions = [
+        { text: 'R-really?!', expr: '😳', type: 'shy' },
+        { text: 'I love you too!', expr: '🥰', type: 'love' },
+        { text: 'Kyaa~!', expr: '😊', type: 'shy' },
+        { text: '*blushes*', expr: '☺️', type: 'shy' },
+        { text: 'So cute!', expr: '💕', type: 'flirt' }
+    ];
+    var selectedReaction = reactions[Math.floor(rng() * reactions.length)];
+
     // Other buddy reacts
     setTimeout(function() {
-        var reactions = [
-            { text: 'R-really?!', expr: '😳', type: 'shy' },
-            { text: 'I love you too!', expr: '🥰', type: 'love' },
-            { text: 'Kyaa~!', expr: '😊', type: 'shy' },
-            { text: '*blushes*', expr: '☺️', type: 'shy' },
-            { text: 'So cute!', expr: '💕', type: 'flirt' }
-        ];
-        var r = reactions[Math.floor(Math.random() * reactions.length)];
-        showSpeechBubble(b2, r.text, r.type);
-        showExpression(b2, r.expr);
+        showSpeechBubble(b2, selectedReaction.text, selectedReaction.type);
+        showExpression(b2, selectedReaction.expr);
     }, 800);
 
     setTimeout(function() { endConfess(n1, n2); }, 3500);
@@ -7964,9 +8443,10 @@ function endConfess(n1, n2) {
 }
 
 // Chase interaction
-function startChase(n1, n2) {
+function startChase(n1, n2, seededRandom) {
     var b1 = buddyCharacters[n1], b2 = buddyCharacters[n2];
     if (!b1 || !b2) return;
+    var rng = seededRandom || Math.random;
 
     // Decide who chases who based on personality
     var chaser = (PERSONALITIES[b1.personality].chase > PERSONALITIES[b2.personality].chase) ? b1 : b2;
@@ -7979,9 +8459,12 @@ function startChase(n1, n2) {
     setAnim(chaser, 'chasing');
     setAnim(runner, 'fleeing');
 
-    showExpression(chaser, ['😈', '😏', '🏃', '💨'][Math.floor(Math.random() * 4)]);
-    showExpression(runner, ['😱', '😅', '💦', '🏃'][Math.floor(Math.random() * 4)]);
-    showSpeechBubble(chaser, ['Come back!', 'Wait~!', 'Hehe!', 'Catch you!'][Math.floor(Math.random() * 4)], 'flirt');
+    var chaserExprs = ['😈', '😏', '🏃', '💨'];
+    var runnerExprs = ['😱', '😅', '💦', '🏃'];
+    var phrases = ['Come back!', 'Wait~!', 'Hehe!', 'Catch you!'];
+    showExpression(chaser, chaserExprs[Math.floor(rng() * 4)]);
+    showExpression(runner, runnerExprs[Math.floor(rng() * 4)]);
+    showSpeechBubble(chaser, phrases[Math.floor(rng() * 4)], 'flirt');
 
     var zone = getBuddyZone();
     var chaseInterval = setInterval(function() {
@@ -8037,9 +8520,10 @@ function endChase(n1, n2) {
 }
 
 // Flee interaction (both run away from each other)
-function startFlee(n1, n2) {
+function startFlee(n1, n2, seededRandom) {
     var b1 = buddyCharacters[n1], b2 = buddyCharacters[n2];
     if (!b1 || !b2) return;
+    var rng = seededRandom || Math.random;
 
     b1.interacting = b2.interacting = true;
     setAnim(b1, 'fleeing');
@@ -8047,7 +8531,8 @@ function startFlee(n1, n2) {
 
     showExpression(b1, '😳');
     showExpression(b2, '😳');
-    showSpeechBubble(b1, ['Eep!', 'Kyaa!', 'S-sorry!', '*runs*'][Math.floor(Math.random() * 4)], 'shy');
+    var phrases = ['Eep!', 'Kyaa!', 'S-sorry!', '*runs*'];
+    showSpeechBubble(b1, phrases[Math.floor(rng() * 4)], 'shy');
 
     var zone = getBuddyZone();
     var dir1 = b1.x < b2.x ? -1 : 1;
@@ -8083,39 +8568,49 @@ function endFlee(n1, n2) {
 }
 
 // Fighting interaction
-function startFight(n1, n2) {
+function startFight(n1, n2, seededRandom) {
     var b1 = buddyCharacters[n1], b2 = buddyCharacters[n2];
     if (!b1 || !b2) return;
+    var rng = seededRandom || Math.random;
 
     b1.interacting = b2.interacting = true;
     setAnim(b1, 'fighting');
     setAnim(b2, 'fighting');
 
-    showExpression(b1, ['😤', '💢', '😠'][Math.floor(Math.random() * 3)]);
-    showExpression(b2, ['😤', '💢', '😠'][Math.floor(Math.random() * 3)]);
+    var exprs = ['😤', '💢', '😠'];
+    showExpression(b1, exprs[Math.floor(rng() * 3)]);
+    showExpression(b2, exprs[Math.floor(rng() * 3)]);
 
     var mx = (b1.x + b2.x) / 2, my = (b1.y + b2.y) / 2;
     createDust(mx, my);
 
+    // Pre-generate fight moves for sync
+    var moves = [];
+    for (var i = 0; i < 4; i++) {
+        moves.push(FIGHT_MOVES[Math.floor(rng() * FIGHT_MOVES.length)]);
+    }
     var count = 0;
     var iv = setInterval(function() {
-        var move = FIGHT_MOVES[Math.floor(Math.random() * FIGHT_MOVES.length)];
-        createFightEffect(mx, my, move);
+        createFightEffect(mx, my, moves[count]);
         if (++count >= 4) clearInterval(iv);
     }, 250);
 
-    setTimeout(function() { endFight(n1, n2); }, BUDDY_CONFIG.fightDuration);
+    setTimeout(function() { endFight(n1, n2, rng); }, BUDDY_CONFIG.fightDuration);
 }
 
-function endFight(n1, n2) {
+function endFight(n1, n2, rng) {
     var b1 = buddyCharacters[n1], b2 = buddyCharacters[n2];
+    var r = rng || Math.random;
+    var exprs = ['😮‍💨', '😤', '😊'];
+    var e1 = exprs[Math.floor(r() * 3)];
+    var e2 = exprs[Math.floor(r() * 3)];
     if (b1) {
         b1.interacting = false;
         b1.interactCooldown = 5000;
         b1.state = 'idle';
         b1.x -= 25;
         setAnim(b1, 'idle');
-        showExpression(b1, ['😮‍💨', '😤', '😊'][Math.floor(Math.random() * 3)]);
+        showExpression(b1, e1);
     }
     if (b2) {
         b2.interacting = false;
@@ -8123,7 +8618,7 @@ function endFight(n1, n2) {
         b2.state = 'idle';
         b2.x += 25;
         setAnim(b2, 'idle');
-        showExpression(b2, ['😮‍💨', '😤', '😊'][Math.floor(Math.random() * 3)]);
+        showExpression(b2, e2);
     }
 }
 
@@ -8156,11 +8651,12 @@ function escapeHtml(text) {
 
 // ========== MADLIB CONVERSATION SYSTEM ==========
 
-function fillMadlib(text) {
+function fillMadlib(text, rng) {
+    var r = rng || Math.random;
     return text.replace(/\{(\w+)\}/g, function(match, key) {
         var words = MADLIB_WORDS[key];
         if (words && words.length > 0) {
-            return words[Math.floor(Math.random() * words.length)];
+            return words[Math.floor(r() * words.length)];
         }
         return match;
     });
@@ -8214,16 +8710,26 @@ function getMoodExpression(mood) {
     return arr[Math.floor(Math.random() * arr.length)];
 }
 
-function startConversation(n1, n2) {
+function startConversation(n1, n2, seededRandom) {
     var b1 = buddyCharacters[n1], b2 = buddyCharacters[n2];
     if (!b1 || !b2) return;
+    var rng = seededRandom || Math.random;
 
     b1.interacting = b2.interacting = true;
     b1.inConversation = b2.inConversation = true;
 
-    var template = CONVERSATION_TEMPLATES[Math.floor(Math.random() * CONVERSATION_TEMPLATES.length)];
+    var template = CONVERSATION_TEMPLATES[Math.floor(rng() * CONVERSATION_TEMPLATES.length)];
     var buddies = [b1, b2];
     var lineIndex = 0;
+
+    // Pre-generate all madlibs and timings for sync
+    var pregenerated = [];
+    for (var i = 0; i < template.lines.length; i++) {
+        pregenerated.push({
+            text: fillMadlib(template.lines[i].text, rng),
+            delay: 2000 + rng() * 1000
+        });
+    }
 
     function nextLine() {
         if (lineIndex >= template.lines.length) {
@@ -8233,14 +8739,15 @@ function startConversation(n1, n2) {
 
         var line = template.lines[lineIndex];
         var speaker = buddies[line.speaker];
-        var text = fillMadlib(line.text);
+        var text = pregenerated[lineIndex].text;
         var expr = getMoodExpression(line.mood);
 
         showSpeechBubble(speaker, text, line.mood);
         showExpression(speaker, expr);
 
+        var delay = pregenerated[lineIndex].delay;
         lineIndex++;
-        setTimeout(nextLine, 2000 + Math.random() * 1000);
+        setTimeout(nextLine, delay);
     }
 
     // Start the conversation
@@ -8297,9 +8804,10 @@ function startCrazyInteraction(n1, n2) {
 }
 
 // FIREWORKS
-function startFireworks(n1, n2) {
+function startFireworks(n1, n2, seededRandom) {
     var b1 = buddyCharacters[n1], b2 = buddyCharacters[n2];
     if (!b1 || !b2) return;
+    var rng = seededRandom || Math.random;
 
     b1.interacting = b2.interacting = true;
     showExpression(b1, '🎆');
@@ -8308,12 +8816,26 @@ function startFireworks(n1, n2) {
 
     var mx = (b1.x + b2.x) / 2, my = (b1.y + b2.y) / 2;
     var fireworks = ['🎆', '🎇', '✨', '💥', '🌟', '⭐', '🔥', '💫'];
+
+    // Pre-generate firework effects for sync
+    var fwEffects = [];
+    for (var j = 0; j < 8; j++) {
+        var burst = [];
+        for (var i = 0; i < 3; i++) {
+            burst.push({
+                fw: fireworks[Math.floor(rng() * fireworks.length)],
+                ox: (rng() - 0.5) * 80,
+                oy: (rng() - 0.5) * 60
+            });
+        }
+        fwEffects.push(burst);
+    }
     var count = 0;
 
     var interval = setInterval(function() {
-        for (var i = 0; i < 3; i++) {
-            var fw = fireworks[Math.floor(Math.random() * fireworks.length)];
-            createFirework(mx + (Math.random() - 0.5) * 80, my + (Math.random() - 0.5) * 60, fw);
+        var burst = fwEffects[count];
+        for (var i = 0; i < burst.length; i++) {
+            createFirework(mx + burst[i].ox, my + burst[i].oy, burst[i].fw);
         }
         if (++count >= 8) clearInterval(interval);
     }, 200);
@@ -8332,9 +8854,10 @@ function createFirework(x, y, emoji) {
 }
 
 // WIZARD DUEL
-function startWizardDuel(n1, n2) {
+function startWizardDuel(n1, n2, seededRandom) {
     var b1 = buddyCharacters[n1], b2 = buddyCharacters[n2];
     if (!b1 || !b2) return;
+    var rng = seededRandom || Math.random;
 
     b1.interacting = b2.interacting = true;
     showExpression(b1, '🧙');
@@ -8342,10 +8865,15 @@ function startWizardDuel(n1, n2) {
     showSpeechBubble(b1, "EXPECTO PATRONUM!", 'powerful');
 
     var spells = ['⚡', '🔥', '❄️', '💫', '✨', '🌟', '💥', '🌀'];
+    // Pre-generate spells for sync
+    var preSpells = [];
+    for (var i = 0; i < 5; i++) {
+        preSpells.push(spells[Math.floor(rng() * spells.length)]);
+    }
     var count = 0;
 
     var interval = setInterval(function() {
-        var spell = spells[Math.floor(Math.random() * spells.length)];
+        var spell = preSpells[count];
         createMagic(b1.x + 15, b1.y, spell);
         createMagic(b2.x + 15, b2.y, spell);
 
@@ -8372,9 +8900,10 @@ function createMagic(x, y, emoji) {
 }
 
 // DANCE OFF
-function startDanceOff(n1, n2) {
+function startDanceOff(n1, n2, seededRandom) {
     var b1 = buddyCharacters[n1], b2 = buddyCharacters[n2];
     if (!b1 || !b2) return;
+    var rng = seededRandom || Math.random;
 
     b1.interacting = b2.interacting = true;
     b1.element.classList.add('dancing');
@@ -8384,12 +8913,21 @@ function startDanceOff(n1, n2) {
     showSpeechBubble(b1, "Dance battle!", 'excited');
 
     var notes = ['🎵', '🎶', '💃', '🕺', '✨', '🌟'];
+    // Pre-generate notes for sync
+    var preNotes = [];
+    for (var i = 0; i < 8; i++) {
+        preNotes.push({
+            note: notes[Math.floor(rng() * notes.length)],
+            ox1: rng() * 20,
+            ox2: rng() * 20
+        });
+    }
     var count = 0;
 
     var interval = setInterval(function() {
-        var note = notes[Math.floor(Math.random() * notes.length)];
-        createMusicNote(b1.x + Math.random() * 20, b1.y - 10, note);
-        createMusicNote(b2.x + Math.random() * 20, b2.y - 10, note);
+        var n = preNotes[count];
+        createMusicNote(b1.x + n.ox1, b1.y - 10, n.note);
+        createMusicNote(b2.x + n.ox2, b2.y - 10, n.note);
         if (++count >= 8) clearInterval(interval);
     }, 300);
 
@@ -8412,9 +8950,10 @@ function createMusicNote(x, y, emoji) {
 }
 
 // TEA TIME
-function startTeatime(n1, n2) {
+function startTeatime(n1, n2, seededRandom) {
     var b1 = buddyCharacters[n1], b2 = buddyCharacters[n2];
     if (!b1 || !b2) return;
+    // No random in teatime but add param for consistency
 
     b1.interacting = b2.interacting = true;
     showExpression(b1, '🍵');
@@ -8448,9 +8987,13 @@ function createSparkle(x, y, emoji) {
 }
 
 // STARE CONTEST
-function startStareContest(n1, n2) {
+function startStareContest(n1, n2, seededRandom) {
     var b1 = buddyCharacters[n1], b2 = buddyCharacters[n2];
     if (!b1 || !b2) return;
+    var rng = seededRandom || Math.random;
+
+    // Pre-determine winner for sync
+    var b1Loses = rng() < 0.5;
 
     b1.interacting = b2.interacting = true;
     showExpression(b1, '👁️');
@@ -8466,8 +9009,8 @@ function startStareContest(n1, n2) {
     }, 2500);
 
     setTimeout(function() {
-        var loser = Math.random() < 0.5 ? b1 : b2;
-        var winner = loser === b1 ? b2 : b1;
+        var loser = b1Loses ? b1 : b2;
+        var winner = b1Loses ? b2 : b1;
         showExpression(loser, '😣');
         showExpression(winner, '🏆');
         showSpeechBubble(loser, "I BLINKED!", 'shocked');
