@@ -5932,11 +5932,13 @@ window.resetRename = resetRename;
         var uidMatch = entry.className.match(/pluid-(\d+)/);
         var cytubeUid = uidMatch ? parseInt(uidMatch[1]) : null;
 
-        // Try to get video data from CyTube's internal playlist
+        // Try to get video data from multiple sources
         var mediaId = null;
         var mediaType = 'yt';
         var duration = 0;
         var isTemp = false;
+
+        // Method 1: Try CHANNEL.playlist
         if (typeof CHANNEL !== 'undefined' && CHANNEL.playlist && cytubeUid !== null) {
             var playlistItem = CHANNEL.playlist.find(function(item) {
                 return item && item.uid === cytubeUid;
@@ -5951,6 +5953,44 @@ window.resetRename = resetRename;
             }
         }
 
+        // Method 2: Try Playlist object (CyTube alternative)
+        if (!mediaId && typeof Playlist !== 'undefined' && Playlist.current) {
+            try {
+                var pl = Playlist;
+                var current = pl.current;
+                while (current) {
+                    if (current.uid === cytubeUid && current.media) {
+                        mediaId = current.media.id;
+                        mediaType = current.media.type;
+                        duration = current.media.seconds || 0;
+                        isTemp = current.temp || false;
+                        break;
+                    }
+                    current = current.next;
+                }
+            } catch (e) { console.log('[DualPlaylist] Playlist traversal error:', e); }
+        }
+
+        // Method 3: Try to extract from qe_time element (duration hint)
+        if (!duration) {
+            var timeEl = entry.querySelector('.qe_time');
+            if (timeEl) {
+                var timeParts = timeEl.textContent.trim().split(':');
+                if (timeParts.length === 2) {
+                    duration = parseInt(timeParts[0]) * 60 + parseInt(timeParts[1]);
+                } else if (timeParts.length === 3) {
+                    duration = parseInt(timeParts[0]) * 3600 + parseInt(timeParts[1]) * 60 + parseInt(timeParts[2]);
+                }
+            }
+        }
+
+        // Check for temp class on entry
+        if (entry.classList.contains('queue_temp')) {
+            isTemp = true;
+        }
+
+        console.log('[DualPlaylist] moveEntryToPriority - uid:', cytubeUid, 'mediaId:', mediaId, 'type:', mediaType);
+
         var videoData = {
             uid: cytubeUid,
             title: titleEl ? titleEl.textContent.trim() : 'Unknown Video',
@@ -5960,6 +6000,11 @@ window.resetRename = resetRename;
             temp: isTemp,
             addedBy: typeof CLIENT !== 'undefined' ? CLIENT.name : 'Mod'
         };
+
+        // Warn if no mediaId but still add to queue
+        if (!mediaId) {
+            console.warn('[DualPlaylist] No mediaId found for:', videoData.title, '- video cannot be moved back to pool');
+        }
 
         var position = addToPriorityQueue(videoData);
 
@@ -6234,6 +6279,34 @@ window.resetRename = resetRename;
                         addAllMoveToPriorityButtons();
                     }, 100);
                 }
+            });
+
+            // Intercept new videos and add to priority queue
+            socket.on('queue', function(data) {
+                if (!data || !data.item) return;
+
+                var media = data.item.media;
+                if (!media) return;
+
+                console.log('[DualPlaylist] New video queued:', media.title, 'uid:', data.item.uid);
+
+                // Add to priority queue with all video data
+                addToPriorityQueue({
+                    uid: data.item.uid,
+                    title: media.title,
+                    mediaId: media.id,
+                    type: media.type,
+                    duration: media.seconds || 0,
+                    temp: data.item.temp || false,
+                    addedBy: data.item.queueby || 'Unknown'
+                });
+
+                // Remove from CyTube's main queue (we manage it in priority)
+                setTimeout(function() {
+                    if (typeof socket !== 'undefined' && data.item.uid) {
+                        socket.emit('delete', data.item.uid);
+                    }
+                }, 200);
             });
         }
 
