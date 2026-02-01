@@ -6836,6 +6836,9 @@ $(document).ready(function() {
         initScreenspamReceiver();
         createScreenspamOverlay();
 
+        // Initialize connected users buddies
+        initConnectedBuddies();
+
         // Apply saved settings
         applyEmoteSize();
         applyTimestampVisibility();
@@ -6843,3 +6846,552 @@ $(document).ready(function() {
         if (compactMode) document.body.classList.add('compact-mode');
     }, 2000);
 });
+
+/* ========== CONNECTED USERS BUDDIES ========== */
+/* AIM-style animated characters at the bottom that walk around and fight */
+
+var BUDDY_CONFIG = {
+    groundHeight: 60,        // Height of buddy area in px
+    walkSpeed: 0.5,          // Pixels per frame
+    fightDistance: 40,       // Distance to trigger fight
+    fightDuration: 2000,     // Fight animation duration
+    updateInterval: 50,      // Movement update interval
+    characterSize: 40        // Size of characters
+};
+
+var buddyCharacters = {};    // username -> character data
+var buddyAnimationId = null; // Animation loop ID
+var buddiesInitialized = false;
+
+// Character sprite types - cute little guys
+var BUDDY_SPRITES = [
+    { body: '🐤', color: '#FFD700' },   // Chick
+    { body: '🐣', color: '#FFFACD' },   // Hatching chick
+    { body: '🐥', color: '#FFE4B5' },   // Baby chick front
+    { body: '🐦', color: '#87CEEB' },   // Bird
+    { body: '🦆', color: '#228B22' },   // Duck
+    { body: '🦉', color: '#8B4513' },   // Owl
+    { body: '🐧', color: '#2F4F4F' },   // Penguin
+    { body: '🦅', color: '#654321' },   // Eagle
+    { body: '🦜', color: '#FF6347' },   // Parrot
+    { body: '🐔', color: '#FFF8DC' },   // Chicken
+    { body: '🦢', color: '#FFFFFF' },   // Swan
+    { body: '🕊️', color: '#F5F5F5' }   // Dove
+];
+
+// Fight moves with visual effects
+var FIGHT_MOVES = [
+    { name: 'BONK!', emoji: '💥', color: '#FF4444' },
+    { name: 'POW!', emoji: '⭐', color: '#FFD700' },
+    { name: 'WHAM!', emoji: '💫', color: '#FF69B4' },
+    { name: 'PECKS!', emoji: '🔥', color: '#FF6600' },
+    { name: 'SLAP!', emoji: '✋', color: '#00BFFF' },
+    { name: 'KICK!', emoji: '💢', color: '#FF0000' },
+    { name: 'SCREECH!', emoji: '📢', color: '#9932CC' },
+    { name: 'FLAP!', emoji: '🌪️', color: '#00CED1' },
+    { name: 'ZOOM!', emoji: '💨', color: '#32CD32' },
+    { name: 'CHOMP!', emoji: '😤', color: '#FF1493' }
+];
+
+// Initialize the buddy system
+function initConnectedBuddies() {
+    if (buddiesInitialized) return;
+    buddiesInitialized = true;
+
+    createBuddyContainer();
+    injectBuddyStyles();
+
+    // Initial population from user list
+    setTimeout(function() {
+        syncBuddiesWithUserlist();
+        startBuddyAnimation();
+    }, 1000);
+
+    // Watch for user list changes
+    observeUserlistChanges();
+
+    // Listen for socket events
+    if (typeof socket !== 'undefined') {
+        socket.on('addUser', function(data) {
+            if (data.name) addBuddy(data.name);
+        });
+        socket.on('userLeave', function(data) {
+            if (data.name) removeBuddy(data.name);
+        });
+        socket.on('userlist', function(data) {
+            // Full userlist received, sync all
+            setTimeout(syncBuddiesWithUserlist, 500);
+        });
+    }
+}
+
+function createBuddyContainer() {
+    if (document.getElementById('buddy-ground')) return;
+
+    var container = document.createElement('div');
+    container.id = 'buddy-ground';
+    document.body.appendChild(container);
+}
+
+function injectBuddyStyles() {
+    if (document.getElementById('buddy-styles')) return;
+
+    var styles = document.createElement('style');
+    styles.id = 'buddy-styles';
+    styles.textContent = `
+        #buddy-ground {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: ${BUDDY_CONFIG.groundHeight}px;
+            background: linear-gradient(to top,
+                rgba(34, 139, 34, 0.6) 0%,
+                rgba(34, 139, 34, 0.3) 50%,
+                transparent 100%);
+            pointer-events: none;
+            z-index: 9990;
+            overflow: hidden;
+            border-top: 2px solid rgba(34, 139, 34, 0.5);
+        }
+
+        .buddy-character {
+            position: absolute;
+            bottom: 5px;
+            font-size: ${BUDDY_CONFIG.characterSize}px;
+            cursor: pointer;
+            pointer-events: auto;
+            transition: transform 0.1s ease;
+            filter: drop-shadow(2px 2px 2px rgba(0,0,0,0.3));
+            z-index: 9991;
+        }
+
+        .buddy-character:hover {
+            transform: scale(1.2) !important;
+            z-index: 9999;
+        }
+
+        .buddy-character.walking-left {
+            animation: buddy-walk 0.3s steps(2) infinite;
+        }
+
+        .buddy-character.walking-right {
+            animation: buddy-walk 0.3s steps(2) infinite;
+            transform: scaleX(-1);
+        }
+
+        .buddy-character.idle {
+            animation: buddy-idle 2s ease-in-out infinite;
+        }
+
+        .buddy-character.fighting {
+            animation: buddy-fight 0.15s ease-in-out infinite;
+            z-index: 9998;
+        }
+
+        .buddy-character.jumping {
+            animation: buddy-jump 0.5s ease-out;
+        }
+
+        .buddy-nametag {
+            position: absolute;
+            bottom: 100%;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.8);
+            color: #fff;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 10px;
+            font-family: 'Courier New', monospace;
+            white-space: nowrap;
+            opacity: 0;
+            transition: opacity 0.2s;
+            pointer-events: none;
+        }
+
+        .buddy-character:hover .buddy-nametag {
+            opacity: 1;
+        }
+
+        .fight-effect {
+            position: absolute;
+            font-size: 24px;
+            font-weight: bold;
+            font-family: 'Impact', 'Arial Black', sans-serif;
+            pointer-events: none;
+            z-index: 10000;
+            animation: fight-popup 0.8s ease-out forwards;
+            text-shadow:
+                2px 2px 0 #000,
+                -2px -2px 0 #000,
+                2px -2px 0 #000,
+                -2px 2px 0 #000;
+        }
+
+        .fight-dust {
+            position: absolute;
+            font-size: 30px;
+            pointer-events: none;
+            z-index: 9997;
+            animation: dust-cloud 1s ease-out forwards;
+        }
+
+        @keyframes buddy-walk {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-3px); }
+        }
+
+        @keyframes buddy-idle {
+            0%, 100% { transform: translateY(0) rotate(0deg); }
+            25% { transform: translateY(-2px) rotate(-3deg); }
+            75% { transform: translateY(-2px) rotate(3deg); }
+        }
+
+        @keyframes buddy-fight {
+            0%, 100% { transform: translateX(0) rotate(0deg); }
+            25% { transform: translateX(-5px) rotate(-15deg); }
+            75% { transform: translateX(5px) rotate(15deg); }
+        }
+
+        @keyframes buddy-jump {
+            0% { transform: translateY(0); }
+            50% { transform: translateY(-20px); }
+            100% { transform: translateY(0); }
+        }
+
+        @keyframes fight-popup {
+            0% {
+                transform: translate(-50%, 0) scale(0.5);
+                opacity: 1;
+            }
+            50% {
+                transform: translate(-50%, -30px) scale(1.2);
+                opacity: 1;
+            }
+            100% {
+                transform: translate(-50%, -60px) scale(0.8);
+                opacity: 0;
+            }
+        }
+
+        @keyframes dust-cloud {
+            0% {
+                transform: scale(0.5);
+                opacity: 0.8;
+            }
+            100% {
+                transform: scale(2);
+                opacity: 0;
+            }
+        }
+
+        /* Hide on mobile to save space */
+        @media (max-width: 768px) {
+            #buddy-ground {
+                height: 40px;
+            }
+            .buddy-character {
+                font-size: 25px;
+            }
+            .buddy-nametag {
+                font-size: 8px;
+            }
+        }
+    `;
+    document.head.appendChild(styles);
+}
+
+function syncBuddiesWithUserlist() {
+    var currentUsers = [];
+
+    // Get all users from the userlist
+    $('#userlist .userlist_item span').each(function() {
+        var name = $(this).text().trim();
+        if (name) currentUsers.push(name);
+    });
+
+    // Remove buddies that are no longer in the list
+    Object.keys(buddyCharacters).forEach(function(username) {
+        if (currentUsers.indexOf(username) === -1) {
+            removeBuddy(username);
+        }
+    });
+
+    // Add new buddies
+    currentUsers.forEach(function(username) {
+        if (!buddyCharacters[username]) {
+            addBuddy(username);
+        }
+    });
+}
+
+function observeUserlistChanges() {
+    var userlist = document.getElementById('userlist');
+    if (!userlist) return;
+
+    var observer = new MutationObserver(function(mutations) {
+        // Debounce the sync
+        clearTimeout(window.buddySyncTimeout);
+        window.buddySyncTimeout = setTimeout(syncBuddiesWithUserlist, 300);
+    });
+
+    observer.observe(userlist, {
+        childList: true,
+        subtree: true,
+        characterData: true
+    });
+}
+
+function addBuddy(username) {
+    if (buddyCharacters[username]) return;
+
+    var container = document.getElementById('buddy-ground');
+    if (!container) return;
+
+    // Pick a random sprite
+    var sprite = BUDDY_SPRITES[Math.floor(Math.random() * BUDDY_SPRITES.length)];
+
+    // Create character element
+    var el = document.createElement('div');
+    el.className = 'buddy-character idle';
+    el.id = 'buddy-' + username.replace(/[^a-zA-Z0-9]/g, '_');
+    el.innerHTML = sprite.body + '<span class="buddy-nametag">' + escapeHtml(username) + '</span>';
+
+    // Random starting position
+    var startX = Math.random() * (window.innerWidth - BUDDY_CONFIG.characterSize);
+    el.style.left = startX + 'px';
+
+    // Click to show username and play animation
+    el.addEventListener('click', function(e) {
+        e.stopPropagation();
+        el.classList.remove('idle', 'walking-left', 'walking-right');
+        el.classList.add('jumping');
+        setTimeout(function() {
+            el.classList.remove('jumping');
+            el.classList.add('idle');
+        }, 500);
+    });
+
+    container.appendChild(el);
+
+    // Store character data
+    buddyCharacters[username] = {
+        element: el,
+        x: startX,
+        sprite: sprite,
+        direction: Math.random() > 0.5 ? 1 : -1,
+        state: 'idle',
+        targetX: null,
+        fighting: false,
+        fightCooldown: 0,
+        idleTime: 0,
+        walkTime: 0
+    };
+}
+
+function removeBuddy(username) {
+    var buddy = buddyCharacters[username];
+    if (!buddy) return;
+
+    // Fade out animation
+    buddy.element.style.transition = 'opacity 0.5s, transform 0.5s';
+    buddy.element.style.opacity = '0';
+    buddy.element.style.transform = 'translateY(20px)';
+
+    setTimeout(function() {
+        if (buddy.element.parentNode) {
+            buddy.element.parentNode.removeChild(buddy.element);
+        }
+        delete buddyCharacters[username];
+    }, 500);
+}
+
+function startBuddyAnimation() {
+    if (buddyAnimationId) return;
+
+    function updateBuddies() {
+        var buddyList = Object.keys(buddyCharacters);
+        var containerWidth = window.innerWidth - BUDDY_CONFIG.characterSize;
+
+        buddyList.forEach(function(username) {
+            var buddy = buddyCharacters[username];
+            if (!buddy || buddy.fighting) return;
+
+            // Decrease cooldowns
+            if (buddy.fightCooldown > 0) buddy.fightCooldown -= BUDDY_CONFIG.updateInterval;
+
+            // State machine for behavior
+            if (buddy.state === 'idle') {
+                buddy.idleTime += BUDDY_CONFIG.updateInterval;
+
+                // Random chance to start walking
+                if (buddy.idleTime > 2000 && Math.random() < 0.02) {
+                    buddy.state = 'walking';
+                    buddy.direction = Math.random() > 0.5 ? 1 : -1;
+                    buddy.walkTime = 0;
+                    buddy.idleTime = 0;
+                    buddy.element.classList.remove('idle');
+                    buddy.element.classList.add(buddy.direction > 0 ? 'walking-right' : 'walking-left');
+                }
+            } else if (buddy.state === 'walking') {
+                buddy.walkTime += BUDDY_CONFIG.updateInterval;
+
+                // Move character
+                buddy.x += BUDDY_CONFIG.walkSpeed * buddy.direction;
+
+                // Bounce off walls
+                if (buddy.x <= 0) {
+                    buddy.x = 0;
+                    buddy.direction = 1;
+                    buddy.element.classList.remove('walking-left');
+                    buddy.element.classList.add('walking-right');
+                } else if (buddy.x >= containerWidth) {
+                    buddy.x = containerWidth;
+                    buddy.direction = -1;
+                    buddy.element.classList.remove('walking-right');
+                    buddy.element.classList.add('walking-left');
+                }
+
+                buddy.element.style.left = buddy.x + 'px';
+
+                // Random chance to stop walking
+                if (buddy.walkTime > 3000 && Math.random() < 0.01) {
+                    buddy.state = 'idle';
+                    buddy.element.classList.remove('walking-left', 'walking-right');
+                    buddy.element.classList.add('idle');
+                }
+            }
+        });
+
+        // Check for fights between characters
+        checkForFights(buddyList);
+
+        buddyAnimationId = setTimeout(updateBuddies, BUDDY_CONFIG.updateInterval);
+    }
+
+    updateBuddies();
+}
+
+function checkForFights(buddyList) {
+    for (var i = 0; i < buddyList.length; i++) {
+        for (var j = i + 1; j < buddyList.length; j++) {
+            var buddy1 = buddyCharacters[buddyList[i]];
+            var buddy2 = buddyCharacters[buddyList[j]];
+
+            if (!buddy1 || !buddy2) continue;
+            if (buddy1.fighting || buddy2.fighting) continue;
+            if (buddy1.fightCooldown > 0 || buddy2.fightCooldown > 0) continue;
+
+            // Check distance
+            var distance = Math.abs(buddy1.x - buddy2.x);
+            if (distance < BUDDY_CONFIG.fightDistance) {
+                // FIGHT!
+                startFight(buddyList[i], buddyList[j]);
+            }
+        }
+    }
+}
+
+function startFight(username1, username2) {
+    var buddy1 = buddyCharacters[username1];
+    var buddy2 = buddyCharacters[username2];
+    if (!buddy1 || !buddy2) return;
+
+    buddy1.fighting = true;
+    buddy2.fighting = true;
+    buddy1.state = 'fighting';
+    buddy2.state = 'fighting';
+
+    // Update visuals
+    buddy1.element.classList.remove('idle', 'walking-left', 'walking-right');
+    buddy2.element.classList.remove('idle', 'walking-left', 'walking-right');
+    buddy1.element.classList.add('fighting');
+    buddy2.element.classList.add('fighting');
+
+    // Create dust cloud
+    var fightX = (buddy1.x + buddy2.x) / 2;
+    createDustCloud(fightX);
+
+    // Show fight effects
+    var fightCount = 0;
+    var fightInterval = setInterval(function() {
+        var move = FIGHT_MOVES[Math.floor(Math.random() * FIGHT_MOVES.length)];
+        createFightEffect(fightX, move);
+        fightCount++;
+        if (fightCount >= 5) clearInterval(fightInterval);
+    }, 300);
+
+    // End fight
+    setTimeout(function() {
+        endFight(username1, username2);
+    }, BUDDY_CONFIG.fightDuration);
+}
+
+function endFight(username1, username2) {
+    var buddy1 = buddyCharacters[username1];
+    var buddy2 = buddyCharacters[username2];
+
+    // Separate them
+    if (buddy1) {
+        buddy1.fighting = false;
+        buddy1.fightCooldown = 5000; // 5 second cooldown
+        buddy1.state = 'idle';
+        buddy1.x = Math.max(0, buddy1.x - 50);
+        buddy1.element.style.left = buddy1.x + 'px';
+        buddy1.element.classList.remove('fighting');
+        buddy1.element.classList.add('idle');
+    }
+
+    if (buddy2) {
+        buddy2.fighting = false;
+        buddy2.fightCooldown = 5000;
+        buddy2.state = 'idle';
+        buddy2.x = Math.min(window.innerWidth - BUDDY_CONFIG.characterSize, buddy2.x + 50);
+        buddy2.element.style.left = buddy2.x + 'px';
+        buddy2.element.classList.remove('fighting');
+        buddy2.element.classList.add('idle');
+    }
+}
+
+function createFightEffect(x, move) {
+    var container = document.getElementById('buddy-ground');
+    if (!container) return;
+
+    var effect = document.createElement('div');
+    effect.className = 'fight-effect';
+    effect.innerHTML = move.emoji + ' ' + move.name;
+    effect.style.left = x + 'px';
+    effect.style.bottom = '30px';
+    effect.style.color = move.color;
+
+    container.appendChild(effect);
+
+    setTimeout(function() {
+        if (effect.parentNode) effect.remove();
+    }, 800);
+}
+
+function createDustCloud(x) {
+    var container = document.getElementById('buddy-ground');
+    if (!container) return;
+
+    var dust = document.createElement('div');
+    dust.className = 'fight-dust';
+    dust.innerHTML = '💨💨💨';
+    dust.style.left = x + 'px';
+    dust.style.bottom = '10px';
+
+    container.appendChild(dust);
+
+    setTimeout(function() {
+        if (dust.parentNode) dust.remove();
+    }, 1000);
+}
+
+// Utility function for HTML escaping
+function escapeHtml(text) {
+    var div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
