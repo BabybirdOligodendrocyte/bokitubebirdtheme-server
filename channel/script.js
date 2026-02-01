@@ -6368,6 +6368,9 @@ function initMentionNotifications() {
         }
         if (!myUsername || !data.msg) return;
 
+        // Skip buddy sync messages - they contain usernames but aren't real mentions
+        if (isBuddySyncMessage(data.msg)) return;
+
         var msgLower = data.msg.toLowerCase();
         if (msgLower.indexOf('@' + myUsername) !== -1 || msgLower.indexOf(myUsername) !== -1) {
             // Play sound
@@ -7489,9 +7492,15 @@ function broadcastMyBuddySettings() {
     }
 }
 
-// Broadcast an interaction for sync
+// Broadcast an interaction for sync (includes positions for visual consistency)
 function broadcastInteraction(user1, user2, interactionType, seed) {
-    var hiddenMsg = '\u200B\u200CBACT:' + user1 + ':' + user2 + ':' + interactionType + ':' + seed + ':BACT\u200B\u200C';
+    // Include buddy positions so other clients can sync visuals
+    var b1 = buddyCharacters[user1];
+    var b2 = buddyCharacters[user2];
+    var pos1 = b1 ? Math.round(b1.x) + ',' + Math.round(b1.y) : '0,0';
+    var pos2 = b2 ? Math.round(b2.x) + ',' + Math.round(b2.y) : '0,0';
+
+    var hiddenMsg = '\u200B\u200CBACT:' + user1 + ':' + user2 + ':' + interactionType + ':' + seed + ':' + pos1 + ':' + pos2 + ':BACT\u200B\u200C';
 
     if (typeof socket !== 'undefined' && socket.emit) {
         socket.emit('chatMsg', { msg: hiddenMsg, meta: {} });
@@ -7525,15 +7534,32 @@ function parseBuddySyncMessage(msgText) {
         return true; // Message was a sync message
     }
 
-    // Check for interaction broadcast
-    var actionMatch = msgText.match(/\u200B\u200CBACT:([^:]+):([^:]+):([^:]+):([^:]+):BACT\u200B\u200C/);
+    // Check for interaction broadcast (with positions)
+    var actionMatch = msgText.match(/\u200B\u200CBACT:([^:]+):([^:]+):([^:]+):([^:]+):([^:]+):([^:]+):BACT\u200B\u200C/);
     if (actionMatch) {
         var user1 = actionMatch[1];
         var user2 = actionMatch[2];
         var actionType = actionMatch[3];
         var seed = parseInt(actionMatch[4]);
+        var pos1 = actionMatch[5].split(',').map(Number);
+        var pos2 = actionMatch[6].split(',').map(Number);
 
         // Only process if we didn't initiate this (to avoid double-triggering)
+        var myName = getMyUsername();
+        if (user1 !== myName) {
+            handleSyncedInteraction(user1, user2, actionType, seed, pos1, pos2);
+        }
+        return true;
+    }
+
+    // Fallback for old format without positions
+    var oldActionMatch = msgText.match(/\u200B\u200CBACT:([^:]+):([^:]+):([^:]+):([^:]+):BACT\u200B\u200C/);
+    if (oldActionMatch) {
+        var user1 = oldActionMatch[1];
+        var user2 = oldActionMatch[2];
+        var actionType = oldActionMatch[3];
+        var seed = parseInt(oldActionMatch[4]);
+
         var myName = getMyUsername();
         if (user1 !== myName) {
             handleSyncedInteraction(user1, user2, actionType, seed);
@@ -7549,7 +7575,12 @@ function applyCustomSettingsToBuddy(username) {
     var buddy = buddyCharacters[username];
     if (!buddy) return;
 
+    // Check both customBuddySettings (for other users) and myBuddySettings (for own buddy)
+    var myName = getMyUsername();
     var settings = customBuddySettings[username];
+    if (username === myName && myBuddySettings) {
+        settings = myBuddySettings;
+    }
     if (!settings) return;
 
     // Apply sprite
@@ -7587,11 +7618,25 @@ function applyCustomSettingsToBuddy(username) {
 }
 
 // Handle a synced interaction from another client
-function handleSyncedInteraction(user1, user2, actionType, seed) {
+function handleSyncedInteraction(user1, user2, actionType, seed, pos1, pos2) {
     var b1 = buddyCharacters[user1];
     var b2 = buddyCharacters[user2];
     if (!b1 || !b2) return;
     if (b1.interacting || b2.interacting) return;
+
+    // Sync buddy positions so visuals match across clients
+    if (pos1 && pos1.length === 2 && !isNaN(pos1[0])) {
+        b1.x = pos1[0];
+        b1.y = pos1[1];
+        b1.element.style.left = b1.x + 'px';
+        b1.element.style.top = b1.y + 'px';
+    }
+    if (pos2 && pos2.length === 2 && !isNaN(pos2[0])) {
+        b2.x = pos2[0];
+        b2.y = pos2[1];
+        b2.element.style.left = b2.x + 'px';
+        b2.element.style.top = b2.y + 'px';
+    }
 
     // Route through startInteraction with sync flag
     startInteraction(user1, user2, b1, b2, true, actionType, seed);
@@ -7685,7 +7730,7 @@ function initBuddySyncListener() {
         });
     }
 
-    // Watch messagebuffer for sync messages and hide them
+    // Watch messagebuffer for sync messages and remove them completely
     var msgBuffer = document.getElementById('messagebuffer');
     if (msgBuffer) {
         var observer = new MutationObserver(function(mutations) {
@@ -7695,11 +7740,12 @@ function initBuddySyncListener() {
                         var text = node.textContent || '';
                         // Check if it's a sync message
                         if (isBuddySyncMessage(text)) {
-                            // Completely hide the sync message
-                            node.style.display = 'none';
-                            node.classList.add('buddy-sync-msg');
-                            // Process the sync data
+                            // Process the sync data first
                             parseBuddySyncMessage(text);
+                            // Remove the message element entirely (no empty space)
+                            if (node.parentNode) {
+                                node.parentNode.removeChild(node);
+                            }
                         }
                     }
                 });
@@ -7708,19 +7754,19 @@ function initBuddySyncListener() {
         observer.observe(msgBuffer, { childList: true });
     }
 
-    // Also hide sync messages that appear anywhere else (like NND overlay)
+    // Also remove sync messages that appear anywhere else (like NND overlay)
     setInterval(function() {
-        // Hide any element containing sync markers
+        // Find and remove any element containing sync markers
         document.querySelectorAll('*').forEach(function(el) {
-            if (el.childNodes.length === 1 && el.childNodes[0].nodeType === 3) {
-                var text = el.textContent || '';
-                if (isBuddySyncMessage(text) && !el.classList.contains('buddy-sync-msg')) {
-                    el.style.display = 'none';
-                    el.classList.add('buddy-sync-msg');
+            var text = el.textContent || '';
+            if (isBuddySyncMessage(text)) {
+                // For NND overlay, remove the element
+                if (el.parentNode && !el.id && el.className !== 'buddy-character') {
+                    el.parentNode.removeChild(el);
                 }
             }
         });
-    }, 100);
+    }, 50);
 
     // Load my settings and broadcast on init
     loadMyBuddySettings();
@@ -8694,9 +8740,28 @@ function getRandomChatQuote() {
     return msg + modifiers[Math.floor(Math.random() * modifiers.length)];
 }
 
+// Check if current user is the "interaction master" (initiates all interactions)
+// Only ONE client should initiate interactions to prevent desync
+// We use alphabetically first online user as master
+function isInteractionMaster() {
+    var myName = getMyUsername();
+    if (!myName) return false;
+
+    var onlineUsers = [];
+    $('#userlist .userlist_item span').each(function() {
+        var name = $(this).text().trim();
+        if (name) onlineUsers.push(name.toLowerCase());
+    });
+
+    if (onlineUsers.length === 0) return true; // Only user, so master
+
+    onlineUsers.sort();
+    return onlineUsers[0] === myName.toLowerCase();
+}
+
 // Check for all interactions between buddies
 function checkInteractions(names) {
-    // Random speech from chat
+    // Random speech from chat (local only, doesn't need sync)
     names.forEach(function(name) {
         var b = buddyCharacters[name];
         if (!b || b.interacting || b.speechCooldown > 0) return;
@@ -8711,6 +8776,10 @@ function checkInteractions(names) {
             }
         }
     });
+
+    // Only the "master" client initiates proximity interactions
+    // This prevents multiple clients from broadcasting conflicting interactions
+    if (!isInteractionMaster()) return;
 
     // Check proximity interactions
     for (var i = 0; i < names.length; i++) {
