@@ -7754,19 +7754,32 @@ function initBuddySyncListener() {
         observer.observe(msgBuffer, { childList: true });
     }
 
-    // Also remove sync messages that appear anywhere else (like NND overlay)
+    // Also remove sync messages from NND overlay (scrolling chat on video)
+    // Be very careful to only target actual NND message elements, not containers
     setInterval(function() {
-        // Find and remove any element containing sync markers
-        document.querySelectorAll('*').forEach(function(el) {
+        // NND overlay messages are typically small span/div elements with just text
+        // Only check elements that look like NND messages (no children except text)
+        document.querySelectorAll('span, div').forEach(function(el) {
+            // Skip if element has child elements (not a leaf text node)
+            if (el.children.length > 0) return;
+            // Skip if element has an id (likely important)
+            if (el.id) return;
+            // Skip known important classes
+            var cls = el.className || '';
+            if (cls.indexOf('buddy') !== -1 || cls.indexOf('chat') !== -1 ||
+                cls.indexOf('user') !== -1 || cls.indexOf('msg') !== -1 ||
+                cls.indexOf('popup') !== -1 || cls.indexOf('btn') !== -1) return;
+
+            // Check if it's a sync message
             var text = el.textContent || '';
-            if (isBuddySyncMessage(text)) {
-                // For NND overlay, remove the element
-                if (el.parentNode && !el.id && el.className !== 'buddy-character') {
+            if (text.length < 200 && isBuddySyncMessage(text)) {
+                // This looks like an NND overlay sync message - remove it
+                if (el.parentNode) {
                     el.parentNode.removeChild(el);
                 }
             }
         });
-    }, 50);
+    }, 200);
 
     // Load my settings and broadcast on init
     loadMyBuddySettings();
