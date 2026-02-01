@@ -5749,19 +5749,16 @@ function sendImpersonateMessage() {
     var msgTags = cssToTags(currentImpersonateMsgStyle, currentImpersonateMsgClasses);
 
     // Build the formatted message with tags
-    // Format: {userTags}USERNAME:{/userTags} {msgTags}message{/msgTags}
+    // Format: [uname]{userTags}USERNAME{/userTags}[/uname] {msgTags}message{/msgTags}
+    // The [uname] wrapper creates a styled-username span that hides the real sender's username
     var formattedMsg = '';
 
     // Debug: show what tags were generated
     console.log('Username tags:', usernameTags);
     console.log('Message tags:', msgTags);
 
-    // Add styled username as text (combining username tags around "name: ")
-    if (usernameTags.open) {
-        formattedMsg = usernameTags.open + currentImpersonateTarget + ':' + usernameTags.close + ' ';
-    } else {
-        formattedMsg = currentImpersonateTarget + ': ';
-    }
+    // Add username with [uname] wrapper (this hides the real sender's username via CSS)
+    formattedMsg = '[uname]' + usernameTags.open + currentImpersonateTarget + usernameTags.close + '[/uname] ';
 
     // Add message with styling tags
     if (msgTags.open) {
