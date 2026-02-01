@@ -9020,9 +9020,10 @@ function startStareContest(n1, n2, seededRandom) {
 }
 
 // SERENADE
-function startSerenade(n1, n2) {
+function startSerenade(n1, n2, seededRandom) {
     var b1 = buddyCharacters[n1], b2 = buddyCharacters[n2];
     if (!b1 || !b2) return;
+    var rng = seededRandom || Math.random;
 
     b1.interacting = b2.interacting = true;
     b1.element.classList.add('singing');
@@ -9036,11 +9037,17 @@ function startSerenade(n1, n2) {
         "💕 When skies are gray~ 💕"
     ];
 
+    // Pre-generate note positions for sync
+    var noteOffsets = [];
+    for (var j = 0; j < lyrics.length; j++) {
+        noteOffsets.push(rng() * 30);
+    }
+
     var i = 0;
     var interval = setInterval(function() {
         if (i < lyrics.length) {
             showSpeechBubble(b1, lyrics[i], 'romantic');
-            createMusicNote(b1.x + Math.random() * 30, b1.y - 20, '🎵');
+            createMusicNote(b1.x + noteOffsets[i], b1.y - 20, '🎵');
             i++;
         }
     }, 1200);
@@ -9055,9 +9062,10 @@ function startSerenade(n1, n2) {
 }
 
 // GHOST POSSESSION
-function startGhostPossession(n1, n2) {
+function startGhostPossession(n1, n2, seededRandom) {
     var b1 = buddyCharacters[n1], b2 = buddyCharacters[n2];
     if (!b1 || !b2) return;
+    // No random in ghost possession but add param for consistency
 
     b1.interacting = b2.interacting = true;
     showExpression(b1, '👻');
@@ -9094,9 +9102,10 @@ function createGhostEffect(x, y) {
 }
 
 // TRANSFORMATION SEQUENCE
-function startTransformSequence(n1, n2) {
+function startTransformSequence(n1, n2, seededRandom) {
     var b1 = buddyCharacters[n1], b2 = buddyCharacters[n2];
     if (!b1 || !b2) return;
+    var rng = seededRandom || Math.random;
 
     b1.interacting = b2.interacting = true;
     showSpeechBubble(b1, "TRANSFORMATION SEQUENCE!", 'powerful');
@@ -9107,10 +9116,19 @@ function startTransformSequence(n1, n2) {
     b2.element.classList.add('buddy-transformation');
 
     var sparkles = ['✨', '💫', '⭐', '🌟', '💖'];
+    // Pre-generate sparkle positions for sync
+    var sparklePos = [];
+    for (var i = 0; i < 10; i++) {
+        sparklePos.push({
+            ox1: (rng() - 0.5) * 40, oy1: (rng() - 0.5) * 40,
+            ox2: (rng() - 0.5) * 40, oy2: (rng() - 0.5) * 40
+        });
+    }
     var count = 0;
     var interval = setInterval(function() {
-        createSparkle(b1.x + (Math.random() - 0.5) * 40, b1.y + (Math.random() - 0.5) * 40, sparkles[count % sparkles.length]);
-        createSparkle(b2.x + (Math.random() - 0.5) * 40, b2.y + (Math.random() - 0.5) * 40, sparkles[count % sparkles.length]);
+        var sp = sparklePos[count];
+        createSparkle(b1.x + sp.ox1, b1.y + sp.oy1, sparkles[count % sparkles.length]);
+        createSparkle(b2.x + sp.ox2, b2.y + sp.oy2, sparkles[count % sparkles.length]);
         if (++count >= 10) clearInterval(interval);
     }, 150);
 
@@ -9125,9 +9143,10 @@ function startTransformSequence(n1, n2) {
 }
 
 // PILLOW FIGHT
-function startPillowFight(n1, n2) {
+function startPillowFight(n1, n2, seededRandom) {
     var b1 = buddyCharacters[n1], b2 = buddyCharacters[n2];
     if (!b1 || !b2) return;
+    var rng = seededRandom || Math.random;
 
     b1.interacting = b2.interacting = true;
     setAnim(b1, 'fighting');
@@ -9135,10 +9154,18 @@ function startPillowFight(n1, n2) {
     showSpeechBubble(b1, "PILLOW FIGHT!", 'excited');
 
     var pillows = ['🛏️', '🪶', '💨', '✨'];
+    // Pre-generate pillow effects for sync
+    var pillowEffects = [];
+    for (var i = 0; i < 6; i++) {
+        pillowEffects.push({
+            p: pillows[Math.floor(rng() * pillows.length)],
+            ox: (rng() - 0.5) * 30
+        });
+    }
     var count = 0;
     var interval = setInterval(function() {
-        var p = pillows[Math.floor(Math.random() * pillows.length)];
-        createFightEffect((b1.x + b2.x) / 2 + (Math.random() - 0.5) * 30, (b1.y + b2.y) / 2, { emoji: p, name: 'FLOOF!', color: '#FFF' });
+        var pe = pillowEffects[count];
+        createFightEffect((b1.x + b2.x) / 2 + pe.ox, (b1.y + b2.y) / 2, { emoji: pe.p, name: 'FLOOF!', color: '#FFF' });
         if (++count >= 6) clearInterval(interval);
     }, 300);
 
@@ -9151,9 +9178,10 @@ function startPillowFight(n1, n2) {
 }
 
 // FORTUNE TELLING
-function startFortuneTelling(n1, n2) {
+function startFortuneTelling(n1, n2, seededRandom) {
     var b1 = buddyCharacters[n1], b2 = buddyCharacters[n2];
     if (!b1 || !b2) return;
+    var rng = seededRandom || Math.random;
 
     b1.interacting = b2.interacting = true;
     showExpression(b1, '🔮');
@@ -9172,9 +9200,11 @@ function startFortuneTelling(n1, n2) {
         "{person} holds the key to your {noun}!"
     ];
 
+    // Pre-generate fortune for sync
+    var selectedFortune = fillMadlib(fortunes[Math.floor(rng() * fortunes.length)], rng);
+
     setTimeout(function() {
-        var fortune = fillMadlib(fortunes[Math.floor(Math.random() * fortunes.length)]);
-        showSpeechBubble(b1, fortune, 'mystical');
+        showSpeechBubble(b1, selectedFortune, 'mystical');
         showExpression(b2, '😮');
     }, 2000);
 
@@ -9185,12 +9215,14 @@ function startFortuneTelling(n1, n2) {
 }
 
 // DRAMATIC DEATH
-function startDramaDeath(n1, n2) {
+function startDramaDeath(n1, n2, seededRandom) {
     var b1 = buddyCharacters[n1], b2 = buddyCharacters[n2];
     if (!b1 || !b2) return;
+    var rng = seededRandom || Math.random;
 
     b1.interacting = b2.interacting = true;
-    showSpeechBubble(b1, "Tell my family... I love {food}...", 'dramatic');
+    var phrase = fillMadlib("Tell my family... I love {food}...", rng);
+    showSpeechBubble(b1, phrase, 'dramatic');
     showExpression(b2, '😱');
 
     setTimeout(function() {
@@ -9213,9 +9245,10 @@ function startDramaDeath(n1, n2) {
 }
 
 // TELEPATHY
-function startTelepathy(n1, n2) {
+function startTelepathy(n1, n2, seededRandom) {
     var b1 = buddyCharacters[n1], b2 = buddyCharacters[n2];
     if (!b1 || !b2) return;
+    var rng = seededRandom || Math.random;
 
     b1.interacting = b2.interacting = true;
     b1.element.classList.add('telepathy');
@@ -9224,11 +9257,13 @@ function startTelepathy(n1, n2) {
     showExpression(b2, '🧠');
     showSpeechBubble(b1, "*sending thoughts*", 'psychic');
 
+    // Pre-generate thought for sync
+    var thought = fillMadlib("I'm thinking about {noun}!", rng);
+
     // Create beam between them
     createBeam(b1.x + 15, b1.y + 10, b2.x + 15, b2.y + 10);
 
     setTimeout(function() {
-        var thought = fillMadlib("I'm thinking about {noun}!");
         showSpeechBubble(b2, thought, 'receiving');
     }, 1500);
 
@@ -9259,9 +9294,10 @@ function createBeam(x1, y1, x2, y2) {
 }
 
 // FUSION
-function startFusion(n1, n2) {
+function startFusion(n1, n2, seededRandom) {
     var b1 = buddyCharacters[n1], b2 = buddyCharacters[n2];
     if (!b1 || !b2) return;
+    var rng = seededRandom || Math.random;
 
     b1.interacting = b2.interacting = true;
     showSpeechBubble(b1, "FUUUU...", 'intense');
@@ -9269,14 +9305,22 @@ function startFusion(n1, n2) {
     showExpression(b1, '🤝');
     showExpression(b2, '🤝');
 
+    // Pre-generate sparkle positions for sync
+    var sparklePos = [];
+    for (var j = 0; j < 8; j++) {
+        sparklePos.push({ ox: (rng() - 0.5) * 50, oy: (rng() - 0.5) * 50 });
+    }
+
     setTimeout(function() {
         showSpeechBubble(b1, "HA!", 'powerful');
         b1.element.classList.add('fused');
         b2.element.style.opacity = '0.3';
         for (var i = 0; i < 8; i++) {
-            setTimeout(function() {
-                createSparkle(b1.x + (Math.random() - 0.5) * 50, b1.y + (Math.random() - 0.5) * 50, '✨');
-            }, i * 100);
+            (function(idx) {
+                setTimeout(function() {
+                    createSparkle(b1.x + sparklePos[idx].ox, b1.y + sparklePos[idx].oy, '✨');
+                }, idx * 100);
+            })(i);
         }
     }, 1500);
 
@@ -9296,9 +9340,10 @@ function startFusion(n1, n2) {
 }
 
 // TIMEWARP
-function startTimewarp(n1, n2) {
+function startTimewarp(n1, n2, seededRandom) {
     var b1 = buddyCharacters[n1], b2 = buddyCharacters[n2];
     if (!b1 || !b2) return;
+    var rng = seededRandom || Math.random;
 
     b1.interacting = b2.interacting = true;
     showSpeechBubble(b1, "INITIATING TIMEWARP!", 'urgent');
@@ -9308,12 +9353,14 @@ function startTimewarp(n1, n2) {
     b1.element.classList.add('timewarp');
     b2.element.classList.add('timewarp');
 
+    // Pre-generate year for sync
+    var year = MADLIB_WORDS.year[Math.floor(rng() * MADLIB_WORDS.year.length)];
+
     setTimeout(function() {
         createPortalEffect((b1.x + b2.x) / 2, (b1.y + b2.y) / 2);
     }, 500);
 
     setTimeout(function() {
-        var year = MADLIB_WORDS.year[Math.floor(Math.random() * MADLIB_WORDS.year.length)];
         showSpeechBubble(b1, "We're in the year " + year + "!", 'shocked');
     }, 1500);
 
@@ -9340,9 +9387,10 @@ function createPortalEffect(x, y) {
 }
 
 // FOOD FIGHT
-function startFoodFight(n1, n2) {
+function startFoodFight(n1, n2, seededRandom) {
     var b1 = buddyCharacters[n1], b2 = buddyCharacters[n2];
     if (!b1 || !b2) return;
+    var rng = seededRandom || Math.random;
 
     b1.interacting = b2.interacting = true;
     showSpeechBubble(b1, "FOOD FIGHT!", 'chaotic');
@@ -9350,13 +9398,20 @@ function startFoodFight(n1, n2) {
     showExpression(b2, '😈');
 
     var foods = ['🍕', '🌮', '🍔', '🍟', '🥧', '🍰', '🍩', '🥗', '🍝', '🍜'];
+    // Pre-generate food throws for sync
+    var foodThrows = [];
+    for (var i = 0; i < 5; i++) {
+        foodThrows.push({
+            f1: foods[Math.floor(rng() * foods.length)],
+            f2: foods[Math.floor(rng() * foods.length)]
+        });
+    }
     var count = 0;
 
     var interval = setInterval(function() {
-        var food = foods[Math.floor(Math.random() * foods.length)];
-        throwFood(b1.x, b1.y, b2.x, b2.y, food);
-        food = foods[Math.floor(Math.random() * foods.length)];
-        throwFood(b2.x, b2.y, b1.x, b1.y, food);
+        var ft = foodThrows[count];
+        throwFood(b1.x, b1.y, b2.x, b2.y, ft.f1);
+        throwFood(b2.x, b2.y, b1.x, b1.y, ft.f2);
         if (++count >= 5) clearInterval(interval);
     }, 350);
 
@@ -9390,9 +9445,10 @@ function throwFood(x1, y1, x2, y2, food) {
 }
 
 // KARAOKE
-function startKaraoke(n1, n2) {
+function startKaraoke(n1, n2, seededRandom) {
     var b1 = buddyCharacters[n1], b2 = buddyCharacters[n2];
     if (!b1 || !b2) return;
+    var rng = seededRandom || Math.random;
 
     b1.interacting = b2.interacting = true;
     b1.element.classList.add('singing');
@@ -9401,6 +9457,12 @@ function startKaraoke(n1, n2) {
     showExpression(b2, '🎤');
     showSpeechBubble(b1, "🎵 We're no strangers to looove~", 'singing');
 
+    // Pre-generate note positions for sync
+    var notePos = [];
+    for (var j = 0; j < 5; j++) {
+        notePos.push({ ox1: rng() * 40 - 20, ox2: rng() * 40 - 20 });
+    }
+
     setTimeout(function() {
         showSpeechBubble(b2, "🎶 You know the rules and SO DO I~", 'singing');
     }, 1500);
@@ -9408,8 +9470,8 @@ function startKaraoke(n1, n2) {
     setTimeout(function() {
         showSpeechBubble(b1, "🎵 NEVER GONNA GIVE YOU UP!", 'powerful');
         for (var i = 0; i < 5; i++) {
-            createMusicNote(b1.x + Math.random() * 40 - 20, b1.y - 20, '🎵');
-            createMusicNote(b2.x + Math.random() * 40 - 20, b2.y - 20, '🎶');
+            createMusicNote(b1.x + notePos[i].ox1, b1.y - 20, '🎵');
+            createMusicNote(b2.x + notePos[i].ox2, b2.y - 20, '🎶');
         }
     }, 3000);
 
@@ -9422,9 +9484,13 @@ function startKaraoke(n1, n2) {
 }
 
 // ARM WRESTLE
-function startArmWrestle(n1, n2) {
+function startArmWrestle(n1, n2, seededRandom) {
     var b1 = buddyCharacters[n1], b2 = buddyCharacters[n2];
     if (!b1 || !b2) return;
+    var rng = seededRandom || Math.random;
+
+    // Pre-determine winner for sync
+    var b1Wins = rng() < 0.5;
 
     b1.interacting = b2.interacting = true;
     showSpeechBubble(b1, "ARM WRESTLE!", 'competitive');
@@ -9440,8 +9506,8 @@ function startArmWrestle(n1, n2) {
     }, 2000);
 
     setTimeout(function() {
-        var winner = Math.random() < 0.5 ? b1 : b2;
-        var loser = winner === b1 ? b2 : b1;
+        var winner = b1Wins ? b1 : b2;
+        var loser = b1Wins ? b2 : b1;
         showSpeechBubble(winner, "VICTORY IS MINE!", 'triumphant');
         showSpeechBubble(loser, "My arm! 😭", 'defeated');
         showExpression(winner, '🏆');
@@ -9451,12 +9517,17 @@ function startArmWrestle(n1, n2) {
 }
 
 // PORTAL
-function startPortal(n1, n2) {
+function startPortal(n1, n2, seededRandom) {
     var b1 = buddyCharacters[n1], b2 = buddyCharacters[n2];
     if (!b1 || !b2) return;
+    var rng = seededRandom || Math.random;
+
+    // Pre-generate madlibs for sync
+    var place = fillMadlib("{place}", rng);
+    var person = fillMadlib("{person}", rng);
 
     b1.interacting = b2.interacting = true;
-    showSpeechBubble(b1, "Opening portal to " + fillMadlib("{place}") + "!", 'excited');
+    showSpeechBubble(b1, "Opening portal to " + place + "!", 'excited');
     showExpression(b1, '🌀');
 
     createPortalEffect(b1.x + 30, b1.y);
@@ -9467,7 +9538,7 @@ function startPortal(n1, n2) {
     }, 800);
 
     setTimeout(function() {
-        showSpeechBubble(b2, "I can see " + fillMadlib("{person}") + " on the other side!", 'amazed');
+        showSpeechBubble(b2, "I can see " + person + " on the other side!", 'amazed');
     }, 1500);
 
     setTimeout(function() {
@@ -9478,28 +9549,41 @@ function startPortal(n1, n2) {
 }
 
 // SUMMONING
-function startSummoning(n1, n2) {
+function startSummoning(n1, n2, seededRandom) {
     var b1 = buddyCharacters[n1], b2 = buddyCharacters[n2];
     if (!b1 || !b2) return;
+    var rng = seededRandom || Math.random;
+
+    // Pre-generate madlib and summoned item for sync
+    var nounPhrase = fillMadlib("We shall summon {noun}!", rng);
+    var summons = ['a pizza 🍕', 'chaos incarnate 🌀', 'the void 🕳️', 'a very confused cat 🐱', 'pure vibes ✨', 'the algorithm 🤖'];
+    var summoned = summons[Math.floor(rng() * summons.length)];
 
     b1.interacting = b2.interacting = true;
-    showSpeechBubble(b1, "We shall summon {noun}!", 'mystical');
+    showSpeechBubble(b1, nounPhrase, 'mystical');
     showExpression(b1, '🕯️');
     showExpression(b2, '🕯️');
 
     var summonEffects = ['🔥', '⚡', '🌟', '💀', '👁️', '🌙'];
+    // Pre-generate effects for sync
+    var effectsData = [];
+    for (var i = 0; i < 8; i++) {
+        effectsData.push({
+            effect: summonEffects[Math.floor(rng() * summonEffects.length)],
+            ox: (rng() - 0.5) * 50,
+            oy: (rng() - 0.5) * 40
+        });
+    }
     var count = 0;
     var mx = (b1.x + b2.x) / 2, my = (b1.y + b2.y) / 2;
 
     var interval = setInterval(function() {
-        var effect = summonEffects[Math.floor(Math.random() * summonEffects.length)];
-        createMagic(mx + (Math.random() - 0.5) * 50, my + (Math.random() - 0.5) * 40, effect);
+        var ed = effectsData[count];
+        createMagic(mx + ed.ox, my + ed.oy, ed.effect);
         if (++count >= 8) clearInterval(interval);
     }, 200);
 
     setTimeout(function() {
-        var summons = ['a pizza 🍕', 'chaos incarnate 🌀', 'the void 🕳️', 'a very confused cat 🐱', 'pure vibes ✨', 'the algorithm 🤖'];
-        var summoned = summons[Math.floor(Math.random() * summons.length)];
         showSpeechBubble(b1, "WE SUMMONED " + summoned + "!", 'shocked');
         showExpression(b1, '😱');
         showExpression(b2, '😱');
