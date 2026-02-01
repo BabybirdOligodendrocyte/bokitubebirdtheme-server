@@ -448,3 +448,72 @@ if (tab === 'message') {
 - `replyStyleSettings` - Custom reply styling preferences
 - `emoteFavorites` - Array of favorite emote names
 - `playlistCustomNames` - Custom names for playlist items
+
+## Cytube Chat Filters (Channel Configuration)
+
+The following chat filters must be configured in **Channel Settings → Edit → Chat Filters** for styling to work. All filters use `flags: "g"` (global).
+
+### Username Wrapper
+| Name | Regex | Replacement |
+|------|-------|-------------|
+| uname | `\[uname\](.+?)\[/uname\]` | `<span class="styled-username" data-ignore-nnd="true">\1</span>` |
+
+### Colors (12)
+`[color]text[/]` → `<span style="color:#hex">\1</span>`
+- white (#ffffff), yellow (#ffff00), orange (#ffa500), pink (#ff69b4)
+- red (#ff0000), lime (#00ff00), green (#008000), aqua (#00ffff)
+- blue (#5555ff), violet (#ee82ee), brown (#8b4513), silver (#c0c0c0)
+
+### Gradients (8)
+`[gradient]text[/]` → `<span style="background:linear-gradient(...);-webkit-background-clip:text;-webkit-text-fill-color:transparent">\1</span>`
+- rainbow, fire, ocean, sunset, neon, forest, gold, ice
+
+### Glows (7)
+`[glow-color]text[/]` → `<span style="text-shadow:0 0 10px #color,0 0 20px #color,0 0 30px #color">\1</span>`
+- glow-white, glow-red, glow-blue, glow-green, glow-gold, glow-pink, glow-rainbow
+
+### Animations (6)
+`[anim]text[/]` → `<span style="display:inline-block;animation:anim duration ease infinite">\1</span>`
+- shake (0.5s), pulse (1s), bounce (0.6s), wave (2s), flicker (0.3s), spin (2s)
+
+### Fonts (20)
+`[font-name]text[/]` → `<span style="font-family:'Font Name',fallback">\1</span>`
+- comic, impact, papyrus, copperplate, brush, lucida, courier, times
+- georgia, trebuchet, verdana, gothic, garamond, palatino, bookman
+- mono, cursive, fantasy, system, serif
+
+### Text Formatting (4)
+- `[b]text[/]` → bold
+- `[i]text[/]` → italic
+- `[u]text[/]` → underline
+- `[s]text[/]` → strikethrough
+
+### Special
+- `[sp]text[/]` → spoiler
+- embed-tenor: Converts Tenor URLs to embedded images
+
+## Impersonation System (2026-02)
+
+Shift+click on a username in chat to open the impersonation popup. This allows sending a message that appears to be from that user, copying their styling.
+
+### How It Works
+1. Shift+click captures CSS styles from the clicked message (username + message body)
+2. `cssToTags()` function converts inline CSS back to BBCode tags
+3. Message sent as: `[uname]{userTags}NAME{/userTags}[/uname] {msgTags}message{/msgTags}`
+4. Cytube filters process the tags server-side
+5. `[uname]` wrapper hides sender's real username via CSS
+
+### Style Detection (`cssToTags` function)
+Detects and converts:
+- **Fonts**: font-family → [font-*]
+- **Colors**: color property → [color] or [#hex]
+- **Gradients**: background with -webkit-text-fill-color → [rainbow], [fire], etc.
+- **Glows**: text-shadow → [glow-*]
+- **Animations**: animation property OR text-* classes → [shake], [bounce], etc.
+- **Formatting**: font-weight:bold → [b], font-style:italic → [i], etc.
+
+### Key Functions
+- `cssToTags(style, classes)` - Converts CSS to BBCode tags
+- `openImpersonatePopup(username, usernameStyle, msgStyle, usernameClasses, msgClasses)` - Opens popup
+- `sendImpersonateMessage()` - Builds and sends the formatted message
+- `initClickToMention()` - Sets up shift+click handler on usernames
