@@ -451,6 +451,27 @@ if (tab === 'message') {
 - `priorityQueueItems` - Priority queue video items (dual playlist system)
 - `dualPlaylistPlaybackState` - Playback state for dual playlist system
 
+### Animation Design for Text Overlays
+When creating CSS animations for text that needs to be read:
+
+**DO:**
+- Keep text upright (minimal or no rotation)
+- Use thick black outlines (4px+) for contrast against any background
+- Use movement patterns: translate, scale, opacity changes
+- Make multi-copy effects where copies move independently (rain, scatter, ants)
+- Use gentle motions: bouncing, floating, waving, pulsing
+- Keep animations 4-5 seconds for readability
+
+**DON'T:**
+- Use rapid spinning (makes text unreadable blur)
+- Use extreme scale changes (text becomes illegible when too small/large)
+- Combine rotation with translation (disorienting)
+- Use skew transforms on text (distorts letterforms)
+- Use rapid position changes (seizure-inducing, can't track text)
+- Use blur filters on text (defeats the purpose)
+
+**Key insight:** "Crazy" and "fun" animations don't require extreme rotation/spinning. Movement patterns like raining, scattering, wandering create visual interest while keeping text perfectly readable.
+
 ## Dual Playlist System (2026-02)
 
 A dual playlist system with a main playlist (mod-only visible) and priority queue (visible to mods only). Manages video playback between two playlists with visibility and permission controls.
@@ -587,7 +608,7 @@ Detects and converts:
 
 ## Screenspam System (2026-02)
 
-NicoNico-style feature that displays messages across the video screen with CRAZY overwhelming animations. Users type `/screenspam <message>` to trigger a random visual effect. Messages are hidden from the normal NicoNico chat overlay.
+NicoNico-style feature that displays messages across the video screen with fun, legible animations. Users type `/screenspam <message>` to trigger a random visual effect. Messages are hidden from the normal NicoNico chat overlay.
 
 ### Usage
 - **Command:** `/screenspam <message>` - displays message on video with random effect
@@ -596,31 +617,39 @@ NicoNico-style feature that displays messages across the video screen with CRAZY
 - **Access:** All users
 - **NND Integration:** Screenspam messages are automatically hidden from the normal NicoNico scrolling chat
 
-### Animation Effects Pool (18 CRAZY effects)
+### Animation Effects Pool (20 effects)
+
+**Single Message Effects:**
 | Effect | Description |
 |--------|-------------|
-| `nuke` | Starts tiny, becomes MASSIVE with blinding brightness |
-| `seizure` | Rapid chaotic position/scale/rotation/color changes |
-| `tornado` | Spins up from bottom while growing and moving chaotically |
-| `pinball` | Bounces off walls at crazy angles |
-| `rubber` | Stretches and snaps like a rubber band |
-| `drunk` | Stumbles across screen with skewing |
-| `earthquake` | Violently shakes while growing |
-| `blackhole` | Gets sucked into center then EXPLODES outward |
-| `glitchnightmare` | Extreme glitching with clip-path and color inversion |
-| `firework` | Shoots up and explodes in multiple directions |
-| `jello` | Wobbly jello stretching effect |
-| `matrix` | Digital rain style falling with green glow |
-| `yoyo` | Swings up and down like a yo-yo |
-| `portal` | Spins into a portal with hue shifting |
-| `helicopter` | Spins like helicopter blades across screen |
-| `supernova` | Massive explosion with blinding flash |
-| `slots` | Spins vertically like slot machine reels |
-| `chaos-multi` | Creates 8 copies with random different effects |
+| `rain` | Falls gently from top to bottom |
+| `float` | Floats across with gentle bobbing |
+| `bounce` | Bounces in place (stays readable) |
+| `pulse` | Grows and shrinks in center |
+| `shake` | Vibrates in place |
+| `spiral` | Moves in spiral path (NO rotation) |
+| `wander` | Moves around randomly |
+| `zoom` | Grows from center |
+| `slide` | Smooth horizontal scroll |
+| `popup` | Appears with bounce effect |
+| `wave` | Gentle wave motion across screen |
+| `drop` | Falls and bounces at bottom |
+| `typewriter` | Text reveals gradually |
+| `glow` | Pulses brightness |
+| `swing` | Pendulum motion (mild tilt only) |
+| `jello` | Wobbly squash/stretch |
+| `colorshift` | Hue cycles while staying in place |
+
+**Multi-Copy Effects:**
+| Effect | Description |
+|--------|-------------|
+| `rain-multi` | 6 copies rain down staggered |
+| `scatter` | 5 copies burst outward from center |
+| `ants` | 8 copies wander around like ants |
 
 ### Color Variations
-8 color options randomly applied with INTENSE glows:
-- Red, Green, Cyan, Magenta, Yellow, Orange, Hot Pink, Animated Rainbow gradient
+8 color options randomly applied with glows:
+- Red, Green, Cyan, Magenta, Yellow, Orange, Hot Pink, White
 
 ### Key Functions
 | Function | Purpose |
@@ -638,8 +667,8 @@ Messages use invisible zero-width character markers:
 
 ### CSS Classes
 - `#screenspam-overlay` - Container positioned over video
-- `.screenspam-msg` - Base message styling (Impact font, intense text shadows)
-- `.screenspam-color-0` through `.screenspam-color-7` - Color variants with triple glow layers
+- `.screenspam-msg` - Base message styling (Impact font, 4px black outline)
+- `.screenspam-color-0` through `.screenspam-color-7` - Color variants with glow
 - `.screenspam-cooldown-toast` - Error notification
 
 ### Configuration Variables
