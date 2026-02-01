@@ -317,7 +317,7 @@ function hexToRgba(hex, opacity) {
             left: -9999px !important;
         }
         
-        #emote-popup-overlay, #textstyle-popup-overlay, #filter-popup-overlay {
+        #emote-popup-overlay, #textstyle-popup-overlay, #filter-popup-overlay, #buddy-settings-overlay {
             display: none !important;
             position: fixed !important;
             top: 0 !important;
@@ -331,12 +331,12 @@ function hexToRgba(hex, opacity) {
             margin: 0 !important;
             padding: 0 !important;
         }
-        #emote-popup-overlay.visible, #textstyle-popup-overlay.visible, #filter-popup-overlay.visible {
+        #emote-popup-overlay.visible, #textstyle-popup-overlay.visible, #filter-popup-overlay.visible, #buddy-settings-overlay.visible {
             display: flex !important;
             align-items: center !important;
             justify-content: center !important;
         }
-        #emote-popup, #textstyle-popup, #filter-popup {
+        #emote-popup, #textstyle-popup, #filter-popup, #buddy-settings-popup {
             position: fixed !important;
             top: 50% !important;
             left: 50% !important;
@@ -346,6 +346,15 @@ function hexToRgba(hex, opacity) {
             border-radius: 12px !important;
             box-shadow: 0 20px 60px rgba(0,0,0,0.9) !important;
         }
+        #buddy-settings-popup {
+            width: 480px !important;
+            max-width: 95vw !important;
+            max-height: 85vh !important;
+            display: flex !important;
+            flex-direction: column !important;
+        }
+        /* Hide buddy sync messages in chat and NND overlay */
+        .buddy-sync-msg { display: none !important; }
         #emote-popup {
             width: 460px !important;
             max-width: 95vw !important;
@@ -7489,6 +7498,15 @@ function broadcastInteraction(user1, user2, interactionType, seed) {
     }
 }
 
+// Check if a message is a buddy sync message
+function isBuddySyncMessage(msgText) {
+    if (!msgText) return false;
+    return msgText.indexOf('\u200B\u200CBSET:') !== -1 ||
+           msgText.indexOf('\u200B\u200CBACT:') !== -1 ||
+           msgText.indexOf('BSET:') !== -1 && msgText.indexOf(':BSET') !== -1 ||
+           msgText.indexOf('BACT:') !== -1 && msgText.indexOf(':BACT') !== -1;
+}
+
 // Parse incoming chat messages for buddy sync data
 function parseBuddySyncMessage(msgText) {
     // Check for settings broadcast
@@ -7667,7 +7685,7 @@ function initBuddySyncListener() {
         });
     }
 
-    // Also watch messagebuffer for sync messages
+    // Watch messagebuffer for sync messages and hide them
     var msgBuffer = document.getElementById('messagebuffer');
     if (msgBuffer) {
         var observer = new MutationObserver(function(mutations) {
@@ -7675,9 +7693,13 @@ function initBuddySyncListener() {
                 mutation.addedNodes.forEach(function(node) {
                     if (node.nodeType === 1) {
                         var text = node.textContent || '';
-                        if (parseBuddySyncMessage(text)) {
-                            // Hide the sync message from view
+                        // Check if it's a sync message
+                        if (isBuddySyncMessage(text)) {
+                            // Completely hide the sync message
                             node.style.display = 'none';
+                            node.classList.add('buddy-sync-msg');
+                            // Process the sync data
+                            parseBuddySyncMessage(text);
                         }
                     }
                 });
@@ -7685,6 +7707,20 @@ function initBuddySyncListener() {
         });
         observer.observe(msgBuffer, { childList: true });
     }
+
+    // Also hide sync messages that appear anywhere else (like NND overlay)
+    setInterval(function() {
+        // Hide any element containing sync markers
+        document.querySelectorAll('*').forEach(function(el) {
+            if (el.childNodes.length === 1 && el.childNodes[0].nodeType === 3) {
+                var text = el.textContent || '';
+                if (isBuddySyncMessage(text) && !el.classList.contains('buddy-sync-msg')) {
+                    el.style.display = 'none';
+                    el.classList.add('buddy-sync-msg');
+                }
+            }
+        });
+    }, 100);
 
     // Load my settings and broadcast on init
     loadMyBuddySettings();
