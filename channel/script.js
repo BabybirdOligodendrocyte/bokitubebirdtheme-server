@@ -7518,8 +7518,11 @@ function isBuddySyncMessage(msgText) {
 
 // Parse incoming chat messages for buddy sync data
 function parseBuddySyncMessage(msgText) {
-    // Check for settings broadcast - try multiple patterns in case zero-width chars are stripped
-    var settingsMatch = msgText.match(/[\u200B\u200C]*BSET:([^:]+):([A-Za-z0-9+/=]+):BSET[\u200B\u200C]*/);
+    // Check for settings broadcast - try multiple patterns
+    // Pattern 1: With zero-width chars
+    // Pattern 2: Without zero-width chars (in case they're stripped)
+    var settingsMatch = msgText.match(/[\u200B\u200C]*BSET:([^:]+):([A-Za-z0-9+/=]+):BSET[\u200B\u200C]*/) ||
+                        msgText.match(/BSET:([^:]+):([A-Za-z0-9+/=]+):BSET/);
     if (settingsMatch) {
         var username = settingsMatch[1];
         var encoded = settingsMatch[2];
@@ -7587,14 +7590,25 @@ function applyCustomSettingsToBuddy(username) {
     }
     if (!settings) return;
 
-    // Apply sprite
+    // Get display name
+    var displayName = settings.displayName || username;
+
+    // Apply sprite - handle all cases
     if (settings.customSpriteUrl) {
+        // Custom image URL
         buddy.element.innerHTML = '<img src="' + escapeHtml(settings.customSpriteUrl) + '" style="width:100%;height:100%;object-fit:contain;">' +
-            '<span class="buddy-nametag">' + escapeHtml(settings.displayName || username) + '</span>';
+            '<span class="buddy-nametag">' + escapeHtml(displayName) + '</span>';
         buddy.isCustomSprite = true;
-    } else if (settings.spriteIndex >= 0 && settings.spriteIndex < BUDDY_SPRITES.length) {
+    } else if (typeof settings.spriteIndex === 'number' && settings.spriteIndex >= 0 && settings.spriteIndex < BUDDY_SPRITES.length) {
+        // Specific sprite selected
         buddy.sprite = BUDDY_SPRITES[settings.spriteIndex];
-        buddy.element.innerHTML = buddy.sprite.body + '<span class="buddy-nametag">' + escapeHtml(settings.displayName || username) + '</span>';
+        buddy.element.innerHTML = buddy.sprite.body + '<span class="buddy-nametag">' + escapeHtml(displayName) + '</span>';
+        buddy.isCustomSprite = false;
+    } else {
+        // Use hash-based default (spriteIndex is -1 or undefined)
+        var hash = hashUsername(username);
+        buddy.sprite = BUDDY_SPRITES[hash % BUDDY_SPRITES.length];
+        buddy.element.innerHTML = buddy.sprite.body + '<span class="buddy-nametag">' + escapeHtml(displayName) + '</span>';
         buddy.isCustomSprite = false;
     }
 
@@ -7605,8 +7619,8 @@ function applyCustomSettingsToBuddy(username) {
     // Apply color filters
     var filters = [];
     if (settings.hueRotate) filters.push('hue-rotate(' + settings.hueRotate + 'deg)');
-    if (settings.saturation !== 100) filters.push('saturate(' + settings.saturation + '%)');
-    if (settings.brightness !== 100) filters.push('brightness(' + settings.brightness + '%)');
+    if (settings.saturation && settings.saturation !== 100) filters.push('saturate(' + settings.saturation + '%)');
+    if (settings.brightness && settings.brightness !== 100) filters.push('brightness(' + settings.brightness + '%)');
     if (settings.glowColor && settings.glowIntensity > 0) {
         filters.push('drop-shadow(0 0 ' + settings.glowIntensity + 'px ' + settings.glowColor + ')');
     }
@@ -7795,81 +7809,50 @@ function initBuddySyncListener() {
         observer.observe(msgBuffer, { childList: true, subtree: true });
     }
 
-    // NND Chat Cleanup - watch for NND elements being added anywhere in the document
-    // NND chat creates elements that scroll across the screen
+    // NND Chat Cleanup - ONLY target NND overlay elements, NOT chat elements
+    // NND overlay elements are typically outside #main/#wrap and have specific characteristics
     var nndObserver = new MutationObserver(function(mutations) {
         mutations.forEach(function(mutation) {
             mutation.addedNodes.forEach(function(node) {
                 if (node.nodeType === 1) {
-                    // Check if this element or its text content contains sync markers
+                    // Skip if inside important containers
+                    if (node.closest('#main, #wrap, #messagebuffer, #userlist, #chatline, .modal')) return;
+
                     var text = node.textContent || '';
                     if (isBuddySyncMessage(text)) {
-                        // Don't remove buddy characters or important elements
-                        if (!node.classList.contains('buddy-character') &&
-                            !node.id &&
-                            node.tagName !== 'SCRIPT' &&
-                            node.tagName !== 'STYLE') {
+                        // Only remove if it looks like an NND element (has animation/transform)
+                        var style = window.getComputedStyle(node);
+                        if (style.animation !== 'none' ||
+                            style.transform !== 'none' ||
+                            style.position === 'fixed' ||
+                            (style.position === 'absolute' && !node.closest('#main, #wrap'))) {
                             node.remove();
-                            return;
                         }
                     }
-                    // Also check immediate children (NND might wrap text in spans)
-                    var children = node.querySelectorAll('*');
-                    children.forEach(function(child) {
-                        var childText = child.textContent || '';
-                        if (isBuddySyncMessage(childText) && !child.id) {
-                            child.remove();
-                        }
-                    });
                 }
             });
         });
     });
-    nndObserver.observe(document.body, { childList: true, subtree: true });
+    nndObserver.observe(document.body, { childList: true, subtree: false }); // Only direct children
 
-    // Aggressive periodic cleanup for any sync messages that slip through
+    // Periodic cleanup for NND overlay - be very targeted
     setInterval(function() {
-        // Find ALL text nodes containing sync markers
-        var walker = document.createTreeWalker(
-            document.body,
-            NodeFilter.SHOW_TEXT,
-            null,
-            false
-        );
-        var nodesToRemove = [];
-        while (walker.nextNode()) {
-            var text = walker.currentNode.textContent || '';
+        // Only look at direct children of body that aren't main UI containers
+        var bodyChildren = document.body.children;
+        for (var i = bodyChildren.length - 1; i >= 0; i--) {
+            var el = bodyChildren[i];
+            // Skip important containers
+            if (el.id === 'main' || el.id === 'wrap' || el.id === 'footer' ||
+                el.classList.contains('modal') || el.classList.contains('buddy-character') ||
+                el.tagName === 'SCRIPT' || el.tagName === 'STYLE' || el.tagName === 'LINK') {
+                continue;
+            }
+            var text = el.textContent || '';
             if (isBuddySyncMessage(text)) {
-                var parent = walker.currentNode.parentElement;
-                // Walk up to find the scrolling NND element (usually has animation)
-                while (parent && parent !== document.body) {
-                    var style = window.getComputedStyle(parent);
-                    // NND elements typically have animations or transforms
-                    if (style.animation !== 'none' ||
-                        style.transform !== 'none' ||
-                        style.position === 'absolute' ||
-                        style.position === 'fixed') {
-                        if (!parent.id && !parent.classList.contains('buddy-character')) {
-                            nodesToRemove.push(parent);
-                            break;
-                        }
-                    }
-                    // If it's a simple span/div with just the sync text, remove it
-                    if ((parent.tagName === 'SPAN' || parent.tagName === 'DIV') &&
-                        !parent.id &&
-                        parent.children.length === 0) {
-                        nodesToRemove.push(parent);
-                        break;
-                    }
-                    parent = parent.parentElement;
-                }
+                el.remove();
             }
         }
-        // Remove collected nodes
-        nodesToRemove.forEach(function(node) {
-            if (node.parentNode) node.remove();
-        });
-    }, 50);
+    }, 100);
 
     // Load my settings and broadcast on init
     loadMyBuddySettings();
