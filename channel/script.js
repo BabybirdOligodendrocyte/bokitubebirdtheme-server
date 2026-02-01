@@ -7722,6 +7722,12 @@ function getBuddyPhrase(buddy, phraseType, defaultPhrases, seededRandom) {
 
 // Initialize sync message listener
 function initBuddySyncListener() {
+    // Add CSS to hide sync messages as a fallback
+    var hideStyle = document.createElement('style');
+    hideStyle.textContent = '#messagebuffer > div { transition: none; } .buddy-sync-hide { display: none !important; height: 0 !important; overflow: hidden !important; margin: 0 !important; padding: 0 !important; }';
+    document.head.appendChild(hideStyle);
+
+    // Listen for chat messages via socket
     if (typeof socket !== 'undefined') {
         socket.on('chatMsg', function(data) {
             if (data.msg) {
@@ -7742,16 +7748,34 @@ function initBuddySyncListener() {
                         if (isBuddySyncMessage(text)) {
                             // Process the sync data first
                             parseBuddySyncMessage(text);
-                            // Remove the message element entirely (no empty space)
-                            if (node.parentNode) {
-                                node.parentNode.removeChild(node);
-                            }
+                            // Hide immediately, then remove after a short delay
+                            node.classList.add('buddy-sync-hide');
+                            setTimeout(function() {
+                                if (node.parentNode) {
+                                    node.parentNode.removeChild(node);
+                                }
+                            }, 10);
                         }
                     }
                 });
             });
         });
         observer.observe(msgBuffer, { childList: true });
+
+        // Also do a periodic cleanup of any sync messages that slipped through
+        setInterval(function() {
+            var msgs = msgBuffer.querySelectorAll(':scope > div');
+            msgs.forEach(function(msg) {
+                var text = msg.textContent || '';
+                if (isBuddySyncMessage(text) && !msg.classList.contains('buddy-sync-hide')) {
+                    parseBuddySyncMessage(text);
+                    msg.classList.add('buddy-sync-hide');
+                    setTimeout(function() {
+                        if (msg.parentNode) msg.parentNode.removeChild(msg);
+                    }, 10);
+                }
+            });
+        }, 500);
     }
 
     // Also remove sync messages from NND overlay (scrolling chat on video)
@@ -7786,6 +7810,26 @@ function initBuddySyncListener() {
     setTimeout(function() {
         broadcastMyBuddySettings();
     }, 3000); // Delay to ensure connection is ready
+
+    // Re-broadcast settings periodically so new users see our customizations
+    setInterval(function() {
+        if (myBuddySettings) {
+            // Force broadcast by resetting the debounce timer
+            lastSettingsBroadcast = 0;
+            broadcastMyBuddySettings();
+        }
+    }, 30000); // Every 30 seconds
+
+    // Also broadcast when a new user joins
+    if (typeof socket !== 'undefined') {
+        socket.on('addUser', function(data) {
+            // When someone joins, broadcast our settings so they see our customization
+            setTimeout(function() {
+                lastSettingsBroadcast = 0;
+                broadcastMyBuddySettings();
+            }, 2000); // Small delay to let them initialize
+        });
+    }
 }
 
 // Hash function for deterministic assignment
