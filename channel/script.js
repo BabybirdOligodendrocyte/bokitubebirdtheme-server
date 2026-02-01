@@ -7757,7 +7757,26 @@ function initBuddySyncListener() {
         });
     }
 
-    // Backup: Watch messagebuffer and immediately remove any sync messages that slip through
+    // Clean up EXISTING messages in chat history (from before we joined)
+    function cleanupExistingMessages() {
+        var msgBuffer = document.getElementById('messagebuffer');
+        if (msgBuffer) {
+            var msgs = msgBuffer.querySelectorAll(':scope > div');
+            msgs.forEach(function(msg) {
+                var text = msg.textContent || '';
+                if (isBuddySyncMessage(text)) {
+                    parseBuddySyncMessage(text);
+                    msg.remove();
+                }
+            });
+        }
+    }
+    // Run cleanup immediately and after a delay (for late-loaded history)
+    cleanupExistingMessages();
+    setTimeout(cleanupExistingMessages, 1000);
+    setTimeout(cleanupExistingMessages, 3000);
+
+    // Watch messagebuffer for NEW sync messages
     var msgBuffer = document.getElementById('messagebuffer');
     if (msgBuffer) {
         var observer = new MutationObserver(function(mutations) {
@@ -7767,8 +7786,6 @@ function initBuddySyncListener() {
                         var text = node.textContent || '';
                         if (isBuddySyncMessage(text)) {
                             parseBuddySyncMessage(text);
-                            // Remove immediately - set display none first to prevent flash
-                            node.style.cssText = 'display:none!important;height:0!important;opacity:0!important;';
                             node.remove();
                         }
                     }
@@ -7778,28 +7795,81 @@ function initBuddySyncListener() {
         observer.observe(msgBuffer, { childList: true, subtree: true });
     }
 
-    // Clean up NND overlay messages - target the NND chat container specifically
-    setInterval(function() {
-        // NND chat typically uses a container with scrolling text
-        // Look for elements containing sync markers that are positioned for video overlay
-        var allElements = document.querySelectorAll('body > div:not(#main):not(#wrap):not(.modal):not(.buddy-character)');
-        allElements.forEach(function(el) {
-            var text = el.textContent || '';
-            if (isBuddySyncMessage(text)) {
-                el.style.display = 'none';
-                el.remove();
-            }
+    // NND Chat Cleanup - watch for NND elements being added anywhere in the document
+    // NND chat creates elements that scroll across the screen
+    var nndObserver = new MutationObserver(function(mutations) {
+        mutations.forEach(function(mutation) {
+            mutation.addedNodes.forEach(function(node) {
+                if (node.nodeType === 1) {
+                    // Check if this element or its text content contains sync markers
+                    var text = node.textContent || '';
+                    if (isBuddySyncMessage(text)) {
+                        // Don't remove buddy characters or important elements
+                        if (!node.classList.contains('buddy-character') &&
+                            !node.id &&
+                            node.tagName !== 'SCRIPT' &&
+                            node.tagName !== 'STYLE') {
+                            node.remove();
+                            return;
+                        }
+                    }
+                    // Also check immediate children (NND might wrap text in spans)
+                    var children = node.querySelectorAll('*');
+                    children.forEach(function(child) {
+                        var childText = child.textContent || '';
+                        if (isBuddySyncMessage(childText) && !child.id) {
+                            child.remove();
+                        }
+                    });
+                }
+            });
         });
+    });
+    nndObserver.observe(document.body, { childList: true, subtree: true });
 
-        // Also check any absolutely/fixed positioned elements (typical for NND overlay)
-        document.querySelectorAll('[style*="position: absolute"], [style*="position:absolute"], [style*="position: fixed"], [style*="position:fixed"]').forEach(function(el) {
-            if (el.classList.contains('buddy-character') || el.id) return;
-            var text = el.textContent || '';
-            if (text && isBuddySyncMessage(text)) {
-                el.remove();
+    // Aggressive periodic cleanup for any sync messages that slip through
+    setInterval(function() {
+        // Find ALL text nodes containing sync markers
+        var walker = document.createTreeWalker(
+            document.body,
+            NodeFilter.SHOW_TEXT,
+            null,
+            false
+        );
+        var nodesToRemove = [];
+        while (walker.nextNode()) {
+            var text = walker.currentNode.textContent || '';
+            if (isBuddySyncMessage(text)) {
+                var parent = walker.currentNode.parentElement;
+                // Walk up to find the scrolling NND element (usually has animation)
+                while (parent && parent !== document.body) {
+                    var style = window.getComputedStyle(parent);
+                    // NND elements typically have animations or transforms
+                    if (style.animation !== 'none' ||
+                        style.transform !== 'none' ||
+                        style.position === 'absolute' ||
+                        style.position === 'fixed') {
+                        if (!parent.id && !parent.classList.contains('buddy-character')) {
+                            nodesToRemove.push(parent);
+                            break;
+                        }
+                    }
+                    // If it's a simple span/div with just the sync text, remove it
+                    if ((parent.tagName === 'SPAN' || parent.tagName === 'DIV') &&
+                        !parent.id &&
+                        parent.children.length === 0) {
+                        nodesToRemove.push(parent);
+                        break;
+                    }
+                    parent = parent.parentElement;
+                }
             }
+        }
+        // Remove collected nodes
+        nodesToRemove.forEach(function(node) {
+            if (node.parentNode) node.remove();
         });
-    }, 100);
+    }, 50);
 
     // Load my settings and broadcast on init
     loadMyBuddySettings();
