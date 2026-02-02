@@ -7563,11 +7563,38 @@ function isBuddySyncMessage(msgText) {
 
 // Parse incoming chat messages for buddy sync data
 function parseBuddySyncMessage(msgText) {
+    console.log('[BuddySync] parseBuddySyncMessage called, length:', msgText.length);
+
     // Check for settings broadcast - try multiple patterns
     // Pattern 1: With zero-width chars
     // Pattern 2: Without zero-width chars (in case they're stripped)
     var settingsMatch = msgText.match(/[\u200B\u200C]*BSET:([^:]+):([A-Za-z0-9+/=]+):BSET[\u200B\u200C]*/) ||
                         msgText.match(/BSET:([^:]+):([A-Za-z0-9+/=]+):BSET/);
+
+    // Debug: check if BSET markers exist
+    var hasBSET = msgText.indexOf('BSET:') !== -1;
+    var hasEndBSET = msgText.indexOf(':BSET') !== -1;
+    console.log('[BuddySync] BSET markers - start:', hasBSET, 'end:', hasEndBSET, 'match:', !!settingsMatch);
+
+    if (!settingsMatch && hasBSET) {
+        // Try to find what's between BSET markers
+        var startIdx = msgText.indexOf('BSET:');
+        var endIdx = msgText.lastIndexOf(':BSET');
+        console.log('[BuddySync] BSET positions - start:', startIdx, 'end:', endIdx);
+        if (startIdx !== -1 && endIdx !== -1 && endIdx > startIdx) {
+            var content = msgText.substring(startIdx + 5, endIdx);
+            var parts = content.split(':');
+            console.log('[BuddySync] Manual parse - parts count:', parts.length, 'username:', parts[0]);
+            if (parts.length >= 2) {
+                // Manual extraction as fallback
+                var username = parts[0];
+                var encoded = parts.slice(1).join(':'); // In case base64 has :
+                console.log('[BuddySync] Manual parse - encoded length:', encoded.length, 'first 20:', encoded.substring(0, 20));
+                settingsMatch = [msgText, username, encoded];
+            }
+        }
+    }
+
     if (settingsMatch) {
         var username = settingsMatch[1];
         var encoded = settingsMatch[2];
