@@ -535,6 +535,56 @@ Console logs to look for:
 [BuddySync] Decoded settings - spriteIndex: 5 size: medium  ← Successfully parsed
 ```
 
+## Pusher Integration (Recommended)
+
+Using Pusher prevents chat history pollution from sync messages. Falls back to chat-based sync if not configured.
+
+### Setup Steps
+
+1. **Create Pusher Account** (free tier: 200K messages/day)
+   - Go to https://pusher.com and create account
+   - Create a new Channels app
+   - Note your: App ID, Key, Secret, Cluster
+   - Enable "Client Events" in App Settings
+
+2. **Deploy Cloudflare Worker** (free tier: 100K requests/day)
+   - Go to https://dash.cloudflare.com
+   - Workers & Pages → Create Application → Create Worker
+   - Paste code from `pusher-worker/worker.js`
+   - Add environment variables:
+     - `PUSHER_APP_ID`: Your app ID
+     - `PUSHER_KEY`: Your key
+     - `PUSHER_SECRET`: Your secret
+     - `PUSHER_CLUSTER`: Your cluster (e.g., 'us2')
+   - Deploy and note URL (e.g., `https://buddy-sync.username.workers.dev`)
+
+3. **Configure Channel** (in Cytube External JS)
+   ```javascript
+   var PUSHER_KEY = 'your-pusher-key';
+   var PUSHER_CLUSTER = 'us2';
+   var PUSHER_AUTH_ENDPOINT = 'https://buddy-sync.username.workers.dev/pusher/auth';
+   ```
+
+### How It Works
+- Client connects to Pusher presence channel on page load
+- Settings/interactions sent via Pusher client events (no chat messages)
+- Falls back to chat-based sync if Pusher not configured or fails
+- Each Cytube room gets its own Pusher channel
+
+### Console Logs
+```
+[Pusher] Initialized
+[Pusher] Connected to channel
+[Pusher] Broadcast sent for username
+[Pusher] Received settings for other_user
+```
+
+If Pusher fails:
+```
+[Pusher] Not configured - using chat fallback
+[Pusher] Subscription error, using chat fallback
+```
+
 ## Username Styling System
 
 ### Requirements
