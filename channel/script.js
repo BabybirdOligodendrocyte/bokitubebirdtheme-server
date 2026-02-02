@@ -1412,12 +1412,17 @@ function hexToRgba(hex, opacity) {
             display: none !important;
         }
         
-        /* When styled username is present, hide original username elements via CSS */
-        .chat-msg-with-styled-name .username,
-        .chat-msg-with-styled-name .username + * {
+        /* When styled username is present, hide original username element */
+        /* Note: Only hide .username itself, not siblings (removed + * which was hiding message content) */
+        .chat-msg-with-styled-name > .username {
             display: none !important;
         }
-        
+
+        /* Ensure regular usernames (without styled-username) are always visible */
+        #messagebuffer > div:not(.chat-msg-with-styled-name) > .username {
+            display: flex !important;
+        }
+
         /* Chat message styling - 80% size and new layout */
         #messagebuffer > div {
             font-size: 80% !important;
