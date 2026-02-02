@@ -1,96 +1,68 @@
 /**
  * Cloudflare Worker for Pusher Authentication
  *
- * Environment variables required:
- * - PUSHER_KEY: Your Pusher key
- * - PUSHER_SECRET: Your Pusher secret
+ * Deployed at: https://yellow-star-7913.babybirdoligodendrocyte.workers.dev/
+ *
+ * To deploy:
+ * 1. Go to Cloudflare Dashboard → Workers & Pages
+ * 2. Click on worker → Quick edit
+ * 3. Paste this code
+ * 4. Click "Save and deploy"
  */
+
+const PUSHER_KEY = '5ed54d7472449e46d6c7';
+const PUSHER_SECRET = 'f8bddb1167563e203095';
 
 addEventListener('fetch', event => {
     event.respondWith(handleRequest(event.request));
 });
 
 async function handleRequest(request) {
-    // Handle CORS preflight
+    const corsHeaders = {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'POST, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type',
+    };
+
     if (request.method === 'OPTIONS') {
-        return new Response(null, {
-            headers: {
-                'Access-Control-Allow-Origin': '*',
-                'Access-Control-Allow-Methods': 'POST, OPTIONS',
-                'Access-Control-Allow-Headers': 'Content-Type',
-            },
-        });
+        return new Response(null, { headers: corsHeaders });
     }
 
-    // Only handle POST to /pusher/auth
-    const url = new URL(request.url);
-    if (request.method !== 'POST' || !url.pathname.endsWith('/pusher/auth')) {
-        return new Response('Not Found', { status: 404 });
+    if (request.method !== 'POST') {
+        return new Response('Method not allowed', { status: 405, headers: corsHeaders });
     }
 
     try {
-        // Parse form data from Pusher client
         const formData = await request.formData();
         const socketId = formData.get('socket_id');
         const channelName = formData.get('channel_name');
         const username = formData.get('username') || 'anonymous';
 
-        if (!socketId || !channelName) {
-            return new Response('Missing socket_id or channel_name', { status: 400 });
-        }
-
-        // Generate auth signature for presence channel
         const presenceData = {
             user_id: username,
             user_info: { name: username }
         };
 
-        const auth = await generatePusherAuth(
-            PUSHER_KEY,
-            PUSHER_SECRET,
-            socketId,
-            channelName,
-            presenceData
+        const stringToSign = socketId + ':' + channelName + ':' + JSON.stringify(presenceData);
+        const encoder = new TextEncoder();
+        const cryptoKey = await crypto.subtle.importKey(
+            'raw', encoder.encode(PUSHER_SECRET),
+            { name: 'HMAC', hash: 'SHA-256' },
+            false, ['sign']
         );
 
-        return new Response(JSON.stringify(auth), {
-            headers: {
-                'Content-Type': 'application/json',
-                'Access-Control-Allow-Origin': '*',
-            },
+        const signature = await crypto.subtle.sign('HMAC', cryptoKey, encoder.encode(stringToSign));
+        const hexSignature = Array.from(new Uint8Array(signature))
+            .map(b => b.toString(16).padStart(2, '0'))
+            .join('');
+
+        return new Response(JSON.stringify({
+            auth: PUSHER_KEY + ':' + hexSignature,
+            channel_data: JSON.stringify(presenceData)
+        }), {
+            headers: { 'Content-Type': 'application/json', ...corsHeaders }
         });
     } catch (error) {
-        console.error('Auth error:', error);
-        return new Response('Internal Server Error', { status: 500 });
+        return new Response('Error: ' + error.message, { status: 500, headers: corsHeaders });
     }
-}
-
-/**
- * Generate Pusher auth signature
- */
-async function generatePusherAuth(key, secret, socketId, channelName, presenceData) {
-    const stringToSign = socketId + ':' + channelName + ':' + JSON.stringify(presenceData);
-
-    // Create HMAC-SHA256 signature
-    const encoder = new TextEncoder();
-    const keyData = encoder.encode(secret);
-    const messageData = encoder.encode(stringToSign);
-
-    const cryptoKey = await crypto.subtle.importKey(
-        'raw',
-        keyData,
-        { name: 'HMAC', hash: 'SHA-256' },
-        false,
-        ['sign']
-    );
-
-    const signature = await crypto.subtle.sign('HMAC', cryptoKey, messageData);
-    const hexSignature = Array.from(new Uint8Array(signature))
-        .map(function(b) { return b.toString(16).padStart(2, '0'); })
-        .join('');
-
-    return {
-        auth: key + ':' + hexSignature,
-        channel_data: JSON.stringify(presenceData)
-    };
 }

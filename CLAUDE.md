@@ -539,7 +539,25 @@ Console logs to look for:
 
 Using Pusher prevents chat history pollution from sync messages. Falls back to chat-based sync if not configured.
 
-### Setup Steps
+### Current Production Configuration
+
+**Pusher App:**
+- App ID: `2109857`
+- Key: `5ed54d7472449e46d6c7`
+- Cluster: `us3`
+
+**Cloudflare Worker:**
+- URL: `https://yellow-star-7913.babybirdoligodendrocyte.workers.dev/`
+- Credentials hardcoded in worker (no environment variables needed)
+
+**Cytube External JS:**
+```javascript
+var PUSHER_KEY = '5ed54d7472449e46d6c7';
+var PUSHER_CLUSTER = 'us3';
+var PUSHER_AUTH_ENDPOINT = 'https://yellow-star-7913.babybirdoligodendrocyte.workers.dev/';
+```
+
+### Setup Steps (For New Deployments)
 
 1. **Create Pusher Account** (free tier: 200K messages/day)
    - Go to https://pusher.com and create account
@@ -549,21 +567,27 @@ Using Pusher prevents chat history pollution from sync messages. Falls back to c
 
 2. **Deploy Cloudflare Worker** (free tier: 100K requests/day)
    - Go to https://dash.cloudflare.com
-   - Workers & Pages → Create Application → Create Worker
-   - Paste code from `pusher-worker/worker.js`
-   - Add environment variables:
-     - `PUSHER_APP_ID`: Your app ID
-     - `PUSHER_KEY`: Your key
-     - `PUSHER_SECRET`: Your secret
-     - `PUSHER_CLUSTER`: Your cluster (e.g., 'us2')
-   - Deploy and note URL (e.g., `https://buddy-sync.username.workers.dev`)
+   - Workers & Pages → Create Worker
+   - Click **Quick edit** and paste code with hardcoded credentials
+   - Click **Save and deploy** (blue button)
+   - Note: Use root URL (no `/pusher/auth` path needed)
 
 3. **Configure Channel** (in Cytube External JS)
    ```javascript
    var PUSHER_KEY = 'your-pusher-key';
-   var PUSHER_CLUSTER = 'us2';
-   var PUSHER_AUTH_ENDPOINT = 'https://buddy-sync.username.workers.dev/pusher/auth';
+   var PUSHER_CLUSTER = 'us3';
+   var PUSHER_AUTH_ENDPOINT = 'https://your-worker.workers.dev/';
    ```
+
+### Worker Code Template
+The worker code should hardcode credentials directly (simpler than environment variables):
+```javascript
+const PUSHER_KEY = 'your-key';
+const PUSHER_SECRET = 'your-secret';
+// ... rest of worker code
+```
+
+See `pusher-worker/worker.js` for full template.
 
 ### How It Works
 - Client connects to Pusher presence channel on page load
@@ -584,6 +608,11 @@ If Pusher fails:
 [Pusher] Not configured - using chat fallback
 [Pusher] Subscription error, using chat fallback
 ```
+
+### Troubleshooting
+- **404 errors**: Make sure worker code is deployed (visit worker URL directly, should show "Method not allowed")
+- **CORS errors**: Worker must include `Access-Control-Allow-Origin: *` headers
+- **"There is nothing here yet"**: Code not deployed - use Quick edit, paste code, Save and deploy
 
 ## Username Styling System
 
