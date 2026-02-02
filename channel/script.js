@@ -3273,6 +3273,11 @@ function showFilterPopup() {
     p.id = 'filter-popup';
     p.innerHTML = '<div class="popup-header"><span>Chat Filters Setup (Admin)</span><button class="popup-close" onclick="closeFilterPopup()">×</button></div>' +
         '<div id="filter-popup-body"><p>Admin must add these Chat Filters in <strong>Channel Settings → Edit → Chat Filters</strong>:</p>' +
+        '<p style="background:#422;padding:10px;border-radius:6px;margin-bottom:10px;"><strong>⚠️ REQUIRED for username styling:</strong></p>' +
+        '<table><tr><th>Name</th><th>Regex</th><th>Flags</th><th>Replacement</th></tr>' +
+        '<tr style="background:#332"><td><strong>uname</strong></td><td>\\[uname\\](.+?)\\[/uname\\]</td><td>g</td><td>&lt;span class="styled-username" data-ignore-nnd="true"&gt;$1&lt;/span&gt;</td></tr>' +
+        '</table>' +
+        '<p style="margin-top:15px;"><strong>Color filters:</strong></p>' +
         '<table><tr><th>Name</th><th>Regex</th><th>Flags</th><th>Replacement</th></tr>' +
         '<tr><td>red</td><td>\\[red\\]([^\\[]+)\\[/\\]</td><td>g</td><td>&lt;span style="color:red"&gt;$1&lt;/span&gt;</td></tr>' +
         '<tr><td>blue</td><td>\\[blue\\]([^\\[]+)\\[/\\]</td><td>g</td><td>&lt;span style="color:#55f"&gt;$1&lt;/span&gt;</td></tr>' +
@@ -3290,7 +3295,7 @@ function showFilterPopup() {
         '<tr><td>italic</td><td>\\[i\\]([^\\[]+)\\[/\\]</td><td>g</td><td>&lt;em&gt;$1&lt;/em&gt;</td></tr>' +
         '<tr><td>underline</td><td>\\[u\\]([^\\[]+)\\[/\\]</td><td>g</td><td>&lt;u&gt;$1&lt;/u&gt;</td></tr>' +
         '<tr><td>strike</td><td>\\[s\\]([^\\[]+)\\[/\\]</td><td>g</td><td>&lt;s&gt;$1&lt;/s&gt;</td></tr>' +
-        '</table><p style="background:#234;padding:12px;border-radius:6px">After adding filters, text styling works for everyone!</p></div>';
+        '</table><p style="background:#234;padding:12px;border-radius:6px;margin-top:15px;">After adding filters, text styling works for everyone!</p></div>';
     o.appendChild(p);
     document.body.appendChild(o);
     setTimeout(function() { o.classList.add('visible'); }, 10);
@@ -7492,15 +7497,24 @@ function decodeBuddySettings(encoded) {
 // Broadcast my settings via hidden chat message
 function broadcastMyBuddySettings() {
     var myName = getMyUsername();
-    if (!myName || !myBuddySettings) return;
+    if (!myName || !myBuddySettings) {
+        console.log('[BuddySync] Broadcast skipped - no username or settings');
+        return;
+    }
 
     // Debounce - don't broadcast more than once per 2 seconds
     var now = Date.now();
-    if (now - lastSettingsBroadcast < 2000) return;
+    if (now - lastSettingsBroadcast < 2000) {
+        console.log('[BuddySync] Broadcast debounced');
+        return;
+    }
     lastSettingsBroadcast = now;
 
     var encoded = encodeBuddySettings(myBuddySettings);
-    if (!encoded) return;
+    if (!encoded) {
+        console.log('[BuddySync] Encoding failed');
+        return;
+    }
 
     // Hidden message format using zero-width characters
     var hiddenMsg = '\u200B\u200CBSET:' + myName + ':' + encoded + ':BSET\u200B\u200C';
@@ -7508,6 +7522,9 @@ function broadcastMyBuddySettings() {
     // Send via socket if available
     if (typeof socket !== 'undefined' && socket.emit) {
         socket.emit('chatMsg', { msg: hiddenMsg, meta: {} });
+        console.log('[BuddySync] Broadcast sent for', myName, '- spriteIndex:', myBuddySettings.spriteIndex);
+    } else {
+        console.log('[BuddySync] Socket not available');
     }
 }
 
@@ -7545,17 +7562,25 @@ function parseBuddySyncMessage(msgText) {
     if (settingsMatch) {
         var username = settingsMatch[1];
         var encoded = settingsMatch[2];
+        console.log('[BuddySync] Received BSET from:', username);
         var settings = decodeBuddySettings(encoded);
         if (settings) {
+            console.log('[BuddySync] Decoded settings:', settings.spriteIndex, settings.size, settings.hueRotate);
             var myName = getMyUsername();
             if (username !== myName) {
                 // Store settings for other users
                 customBuddySettings[username] = settings;
+                console.log('[BuddySync] Stored settings for', username, '- buddy exists:', !!buddyCharacters[username]);
                 // Force update existing buddy if present
                 if (buddyCharacters[username]) {
                     applyCustomSettingsToBuddy(username);
+                    console.log('[BuddySync] Applied settings to existing buddy:', username);
                 }
+            } else {
+                console.log('[BuddySync] Ignoring own settings broadcast');
             }
+        } else {
+            console.log('[BuddySync] Failed to decode settings');
         }
         return true; // Message was a sync message
     }
@@ -7599,7 +7624,10 @@ function parseBuddySyncMessage(msgText) {
 // Apply custom settings to an existing buddy
 function applyCustomSettingsToBuddy(username) {
     var buddy = buddyCharacters[username];
-    if (!buddy) return;
+    if (!buddy) {
+        console.log('[BuddySync] Apply skipped - buddy not found:', username);
+        return;
+    }
 
     // Check both customBuddySettings (for other users) and myBuddySettings (for own buddy)
     var myName = getMyUsername();
@@ -7607,7 +7635,12 @@ function applyCustomSettingsToBuddy(username) {
     if (username === myName && myBuddySettings) {
         settings = myBuddySettings;
     }
-    if (!settings) return;
+    if (!settings) {
+        console.log('[BuddySync] Apply skipped - no settings for:', username);
+        return;
+    }
+
+    console.log('[BuddySync] Applying settings to', username, '- spriteIndex:', settings.spriteIndex, 'current sprite:', buddy.sprite?.name);
 
     // Get display name
     var displayName = settings.displayName || username;
@@ -7618,17 +7651,20 @@ function applyCustomSettingsToBuddy(username) {
         buddy.element.innerHTML = '<img src="' + escapeHtml(settings.customSpriteUrl) + '" style="width:100%;height:100%;object-fit:contain;">' +
             '<span class="buddy-nametag">' + escapeHtml(displayName) + '</span>';
         buddy.isCustomSprite = true;
+        console.log('[BuddySync] Applied custom URL sprite to', username);
     } else if (typeof settings.spriteIndex === 'number' && settings.spriteIndex >= 0 && settings.spriteIndex < BUDDY_SPRITES.length) {
         // Specific sprite selected
         buddy.sprite = BUDDY_SPRITES[settings.spriteIndex];
         buddy.element.innerHTML = buddy.sprite.body + '<span class="buddy-nametag">' + escapeHtml(displayName) + '</span>';
         buddy.isCustomSprite = false;
+        console.log('[BuddySync] Applied sprite index', settings.spriteIndex, '(' + buddy.sprite.name + ') to', username);
     } else {
         // Use hash-based default (spriteIndex is -1 or undefined)
         var hash = hashUsername(username);
         buddy.sprite = BUDDY_SPRITES[hash % BUDDY_SPRITES.length];
         buddy.element.innerHTML = buddy.sprite.body + '<span class="buddy-nametag">' + escapeHtml(displayName) + '</span>';
         buddy.isCustomSprite = false;
+        console.log('[BuddySync] Applied hash-based sprite to', username, '- hash:', hash, 'sprite:', buddy.sprite.name);
     }
 
     // Apply size
