@@ -235,6 +235,71 @@ $('<button id="clear-btn" class="btn btn-default btn-sm">Clear</button>')
     .appendTo("#leftcontrols")
     .on("click", function() { socket.emit("chatMsg", { msg: '/clear' }); });
 
+/* ========== UNIFIED CHAT MESSAGE DISPATCHER ========== */
+/* All socket.on('chatMsg') handlers are centralized here for performance and extensibility */
+
+var BokiChatDispatcher = (function() {
+    var handlers = [];
+    var initialized = false;
+
+    // Register a chat message handler
+    // Options: { priority: 0-100 (higher = runs first), name: 'handlerName' }
+    function register(name, handler, priority) {
+        handlers.push({
+            name: name,
+            fn: handler,
+            priority: priority || 50
+        });
+        // Sort by priority (higher first)
+        handlers.sort(function(a, b) { return b.priority - a.priority; });
+    }
+
+    // Process a chat message through all handlers
+    function dispatch(data) {
+        if (!data) return;
+
+        for (var i = 0; i < handlers.length; i++) {
+            try {
+                // If handler returns true, stop processing (message was handled)
+                if (handlers[i].fn(data) === true) {
+                    return;
+                }
+            } catch (e) {
+                console.error('[ChatDispatcher] Error in handler ' + handlers[i].name + ':', e);
+            }
+        }
+    }
+
+    // Initialize the dispatcher (call once when socket is ready)
+    function init() {
+        if (initialized || typeof socket === 'undefined') return;
+
+        socket.on('chatMsg', function(data) {
+            dispatch(data);
+        });
+
+        initialized = true;
+        console.log('[ChatDispatcher] Initialized with', handlers.length, 'handlers');
+    }
+
+    // Get list of registered handlers (for debugging)
+    function getHandlers() {
+        return handlers.map(function(h) {
+            return { name: h.name, priority: h.priority };
+        });
+    }
+
+    return {
+        register: register,
+        init: init,
+        dispatch: dispatch,
+        getHandlers: getHandlers
+    };
+})();
+
+// Expose globally for extensibility
+window.BokiChatDispatcher = BokiChatDispatcher;
+
 /* ========== POPUP SYSTEM ========== */
 var emoteFavorites = JSON.parse(localStorage.getItem('emoteFavorites')) || [];
 var gifFavorites = JSON.parse(localStorage.getItem('gifFavorites')) || [];
@@ -4808,9 +4873,11 @@ if (msgBuffer) {
     gifObserver.observe(msgBuffer, { childList: true, subtree: true });
 }
 
-socket.on('chatMsg', function(data) {
+// Register formatChatMsg with dispatcher (priority 40 - runs after sync checks)
+BokiChatDispatcher.register('formatChatMsg', function(data) {
     formatChatMsg(data, $("#messagebuffer > div").last());
-});
+    return false; // Continue to other handlers
+}, 40);
 
 // Hook into niconico script to strip username tags and show GIFs in scrolling messages
 (function() {
@@ -6376,14 +6443,15 @@ function initClickToMention() {
 function initMentionNotifications() {
     var myUsername = CLIENT && CLIENT.name ? CLIENT.name.toLowerCase() : '';
 
-    socket.on('chatMsg', function(data) {
+    // Register with dispatcher (priority 30 - runs after formatting)
+    BokiChatDispatcher.register('mentionNotifications', function(data) {
         if (!myUsername) {
             myUsername = CLIENT && CLIENT.name ? CLIENT.name.toLowerCase() : '';
         }
-        if (!myUsername || !data.msg) return;
+        if (!myUsername || !data.msg) return false;
 
         // Skip buddy sync messages - they contain usernames but aren't real mentions
-        if (isBuddySyncMessage(data.msg)) return;
+        if (isBuddySyncMessage(data.msg)) return false;
 
         var msgLower = data.msg.toLowerCase();
         if (msgLower.indexOf('@' + myUsername) !== -1 || msgLower.indexOf(myUsername) !== -1) {
@@ -6401,7 +6469,8 @@ function initMentionNotifications() {
                 }
             }, 100);
         }
-    });
+        return false; // Continue to other handlers
+    }, 30);
 }
 
 // User ignore list
@@ -6415,8 +6484,8 @@ function initIgnoreList() {
         }
     });
 
-    // Filter messages from ignored users
-    socket.on('chatMsg', function(data) {
+    // Register with dispatcher (priority 20 - runs after mentions)
+    BokiChatDispatcher.register('ignoreList', function(data) {
         if (ignoredUsers.indexOf(data.username.toLowerCase()) !== -1) {
             setTimeout(function() {
                 var msgs = document.querySelectorAll('#messagebuffer > div');
@@ -6427,7 +6496,8 @@ function initIgnoreList() {
                 }
             }, 50);
         }
-    });
+        return false; // Continue to other handlers
+    }, 20);
 }
 
 function addToIgnoreList(username) {
@@ -7274,10 +7344,9 @@ function initScreenspamCommand() {
 
 // Process incoming messages for screenspam
 function initScreenspamReceiver() {
-    if (typeof socket === 'undefined') return;
-
-    socket.on('chatMsg', function(data) {
-        if (!data.msg) return;
+    // Register with dispatcher (priority 80 - runs early, can hide screenspam messages)
+    BokiChatDispatcher.register('screenspam', function(data) {
+        if (!data.msg) return false;
 
         // Check for screenspam marker
         var markerPattern = screenspamMarker + 'SCREENSPAM:';
@@ -7306,12 +7375,14 @@ function initScreenspamReceiver() {
                 }, 100);
             }
         }
-    });
+        return false; // Continue to other handlers (message still needs formatting)
+    }, 80);
 }
 
 // Initialize all enhanced features
 $(document).ready(function() {
     setTimeout(function() {
+        // Initialize chat dispatcher first (registers handlers, then starts listening)
         initMentionAutocomplete();
         initClickToMention();
         initMentionNotifications();
@@ -7333,6 +7404,9 @@ $(document).ready(function() {
         applyTimestampVisibility();
         applyChatFontSize();
         if (compactMode) document.body.classList.add('compact-mode');
+
+        // Start the unified chat dispatcher (after all handlers registered)
+        BokiChatDispatcher.init();
     }, 2000);
 });
 
@@ -7965,41 +8039,30 @@ function getBuddyPhrase(buddy, phraseType, defaultPhrases, seededRandom) {
 
 // Initialize sync message listener
 function initBuddySyncListener() {
-    // Intercept socket chatMsg to prevent sync messages from displaying at all
-    if (typeof socket !== 'undefined') {
-        // Store original emit handlers
-        var originalOn = socket.on.bind(socket);
-        var chatMsgHandlers = [];
+    // Register with dispatcher (priority 100 - HIGHEST, runs first to filter sync messages)
+    BokiChatDispatcher.register('buddySync', function(data) {
+        if (!data.msg) return false;
 
-        // Wrap socket.on to intercept chatMsg handlers
-        socket.on = function(event, handler) {
-            if (event === 'chatMsg') {
-                // Wrap the handler to filter sync messages
-                var wrappedHandler = function(data) {
-                    if (data.msg && isBuddySyncMessage(data.msg)) {
-                        // Process sync data but don't pass to original handler
-                        parseBuddySyncMessage(data.msg);
-                        return; // Don't display this message
-                    }
-                    handler(data);
-                };
-                return originalOn(event, wrappedHandler);
-            }
-            return originalOn(event, handler);
-        };
-
-        // Also listen directly for sync messages
-        originalOn('chatMsg', function(data) {
-            // Debug: log ALL incoming chat messages to see what we're receiving
-            if (data.msg && (data.msg.indexOf('BSET') !== -1 || data.msg.indexOf('BACT') !== -1)) {
-                console.log('[BuddySync] Raw chatMsg received:', data.msg.substring(0, 100));
-            }
-            if (data.msg && isBuddySyncMessage(data.msg)) {
+        if (isBuddySyncMessage(data.msg)) {
+            // Debug logging
+            if (data.msg.indexOf('BSET') !== -1 || data.msg.indexOf('BACT') !== -1) {
                 console.log('[BuddySync] Sync message detected, parsing...');
-                parseBuddySyncMessage(data.msg);
             }
-        });
-    }
+            parseBuddySyncMessage(data.msg);
+
+            // Hide the message from chat display
+            setTimeout(function() {
+                var msgs = document.querySelectorAll('#messagebuffer > div');
+                var lastMsg = msgs[msgs.length - 1];
+                if (lastMsg && isBuddySyncMessage(lastMsg.textContent)) {
+                    lastMsg.remove();
+                }
+            }, 50);
+
+            return true; // STOP processing - don't pass to other handlers
+        }
+        return false; // Not a sync message, continue to other handlers
+    }, 100);
 
     // Clean up EXISTING messages in chat history (from before we joined)
     function cleanupExistingMessages() {
