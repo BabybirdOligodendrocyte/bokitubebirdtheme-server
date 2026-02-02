@@ -4477,14 +4477,20 @@ function buildUsernameCloseTags() {
 }
 
 function applyUsernameTagsToMessage() {
-    if (!usernameStyleSettings.enabled) return;
+    console.log('[UsernameStyle] applyUsernameTagsToMessage called, enabled:', usernameStyleSettings.enabled);
+    if (!usernameStyleSettings.enabled) {
+        console.log('[UsernameStyle] Skipping - not enabled');
+        return;
+    }
 
     var myName = getMyUsername();
+    console.log('[UsernameStyle] myName:', myName);
     if (!myName) return;
 
     var c = document.getElementById('chatline');
     if (!c) return;
     var msg = c.value;
+    console.log('[UsernameStyle] Original message:', msg);
 
     // Skip commands
     if (msg.startsWith('/')) return;
@@ -4495,10 +4501,12 @@ function applyUsernameTagsToMessage() {
 
     var openTags = buildUsernameOpenTags();
     var closeTags = buildUsernameCloseTags();
+    console.log('[UsernameStyle] Tags - open:', openTags, 'close:', closeTags);
 
     // Always add [uname] wrapper when enabled, even without specific styles
     // This ensures the styled-username CSS is applied
     c.value = '[uname]' + openTags + myName + closeTags + '[/uname] ' + msg;
+    console.log('[UsernameStyle] Modified message:', c.value);
 }
 
 function processStyledUsername(msgElement) {
@@ -7523,6 +7531,7 @@ function broadcastMyBuddySettings() {
     if (typeof socket !== 'undefined' && socket.emit) {
         socket.emit('chatMsg', { msg: hiddenMsg, meta: {} });
         console.log('[BuddySync] Broadcast sent for', myName, '- spriteIndex:', myBuddySettings.spriteIndex);
+        console.log('[BuddySync] Full message:', hiddenMsg.substring(0, 80) + '...');
     } else {
         console.log('[BuddySync] Socket not available');
     }
@@ -7820,7 +7829,12 @@ function initBuddySyncListener() {
 
         // Also listen directly for sync messages
         originalOn('chatMsg', function(data) {
+            // Debug: log ALL incoming chat messages to see what we're receiving
+            if (data.msg && (data.msg.indexOf('BSET') !== -1 || data.msg.indexOf('BACT') !== -1)) {
+                console.log('[BuddySync] Raw chatMsg received:', data.msg.substring(0, 100));
+            }
             if (data.msg && isBuddySyncMessage(data.msg)) {
+                console.log('[BuddySync] Sync message detected, parsing...');
                 parseBuddySyncMessage(data.msg);
             }
         });
@@ -8669,12 +8683,16 @@ function addBuddy(username) {
     // DETERMINISTIC: Same username = same sprite & personality across all browsers
     var hash = hashUsername(username);
     var sprite, personality, displayName;
+    console.log('[BuddyCreate] Creating buddy for', username, '- hash:', hash, 'spriteCount:', BUDDY_SPRITES.length, 'index:', hash % BUDDY_SPRITES.length);
+    console.log('[BuddyCreate] customSettings:', customSettings ? JSON.stringify(customSettings).substring(0, 100) : 'null');
 
     // Apply custom settings or use defaults
     if (customSettings && customSettings.spriteIndex >= 0) {
         sprite = BUDDY_SPRITES[customSettings.spriteIndex] || BUDDY_SPRITES[hash % BUDDY_SPRITES.length];
+        console.log('[BuddyCreate] Using custom spriteIndex:', customSettings.spriteIndex, '- sprite:', sprite.name);
     } else {
         sprite = BUDDY_SPRITES[hash % BUDDY_SPRITES.length];
+        console.log('[BuddyCreate] Using hash-based sprite:', sprite.name);
     }
 
     if (customSettings && customSettings.personality) {
