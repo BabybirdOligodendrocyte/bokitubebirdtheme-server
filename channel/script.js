@@ -7518,7 +7518,22 @@ function broadcastMyBuddySettings() {
     }
     lastSettingsBroadcast = now;
 
-    var encoded = encodeBuddySettings(myBuddySettings);
+    // Create MINIMAL settings object - only visual essentials to keep message short
+    // Cytube has message length limits that truncate long messages!
+    var minimalSettings = {
+        si: myBuddySettings.spriteIndex,        // sprite index
+        sz: myBuddySettings.size || 'medium',   // size
+        hr: myBuddySettings.hueRotate || 0,     // hue rotation
+        st: myBuddySettings.saturation || 100,  // saturation
+        br: myBuddySettings.brightness || 100,  // brightness
+        dn: myBuddySettings.displayName || ''   // display name
+    };
+    // Only include custom URL if it exists (it's long so skip if not needed)
+    if (myBuddySettings.customSpriteUrl) {
+        minimalSettings.cu = myBuddySettings.customSpriteUrl;
+    }
+
+    var encoded = encodeBuddySettings(minimalSettings);
     if (!encoded) {
         console.log('[BuddySync] Encoding failed');
         return;
@@ -7527,11 +7542,12 @@ function broadcastMyBuddySettings() {
     // Hidden message format using zero-width characters
     var hiddenMsg = '\u200B\u200CBSET:' + myName + ':' + encoded + ':BSET\u200B\u200C';
 
+    console.log('[BuddySync] Message length:', hiddenMsg.length, '(must be <240 for Cytube)');
+
     // Send via socket if available
     if (typeof socket !== 'undefined' && socket.emit) {
         socket.emit('chatMsg', { msg: hiddenMsg, meta: {} });
         console.log('[BuddySync] Broadcast sent for', myName, '- spriteIndex:', myBuddySettings.spriteIndex);
-        console.log('[BuddySync] Full message:', hiddenMsg.substring(0, 80) + '...');
     } else {
         console.log('[BuddySync] Socket not available');
     }
@@ -7599,9 +7615,19 @@ function parseBuddySyncMessage(msgText) {
         var username = settingsMatch[1];
         var encoded = settingsMatch[2];
         console.log('[BuddySync] Received BSET from:', username);
-        var settings = decodeBuddySettings(encoded);
-        if (settings) {
-            console.log('[BuddySync] Decoded settings:', settings.spriteIndex, settings.size, settings.hueRotate);
+        var minimalSettings = decodeBuddySettings(encoded);
+        if (minimalSettings) {
+            // Convert minimal format (si, sz, hr, etc.) to full format (spriteIndex, size, hueRotate, etc.)
+            var settings = {
+                spriteIndex: minimalSettings.si !== undefined ? minimalSettings.si : (minimalSettings.spriteIndex !== undefined ? minimalSettings.spriteIndex : -1),
+                size: minimalSettings.sz || minimalSettings.size || 'medium',
+                hueRotate: minimalSettings.hr !== undefined ? minimalSettings.hr : (minimalSettings.hueRotate || 0),
+                saturation: minimalSettings.st !== undefined ? minimalSettings.st : (minimalSettings.saturation || 100),
+                brightness: minimalSettings.br !== undefined ? minimalSettings.br : (minimalSettings.brightness || 100),
+                displayName: minimalSettings.dn || minimalSettings.displayName || '',
+                customSpriteUrl: minimalSettings.cu || minimalSettings.customSpriteUrl || null
+            };
+            console.log('[BuddySync] Decoded settings - spriteIndex:', settings.spriteIndex, 'size:', settings.size);
             var myName = getMyUsername();
             if (username !== myName) {
                 // Store settings for other users
