@@ -7383,6 +7383,15 @@ var customBuddySettings = {};  // Store custom settings received from other user
 var myBuddySettings = null;    // Current user's custom settings
 var lastSettingsBroadcast = 0; // Debounce settings broadcast
 
+// ========== PUSHER CONFIGURATION ==========
+// Set these in your channel's External JS to enable Pusher sync (prevents chat flooding)
+// var PUSHER_KEY = 'your-pusher-key';
+// var PUSHER_CLUSTER = 'your-cluster';
+// var PUSHER_AUTH_ENDPOINT = 'https://your-worker.workers.dev/pusher/auth';
+var pusherClient = null;
+var pusherChannel = null;
+var pusherEnabled = false;
+
 // ========== BUDDY SETTINGS SCHEMA ==========
 var DEFAULT_BUDDY_SETTINGS = {
     // Appearance
@@ -7502,7 +7511,100 @@ function decodeBuddySettings(encoded) {
     }
 }
 
-// Broadcast my settings via hidden chat message
+// ========== PUSHER INITIALIZATION ==========
+function initPusher() {
+    // Check if Pusher config is set
+    if (typeof PUSHER_KEY === 'undefined' || typeof PUSHER_CLUSTER === 'undefined') {
+        console.log('[Pusher] Not configured - using chat fallback');
+        return;
+    }
+
+    // Load Pusher SDK if not already loaded
+    if (typeof Pusher === 'undefined') {
+        var script = document.createElement('script');
+        script.src = 'https://js.pusher.com/8.2.0/pusher.min.js';
+        script.onload = function() {
+            connectPusher();
+        };
+        document.head.appendChild(script);
+    } else {
+        connectPusher();
+    }
+}
+
+function connectPusher() {
+    try {
+        var authEndpoint = typeof PUSHER_AUTH_ENDPOINT !== 'undefined' ? PUSHER_AUTH_ENDPOINT : null;
+
+        pusherClient = new Pusher(PUSHER_KEY, {
+            cluster: PUSHER_CLUSTER,
+            authEndpoint: authEndpoint,
+            auth: {
+                params: { username: getMyUsername() || 'anonymous' }
+            }
+        });
+
+        // Get channel name from Cytube room or use default
+        var roomName = window.CHANNEL ? window.CHANNEL.name : 'buddy-sync';
+        pusherChannel = pusherClient.subscribe('presence-' + roomName);
+
+        pusherChannel.bind('pusher:subscription_succeeded', function() {
+            console.log('[Pusher] Connected to channel');
+            pusherEnabled = true;
+            // Broadcast our settings once connected
+            setTimeout(broadcastMyBuddySettings, 500);
+        });
+
+        pusherChannel.bind('pusher:subscription_error', function(err) {
+            console.log('[Pusher] Subscription error, using chat fallback:', err);
+            pusherEnabled = false;
+        });
+
+        // Listen for buddy settings
+        pusherChannel.bind('client-buddy-settings', function(data) {
+            if (data.username && data.username !== getMyUsername()) {
+                handlePusherBuddySettings(data);
+            }
+        });
+
+        // Listen for buddy interactions
+        pusherChannel.bind('client-buddy-action', function(data) {
+            if (data.user1 && data.user1 !== getMyUsername()) {
+                handlePusherBuddyAction(data);
+            }
+        });
+
+        console.log('[Pusher] Initialized');
+    } catch (e) {
+        console.log('[Pusher] Init error:', e);
+        pusherEnabled = false;
+    }
+}
+
+function handlePusherBuddySettings(data) {
+    var settings = {
+        spriteIndex: data.si !== undefined ? data.si : -1,
+        size: data.sz || 'medium',
+        hueRotate: data.hr || 0,
+        saturation: data.st || 100,
+        brightness: data.br || 100,
+        displayName: data.dn || '',
+        customSpriteUrl: data.cu || null
+    };
+    customBuddySettings[data.username] = settings;
+    if (buddyCharacters[data.username]) {
+        applyCustomSettingsToBuddy(data.username);
+    }
+    console.log('[Pusher] Received settings for', data.username);
+}
+
+function handlePusherBuddyAction(data) {
+    handleSyncedInteraction(data.user1, data.user2, data.action, data.seed,
+        data.pos1 ? data.pos1.split(',').map(Number) : null,
+        data.pos2 ? data.pos2.split(',').map(Number) : null);
+}
+
+// Broadcast my settings via Pusher (preferred) or chat fallback
 function broadcastMyBuddySettings() {
     var myName = getMyUsername();
     if (!myName || !myBuddySettings) {
@@ -7518,51 +7620,75 @@ function broadcastMyBuddySettings() {
     }
     lastSettingsBroadcast = now;
 
-    // Create MINIMAL settings object - only visual essentials to keep message short
-    // Cytube has message length limits that truncate long messages!
+    // Create MINIMAL settings object
     var minimalSettings = {
-        si: myBuddySettings.spriteIndex,        // sprite index
-        sz: myBuddySettings.size || 'medium',   // size
-        hr: myBuddySettings.hueRotate || 0,     // hue rotation
-        st: myBuddySettings.saturation || 100,  // saturation
-        br: myBuddySettings.brightness || 100,  // brightness
-        dn: myBuddySettings.displayName || ''   // display name
+        si: myBuddySettings.spriteIndex,
+        sz: myBuddySettings.size || 'medium',
+        hr: myBuddySettings.hueRotate || 0,
+        st: myBuddySettings.saturation || 100,
+        br: myBuddySettings.brightness || 100,
+        dn: myBuddySettings.displayName || ''
     };
-    // Only include custom URL if it exists (it's long so skip if not needed)
     if (myBuddySettings.customSpriteUrl) {
         minimalSettings.cu = myBuddySettings.customSpriteUrl;
     }
 
+    // Try Pusher first (no chat pollution)
+    if (pusherEnabled && pusherChannel) {
+        try {
+            pusherChannel.trigger('client-buddy-settings', {
+                username: myName,
+                ...minimalSettings
+            });
+            console.log('[Pusher] Broadcast sent for', myName);
+            return;
+        } catch (e) {
+            console.log('[Pusher] Trigger failed, using chat fallback');
+        }
+    }
+
+    // Fallback to chat-based sync
     var encoded = encodeBuddySettings(minimalSettings);
     if (!encoded) {
         console.log('[BuddySync] Encoding failed');
         return;
     }
 
-    // Hidden message format using zero-width characters
     var hiddenMsg = '\u200B\u200CBSET:' + myName + ':' + encoded + ':BSET\u200B\u200C';
-
     console.log('[BuddySync] Message length:', hiddenMsg.length, '(must be <240 for Cytube)');
 
-    // Send via socket if available
     if (typeof socket !== 'undefined' && socket.emit) {
         socket.emit('chatMsg', { msg: hiddenMsg, meta: {} });
-        console.log('[BuddySync] Broadcast sent for', myName, '- spriteIndex:', myBuddySettings.spriteIndex);
-    } else {
-        console.log('[BuddySync] Socket not available');
+        console.log('[BuddySync] Chat broadcast sent for', myName);
     }
 }
 
 // Broadcast an interaction for sync (includes positions for visual consistency)
 function broadcastInteraction(user1, user2, interactionType, seed) {
-    // Include buddy positions so other clients can sync visuals
     var b1 = buddyCharacters[user1];
     var b2 = buddyCharacters[user2];
     var pos1 = b1 ? Math.round(b1.x) + ',' + Math.round(b1.y) : '0,0';
     var pos2 = b2 ? Math.round(b2.x) + ',' + Math.round(b2.y) : '0,0';
 
-    var hiddenMsg = '\u200B\u200CBACT:' + user1 + ':' + user2 + ':' + interactionType + ':' + seed + ':' + pos1 + ':' + pos2 + ':BACT\u200B\u200C';
+    // Try Pusher first (no chat pollution)
+    if (pusherEnabled && pusherChannel) {
+        try {
+            pusherChannel.trigger('client-buddy-action', {
+                user1: user1,
+                user2: user2,
+                action: interactionType,
+                seed: seed,
+                pos1: pos1,
+                pos2: pos2
+            });
+            return;
+        } catch (e) {
+            console.log('[Pusher] Action trigger failed, using chat fallback');
+        }
+    }
 
+    // Fallback to chat-based sync
+    var hiddenMsg = '\u200B\u200CBACT:' + user1 + ':' + user2 + ':' + interactionType + ':' + seed + ':' + pos1 + ':' + pos2 + ':BACT\u200B\u200C';
     if (typeof socket !== 'undefined' && socket.emit) {
         socket.emit('chatMsg', { msg: hiddenMsg, meta: {} });
     }
@@ -7977,46 +8103,19 @@ function initBuddySyncListener() {
         }
     }, 100);
 
-    // Load my settings and broadcast on init
+    // Load my settings and broadcast ONCE on init
+    // We only broadcast when: 1) We first join, 2) Our settings change
+    // This prevents flooding chat history with sync messages
     loadMyBuddySettings();
 
-    // Broadcast settings multiple times initially to ensure sync
-    // First broadcast after 1 second
+    // Single broadcast after joining (give time for socket to be ready)
     setTimeout(function() {
         broadcastMyBuddySettings();
-    }, 1000);
+    }, 2000);
 
-    // Second broadcast after 3 seconds (for late joiners)
-    setTimeout(function() {
-        lastSettingsBroadcast = 0;
-        broadcastMyBuddySettings();
-    }, 3000);
-
-    // Third broadcast after 6 seconds
-    setTimeout(function() {
-        lastSettingsBroadcast = 0;
-        broadcastMyBuddySettings();
-    }, 6000);
-
-    // Re-broadcast settings periodically so new users see our customizations
-    setInterval(function() {
-        if (myBuddySettings) {
-            // Force broadcast by resetting the debounce timer
-            lastSettingsBroadcast = 0;
-            broadcastMyBuddySettings();
-        }
-    }, 15000); // Every 15 seconds (reduced from 30)
-
-    // Also broadcast when a new user joins
-    if (typeof socket !== 'undefined') {
-        socket.on('addUser', function(data) {
-            // When someone joins, broadcast our settings so they see our customization
-            setTimeout(function() {
-                lastSettingsBroadcast = 0;
-                broadcastMyBuddySettings();
-            }, 1500); // Small delay to let them initialize
-        });
-    }
+    // NO periodic broadcasts - they flood chat history
+    // NO broadcast when others join - hash-based defaults handle most cases
+    // Settings only broadcast when user explicitly changes them
 }
 
 // Hash function for deterministic assignment
@@ -8323,7 +8422,8 @@ function initConnectedBuddies() {
     buddiesInitialized = true;
 
     injectBuddyStyles();
-    initBuddySyncListener();  // Initialize sync system
+    initPusher();             // Try Pusher first (no chat pollution)
+    initBuddySyncListener();  // Fallback chat-based sync system
 
     setTimeout(function() {
         scanChatForWords();
