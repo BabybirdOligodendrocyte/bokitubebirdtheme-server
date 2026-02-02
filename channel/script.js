@@ -300,6 +300,174 @@ var BokiChatDispatcher = (function() {
 // Expose globally for extensibility
 window.BokiChatDispatcher = BokiChatDispatcher;
 
+/* ========== BOKITHEME NAMESPACE ========== */
+/* Centralized API for theme customization, extension, and debugging */
+
+var BokiTheme = (function() {
+    // Version info
+    var VERSION = '2.0.0';
+
+    // Internal state references (will be populated after globals are declared)
+    var _state = {};
+    var _config = {};
+
+    // Public API
+    return {
+        // Version
+        version: VERSION,
+
+        // Chat message handling
+        Chat: {
+            registerHandler: function(name, handler, priority) {
+                BokiChatDispatcher.register(name, handler, priority || 50);
+            },
+            getHandlers: function() {
+                return BokiChatDispatcher.getHandlers();
+            }
+        },
+
+        // Settings management
+        Settings: {
+            get: function(key) {
+                var storageKey = key + 'Settings';
+                try {
+                    return JSON.parse(localStorage.getItem(storageKey) || '{}');
+                } catch (e) {
+                    return {};
+                }
+            },
+            set: function(key, value) {
+                var storageKey = key + 'Settings';
+                try {
+                    localStorage.setItem(storageKey, JSON.stringify(value));
+                    return true;
+                } catch (e) {
+                    console.error('[BokiTheme] Failed to save settings:', e);
+                    return false;
+                }
+            },
+            // Access specific setting categories
+            getText: function() { return textStyleSettings; },
+            getUsername: function() { return usernameStyleSettings; },
+            getReply: function() { return replyStyleSettings; }
+        },
+
+        // Emote system
+        Emotes: {
+            getFavorites: function() { return emoteFavorites; },
+            addFavorite: function(name) {
+                if (emoteFavorites.indexOf(name) === -1) {
+                    emoteFavorites.push(name);
+                    localStorage.setItem('emoteFavorites', JSON.stringify(emoteFavorites));
+                }
+            },
+            removeFavorite: function(name) {
+                var idx = emoteFavorites.indexOf(name);
+                if (idx !== -1) {
+                    emoteFavorites.splice(idx, 1);
+                    localStorage.setItem('emoteFavorites', JSON.stringify(emoteFavorites));
+                }
+            }
+        },
+
+        // Buddy system (populated after buddy system loads)
+        Buddy: {
+            getAll: function() { return typeof buddyCharacters !== 'undefined' ? buddyCharacters : {}; },
+            getSettings: function() { return typeof myBuddySettings !== 'undefined' ? myBuddySettings : null; },
+            getSprites: function() { return typeof BUDDY_SPRITES !== 'undefined' ? BUDDY_SPRITES : []; },
+            isPusherEnabled: function() { return typeof pusherEnabled !== 'undefined' ? pusherEnabled : false; }
+        },
+
+        // User management
+        Users: {
+            getIgnored: function() { return ignoredUsers; },
+            ignore: function(username) {
+                var lower = username.toLowerCase();
+                if (ignoredUsers.indexOf(lower) === -1) {
+                    ignoredUsers.push(lower);
+                    localStorage.setItem('ignoredUsers', JSON.stringify(ignoredUsers));
+                }
+            },
+            unignore: function(username) {
+                var lower = username.toLowerCase();
+                ignoredUsers = ignoredUsers.filter(function(u) { return u !== lower; });
+                localStorage.setItem('ignoredUsers', JSON.stringify(ignoredUsers));
+            }
+        },
+
+        // UI preferences
+        UI: {
+            getEmoteSize: function() { return emoteSize; },
+            setEmoteSize: function(size) {
+                emoteSize = size;
+                localStorage.setItem('emoteSize', size);
+                if (typeof applyEmoteSize === 'function') applyEmoteSize();
+            },
+            getFontSize: function() { return chatFontSize; },
+            setFontSize: function(size) {
+                chatFontSize = size;
+                localStorage.setItem('chatFontSize', size);
+                if (typeof applyChatFontSize === 'function') applyChatFontSize();
+            },
+            isCompactMode: function() { return compactMode; },
+            setCompactMode: function(enabled) {
+                compactMode = enabled;
+                localStorage.setItem('compactMode', enabled);
+                document.body.classList.toggle('compact-mode', enabled);
+            },
+            isTimestampsVisible: function() { return timestampsVisible; },
+            setTimestampsVisible: function(visible) {
+                timestampsVisible = visible;
+                localStorage.setItem('timestampsVisible', visible);
+                if (typeof applyTimestampVisibility === 'function') applyTimestampVisibility();
+            },
+            isSoundEnabled: function() { return soundEnabled; },
+            setSoundEnabled: function(enabled) {
+                soundEnabled = enabled;
+                localStorage.setItem('soundEnabled', enabled);
+            }
+        },
+
+        // Debug utilities
+        Debug: {
+            getState: function() {
+                return {
+                    version: VERSION,
+                    chatHandlers: BokiChatDispatcher.getHandlers(),
+                    emoteFavorites: emoteFavorites.length,
+                    ignoredUsers: ignoredUsers.length,
+                    buddyCount: typeof buddyCharacters !== 'undefined' ? Object.keys(buddyCharacters).length : 0,
+                    pusherEnabled: typeof pusherEnabled !== 'undefined' ? pusherEnabled : false,
+                    settings: {
+                        emoteSize: emoteSize,
+                        chatFontSize: chatFontSize,
+                        compactMode: compactMode,
+                        timestampsVisible: timestampsVisible,
+                        soundEnabled: soundEnabled
+                    }
+                };
+            },
+            log: function(category, message) {
+                console.log('[BokiTheme:' + category + ']', message);
+            }
+        },
+
+        // Extension registration (for plugins)
+        extend: function(name, extension) {
+            if (this[name]) {
+                console.warn('[BokiTheme] Extension "' + name + '" would overwrite existing property');
+                return false;
+            }
+            this[name] = extension;
+            console.log('[BokiTheme] Extension "' + name + '" registered');
+            return true;
+        }
+    };
+})();
+
+// Expose globally
+window.BokiTheme = BokiTheme;
+
 /* ========== POPUP SYSTEM ========== */
 var emoteFavorites = JSON.parse(localStorage.getItem('emoteFavorites')) || [];
 var gifFavorites = JSON.parse(localStorage.getItem('gifFavorites')) || [];
