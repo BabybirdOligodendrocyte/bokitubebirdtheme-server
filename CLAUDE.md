@@ -853,3 +853,168 @@ Messages use invisible zero-width character markers:
 var SCREENSPAM_DURATION = 5000;   // 5 seconds display
 var SCREENSPAM_MAX_LENGTH = 50;   // Max characters
 ```
+
+## BokiTheme API (v2.0.0)
+
+The theme exposes a centralized API via `window.BokiTheme` for customization, extension, and debugging.
+
+### Core Modules
+
+| Module | Purpose |
+|--------|---------|
+| `BokiTheme.Chat` | Register custom message handlers |
+| `BokiTheme.Settings` | Read/write theme settings |
+| `BokiTheme.Emotes` | Manage favorite emotes |
+| `BokiTheme.Buddy` | Access buddy system state |
+| `BokiTheme.Users` | Manage ignored users |
+| `BokiTheme.UI` | Control UI preferences |
+| `BokiTheme.Memory` | Memory management and cleanup |
+| `BokiTheme.Safe` | Error handling utilities |
+| `BokiTheme.Debug` | Debugging and state inspection |
+
+### Chat Message Handling
+
+```javascript
+// Register a custom message handler
+BokiTheme.Chat.registerHandler('myPlugin', function(data) {
+    if (data.msg.indexOf('!trigger') === 0) {
+        console.log('Trigger activated by', data.username);
+        return true;  // Stop processing (or false to continue)
+    }
+    return false;
+}, 50);  // Priority: 0-100, higher runs first
+
+// View registered handlers
+console.log(BokiTheme.Chat.getHandlers());
+```
+
+**Handler Priority Levels:**
+- 100: Buddy sync (filters hidden messages)
+- 80: Screenspam
+- 50: Default for plugins
+- 40: Message formatting
+- 30: Mention notifications
+- 20: Ignore list
+
+### UI Preferences
+
+```javascript
+// Font size
+BokiTheme.UI.getFontSize();           // Returns current size
+BokiTheme.UI.setFontSize(16);         // Set font size
+
+// Emote size
+BokiTheme.UI.getEmoteSize();          // 'small', 'medium', 'large'
+BokiTheme.UI.setEmoteSize('large');
+
+// Toggles
+BokiTheme.UI.isCompactMode();
+BokiTheme.UI.setCompactMode(true);
+BokiTheme.UI.isTimestampsVisible();
+BokiTheme.UI.setTimestampsVisible(false);
+BokiTheme.UI.isSoundEnabled();
+BokiTheme.UI.setSoundEnabled(true);
+```
+
+### Memory Management
+
+```javascript
+// Get memory statistics
+BokiTheme.Memory.getStats();
+// Returns: { chatMessages: 150, buddySettings: 5, buddyCharacters: 5, autoCleanupActive: true }
+
+// Manual cleanup
+BokiTheme.Memory.runCleanup();
+
+// Configure limits
+BokiTheme.Memory.config.maxChatMessages = 500;  // DOM node limit
+BokiTheme.Memory.config.cleanupInterval = 60000; // 60 seconds
+
+// Control auto-cleanup
+BokiTheme.Memory.startAutoCleanup();
+BokiTheme.Memory.stopAutoCleanup();
+```
+
+### Error Handling (Safe Module)
+
+```javascript
+// Wrap a function with error handling
+var safeFn = BokiTheme.Safe.wrap(riskyFunction, fallbackValue);
+
+// Execute safely with fallback
+var result = BokiTheme.Safe.exec(function() {
+    return riskyOperation();
+}, 'fallback');
+
+// Safe JSON parsing
+var obj = BokiTheme.Safe.parseJSON(jsonString, {});
+
+// Safe localStorage
+BokiTheme.Safe.setStorage('myKey', { data: 'value' });
+var data = BokiTheme.Safe.getStorage('myKey', {});
+```
+
+### Plugin Development
+
+```javascript
+// Register a plugin extension
+BokiTheme.extend('MyPlugin', {
+    version: '1.0.0',
+    init: function() {
+        console.log('MyPlugin initialized');
+    },
+    doSomething: function() {
+        // Plugin functionality
+    }
+});
+
+// Use the plugin
+BokiTheme.MyPlugin.init();
+BokiTheme.MyPlugin.doSomething();
+```
+
+### Debugging
+
+```javascript
+// Get full theme state
+console.log(BokiTheme.Debug.getState());
+// Returns: {
+//   version: '2.0.0',
+//   chatHandlers: [...],
+//   emoteFavorites: 10,
+//   ignoredUsers: 2,
+//   buddyCount: 5,
+//   pusherEnabled: true,
+//   memory: {...},
+//   settings: {...}
+// }
+
+// Log with category
+BokiTheme.Debug.log('MyPlugin', 'Something happened');
+// Output: [BokiTheme:MyPlugin] Something happened
+```
+
+## BokiChatDispatcher
+
+Low-level chat message dispatcher. Use `BokiTheme.Chat` for the simplified API.
+
+```javascript
+// Direct dispatcher access
+BokiChatDispatcher.register(name, handler, priority);
+BokiChatDispatcher.init();
+BokiChatDispatcher.getHandlers();
+```
+
+## Responsive Breakpoints
+
+The theme includes enhanced responsive design for all screen sizes:
+
+| Breakpoint | Target |
+|------------|--------|
+| 2560px+ | Ultra-wide and 4K monitors |
+| 1920-2559px | Large desktop monitors |
+| 1024-1264px | Small laptops |
+| 769-1023px | Large tablets (landscape) |
+| ≤768px | Mobile devices |
+| 21:9+ aspect ratio | Ultra-wide monitors |
+| High DPI | Retina/4K displays |

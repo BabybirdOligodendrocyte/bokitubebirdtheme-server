@@ -1,26 +1,49 @@
-/* AGGRESSIVE: Remove Name Color button - runs every 500ms forever */
+/* Remove Name Color button - uses MutationObserver instead of polling */
 (function removeNameColorButton() {
-    function killIt() {
-        // Find by text content
-        document.querySelectorAll('button, .btn, span, a, div').forEach(function(el) {
-            if (el.textContent.trim() === 'Name Color') {
-                el.style.display = 'none';
-                el.remove();
-            }
-        });
-        // Find by green background
-        document.querySelectorAll('button, .btn').forEach(function(el) {
+    function isNameColorButton(el) {
+        if (!el || el.nodeType !== 1) return false;
+        if (el.textContent.trim() === 'Name Color') return true;
+        if (el.classList.contains('btn-success')) return true;
+        // Check computed style only for buttons (expensive operation)
+        if (el.tagName === 'BUTTON' || el.classList.contains('btn')) {
             var style = window.getComputedStyle(el);
             var bg = style.backgroundColor;
             if (bg.indexOf('40, 167, 69') !== -1 || bg.indexOf('0, 128, 0') !== -1 ||
-                bg.indexOf('34, 139, 34') !== -1 || el.classList.contains('btn-success')) {
-                el.style.display = 'none';
-                el.remove();
-            }
-        });
+                bg.indexOf('34, 139, 34') !== -1) return true;
+        }
+        return false;
     }
-    killIt();
-    setInterval(killIt, 500);
+
+    function removeButton(el) {
+        el.style.display = 'none';
+        el.remove();
+    }
+
+    // Initial cleanup
+    document.querySelectorAll('button, .btn, .btn-success').forEach(function(el) {
+        if (isNameColorButton(el)) removeButton(el);
+    });
+
+    // Watch for dynamically added buttons
+    var observer = new MutationObserver(function(mutations) {
+        mutations.forEach(function(mutation) {
+            mutation.addedNodes.forEach(function(node) {
+                if (isNameColorButton(node)) {
+                    removeButton(node);
+                } else if (node.nodeType === 1) {
+                    // Check children of added nodes
+                    node.querySelectorAll && node.querySelectorAll('button, .btn, .btn-success').forEach(function(el) {
+                        if (isNameColorButton(el)) removeButton(el);
+                    });
+                }
+            });
+        });
+    });
+
+    observer.observe(document.body, { childList: true, subtree: true });
+
+    // Disconnect after 60 seconds - button should be loaded by then
+    setTimeout(function() { observer.disconnect(); }, 60000);
 })();
 
 /* Removes the buttons for resizing video and user list size toggle */
@@ -83,8 +106,19 @@ chatline.removeAttribute("placeholder");
 chatline.setAttribute("placeholder", "Send a message");
 chatline.setAttribute("spellcheck", "false");
 
-/* Sets the variable used for mobile chat sizing */
-setInterval(function () {document.documentElement.style.setProperty('--vh', window.innerHeight/100 + 'px');}, 20);
+/* Sets the variable used for mobile chat sizing - uses resize event instead of polling */
+(function() {
+    function updateVH() {
+        document.documentElement.style.setProperty('--vh', window.innerHeight/100 + 'px');
+    }
+    var vhTimer;
+    window.addEventListener('resize', function() {
+        clearTimeout(vhTimer);
+        vhTimer = setTimeout(updateVH, 100);
+    });
+    window.addEventListener('orientationchange', updateVH);
+    updateVH(); // Initial call
+})();
 
 /* Positions the chat depending on media query */
 function chatPosition(x) {
@@ -200,6 +234,387 @@ $('<button id="afk-btn" class="btn btn-default btn-sm">AFK</button>')
 $('<button id="clear-btn" class="btn btn-default btn-sm">Clear</button>')
     .appendTo("#leftcontrols")
     .on("click", function() { socket.emit("chatMsg", { msg: '/clear' }); });
+
+/* ========== UNIFIED CHAT MESSAGE DISPATCHER ========== */
+/* All socket.on('chatMsg') handlers are centralized here for performance and extensibility */
+
+var BokiChatDispatcher = (function() {
+    var handlers = [];
+    var initialized = false;
+
+    // Register a chat message handler
+    // Options: { priority: 0-100 (higher = runs first), name: 'handlerName' }
+    function register(name, handler, priority) {
+        handlers.push({
+            name: name,
+            fn: handler,
+            priority: priority || 50
+        });
+        // Sort by priority (higher first)
+        handlers.sort(function(a, b) { return b.priority - a.priority; });
+    }
+
+    // Process a chat message through all handlers
+    function dispatch(data) {
+        if (!data) return;
+
+        for (var i = 0; i < handlers.length; i++) {
+            try {
+                // If handler returns true, stop processing (message was handled)
+                if (handlers[i].fn(data) === true) {
+                    return;
+                }
+            } catch (e) {
+                console.error('[ChatDispatcher] Error in handler ' + handlers[i].name + ':', e);
+            }
+        }
+    }
+
+    // Initialize the dispatcher (call once when socket is ready)
+    function init() {
+        if (initialized || typeof socket === 'undefined') return;
+
+        socket.on('chatMsg', function(data) {
+            dispatch(data);
+        });
+
+        initialized = true;
+        console.log('[ChatDispatcher] Initialized with', handlers.length, 'handlers');
+    }
+
+    // Get list of registered handlers (for debugging)
+    function getHandlers() {
+        return handlers.map(function(h) {
+            return { name: h.name, priority: h.priority };
+        });
+    }
+
+    return {
+        register: register,
+        init: init,
+        dispatch: dispatch,
+        getHandlers: getHandlers
+    };
+})();
+
+// Expose globally for extensibility
+window.BokiChatDispatcher = BokiChatDispatcher;
+
+/* ========== BOKITHEME NAMESPACE ========== */
+/* Centralized API for theme customization, extension, and debugging */
+
+var BokiTheme = (function() {
+    // Version info
+    var VERSION = '2.0.0';
+
+    // Internal state references (will be populated after globals are declared)
+    var _state = {};
+    var _config = {};
+
+    // Public API
+    return {
+        // Version
+        version: VERSION,
+
+        // Chat message handling
+        Chat: {
+            registerHandler: function(name, handler, priority) {
+                BokiChatDispatcher.register(name, handler, priority || 50);
+            },
+            getHandlers: function() {
+                return BokiChatDispatcher.getHandlers();
+            }
+        },
+
+        // Settings management
+        Settings: {
+            get: function(key) {
+                var storageKey = key + 'Settings';
+                try {
+                    return JSON.parse(localStorage.getItem(storageKey) || '{}');
+                } catch (e) {
+                    return {};
+                }
+            },
+            set: function(key, value) {
+                var storageKey = key + 'Settings';
+                try {
+                    localStorage.setItem(storageKey, JSON.stringify(value));
+                    return true;
+                } catch (e) {
+                    console.error('[BokiTheme] Failed to save settings:', e);
+                    return false;
+                }
+            },
+            // Access specific setting categories
+            getText: function() { return textStyleSettings; },
+            getUsername: function() { return usernameStyleSettings; },
+            getReply: function() { return replyStyleSettings; }
+        },
+
+        // Emote system
+        Emotes: {
+            getFavorites: function() { return emoteFavorites; },
+            addFavorite: function(name) {
+                if (emoteFavorites.indexOf(name) === -1) {
+                    emoteFavorites.push(name);
+                    localStorage.setItem('emoteFavorites', JSON.stringify(emoteFavorites));
+                }
+            },
+            removeFavorite: function(name) {
+                var idx = emoteFavorites.indexOf(name);
+                if (idx !== -1) {
+                    emoteFavorites.splice(idx, 1);
+                    localStorage.setItem('emoteFavorites', JSON.stringify(emoteFavorites));
+                }
+            }
+        },
+
+        // Buddy system (populated after buddy system loads)
+        Buddy: {
+            getAll: function() { return typeof buddyCharacters !== 'undefined' ? buddyCharacters : {}; },
+            getSettings: function() { return typeof myBuddySettings !== 'undefined' ? myBuddySettings : null; },
+            getSprites: function() { return typeof BUDDY_SPRITES !== 'undefined' ? BUDDY_SPRITES : []; },
+            isPusherEnabled: function() { return typeof pusherEnabled !== 'undefined' ? pusherEnabled : false; }
+        },
+
+        // User management
+        Users: {
+            getIgnored: function() { return ignoredUsers; },
+            ignore: function(username) {
+                var lower = username.toLowerCase();
+                if (ignoredUsers.indexOf(lower) === -1) {
+                    ignoredUsers.push(lower);
+                    localStorage.setItem('ignoredUsers', JSON.stringify(ignoredUsers));
+                }
+            },
+            unignore: function(username) {
+                var lower = username.toLowerCase();
+                ignoredUsers = ignoredUsers.filter(function(u) { return u !== lower; });
+                localStorage.setItem('ignoredUsers', JSON.stringify(ignoredUsers));
+            }
+        },
+
+        // UI preferences
+        UI: {
+            getEmoteSize: function() { return emoteSize; },
+            setEmoteSize: function(size) {
+                emoteSize = size;
+                localStorage.setItem('emoteSize', size);
+                if (typeof applyEmoteSize === 'function') applyEmoteSize();
+            },
+            getFontSize: function() { return chatFontSize; },
+            setFontSize: function(size) {
+                chatFontSize = size;
+                localStorage.setItem('chatFontSize', size);
+                if (typeof applyChatFontSize === 'function') applyChatFontSize();
+            },
+            isCompactMode: function() { return compactMode; },
+            setCompactMode: function(enabled) {
+                compactMode = enabled;
+                localStorage.setItem('compactMode', enabled);
+                document.body.classList.toggle('compact-mode', enabled);
+            },
+            isTimestampsVisible: function() { return timestampsVisible; },
+            setTimestampsVisible: function(visible) {
+                timestampsVisible = visible;
+                localStorage.setItem('timestampsVisible', visible);
+                if (typeof applyTimestampVisibility === 'function') applyTimestampVisibility();
+            },
+            isSoundEnabled: function() { return soundEnabled; },
+            setSoundEnabled: function(enabled) {
+                soundEnabled = enabled;
+                localStorage.setItem('soundEnabled', enabled);
+            }
+        },
+
+        // Memory management
+        Memory: {
+            // Configuration
+            config: {
+                maxChatMessages: 500,      // Max DOM nodes in message buffer
+                maxBuddySettings: 100,     // Max cached buddy settings
+                cleanupInterval: 60000     // Cleanup every 60 seconds
+            },
+
+            // Cleanup message buffer (remove old messages from DOM)
+            cleanupMessageBuffer: function() {
+                var msgBuffer = document.getElementById('messagebuffer');
+                if (!msgBuffer) return 0;
+
+                var messages = msgBuffer.querySelectorAll(':scope > div');
+                var removed = 0;
+                var maxMessages = this.config.maxChatMessages;
+
+                if (messages.length > maxMessages) {
+                    var toRemove = messages.length - maxMessages;
+                    for (var i = 0; i < toRemove; i++) {
+                        messages[i].remove();
+                        removed++;
+                    }
+                }
+                return removed;
+            },
+
+            // Cleanup buddy settings for users no longer present
+            cleanupBuddySettings: function() {
+                if (typeof customBuddySettings === 'undefined' || typeof buddyCharacters === 'undefined') return 0;
+
+                var removed = 0;
+                var activeUsers = Object.keys(buddyCharacters);
+
+                Object.keys(customBuddySettings).forEach(function(username) {
+                    if (activeUsers.indexOf(username) === -1) {
+                        delete customBuddySettings[username];
+                        removed++;
+                    }
+                });
+                return removed;
+            },
+
+            // Run all cleanup tasks
+            runCleanup: function() {
+                var results = {
+                    messages: this.cleanupMessageBuffer(),
+                    buddySettings: this.cleanupBuddySettings(),
+                    timestamp: new Date().toISOString()
+                };
+
+                if (results.messages > 0 || results.buddySettings > 0) {
+                    console.log('[BokiTheme:Memory] Cleanup:', results);
+                }
+                return results;
+            },
+
+            // Start automatic cleanup interval
+            _intervalId: null,
+            startAutoCleanup: function() {
+                var self = this;
+                if (this._intervalId) return;
+
+                this._intervalId = setInterval(function() {
+                    self.runCleanup();
+                }, this.config.cleanupInterval);
+
+                console.log('[BokiTheme:Memory] Auto-cleanup started (interval: ' + this.config.cleanupInterval + 'ms)');
+            },
+
+            stopAutoCleanup: function() {
+                if (this._intervalId) {
+                    clearInterval(this._intervalId);
+                    this._intervalId = null;
+                    console.log('[BokiTheme:Memory] Auto-cleanup stopped');
+                }
+            },
+
+            // Get memory stats
+            getStats: function() {
+                var msgBuffer = document.getElementById('messagebuffer');
+                return {
+                    chatMessages: msgBuffer ? msgBuffer.querySelectorAll(':scope > div').length : 0,
+                    buddySettings: typeof customBuddySettings !== 'undefined' ? Object.keys(customBuddySettings).length : 0,
+                    buddyCharacters: typeof buddyCharacters !== 'undefined' ? Object.keys(buddyCharacters).length : 0,
+                    autoCleanupActive: this._intervalId !== null
+                };
+            }
+        },
+
+        // Error handling utilities
+        Safe: {
+            // Wrap a function with try-catch error handling
+            wrap: function(fn, fallback, context) {
+                return function() {
+                    try {
+                        return fn.apply(context || this, arguments);
+                    } catch (e) {
+                        console.error('[BokiTheme:Error]', e.message, e.stack);
+                        return typeof fallback === 'function' ? fallback(e) : fallback;
+                    }
+                };
+            },
+
+            // Execute a function safely with optional fallback
+            exec: function(fn, fallback) {
+                try {
+                    return fn();
+                } catch (e) {
+                    console.error('[BokiTheme:Error]', e.message);
+                    return fallback;
+                }
+            },
+
+            // Safe JSON parse
+            parseJSON: function(str, fallback) {
+                try {
+                    return JSON.parse(str);
+                } catch (e) {
+                    return fallback !== undefined ? fallback : null;
+                }
+            },
+
+            // Safe localStorage get
+            getStorage: function(key, fallback) {
+                try {
+                    var value = localStorage.getItem(key);
+                    if (value === null) return fallback;
+                    return JSON.parse(value);
+                } catch (e) {
+                    return fallback;
+                }
+            },
+
+            // Safe localStorage set
+            setStorage: function(key, value) {
+                try {
+                    localStorage.setItem(key, JSON.stringify(value));
+                    return true;
+                } catch (e) {
+                    console.error('[BokiTheme:Storage] Failed to save:', key, e.message);
+                    return false;
+                }
+            }
+        },
+
+        // Debug utilities
+        Debug: {
+            getState: function() {
+                return {
+                    version: VERSION,
+                    chatHandlers: BokiChatDispatcher.getHandlers(),
+                    emoteFavorites: emoteFavorites.length,
+                    ignoredUsers: ignoredUsers.length,
+                    buddyCount: typeof buddyCharacters !== 'undefined' ? Object.keys(buddyCharacters).length : 0,
+                    pusherEnabled: typeof pusherEnabled !== 'undefined' ? pusherEnabled : false,
+                    memory: BokiTheme.Memory.getStats(),
+                    settings: {
+                        emoteSize: emoteSize,
+                        chatFontSize: chatFontSize,
+                        compactMode: compactMode,
+                        timestampsVisible: timestampsVisible,
+                        soundEnabled: soundEnabled
+                    }
+                };
+            },
+            log: function(category, message) {
+                console.log('[BokiTheme:' + category + ']', message);
+            }
+        },
+
+        // Extension registration (for plugins)
+        extend: function(name, extension) {
+            if (this[name]) {
+                console.warn('[BokiTheme] Extension "' + name + '" would overwrite existing property');
+                return false;
+            }
+            this[name] = extension;
+            console.log('[BokiTheme] Extension "' + name + '" registered');
+            return true;
+        }
+    };
+})();
+
+// Expose globally
+window.BokiTheme = BokiTheme;
 
 /* ========== POPUP SYSTEM ========== */
 var emoteFavorites = JSON.parse(localStorage.getItem('emoteFavorites')) || [];
@@ -3333,59 +3748,7 @@ $(document).ready(function() {
     // Fix userlist display - with delay to ensure elements exist
     setTimeout(fixUserlistLayout, 1500);
 
-    // Hide Name Color button from external scripts (search everywhere, runs periodically)
-    function hideNameColorBtn() {
-        // Search ALL elements that could be buttons
-        $('button, .btn, [role="button"], input[type="button"], a.btn').each(function() {
-            var $el = $(this);
-            var text = $el.text().trim().toLowerCase();
-
-            // Hide if text contains "name color" in any form
-            if (text === 'name color' || text === 'namecolor' || text === 'name  color' ||
-                (text.indexOf('name') !== -1 && text.indexOf('color') !== -1)) {
-                $el.remove();
-                return;
-            }
-
-            // Check for green backgrounds (multiple formats)
-            var bg = $el.css('background-color');
-            var style = $el.attr('style') || '';
-            var isGreen = bg === 'rgb(0, 128, 0)' ||
-                          bg === 'rgb(40, 167, 69)' ||
-                          bg === 'rgb(34, 139, 34)' ||
-                          bg === 'rgb(50, 205, 50)' ||
-                          bg.indexOf('0, 128, 0') !== -1 ||
-                          bg.indexOf('40, 167, 69') !== -1 ||
-                          style.toLowerCase().indexOf('green') !== -1 ||
-                          style.indexOf('#28a745') !== -1 ||
-                          style.indexOf('#008000') !== -1 ||
-                          $el.hasClass('btn-success');
-
-            // Only remove green buttons that are NOT in leftcontrols (keep theme buttons)
-            if (isGreen && !$el.closest('#leftcontrols').length) {
-                $el.remove();
-            }
-        });
-    }
-
-    // Run immediately and repeatedly
-    hideNameColorBtn();
-    setTimeout(hideNameColorBtn, 500);
-    setTimeout(hideNameColorBtn, 1000);
-    setTimeout(hideNameColorBtn, 2000);
-    setTimeout(hideNameColorBtn, 3000);
-    setTimeout(hideNameColorBtn, 5000);
-
-    // Keep observer running longer (30 seconds)
-    var btnObserver = new MutationObserver(function() {
-        setTimeout(hideNameColorBtn, 50);
-    });
-    btnObserver.observe(document.body, { childList: true, subtree: true });
-    setTimeout(function() { btnObserver.disconnect(); }, 30000);
-
-    // Also run periodically every 5 seconds for first minute
-    var hideInterval = setInterval(hideNameColorBtn, 5000);
-    setTimeout(function() { clearInterval(hideInterval); }, 60000);
+    // Name Color button removal is handled by MutationObserver at top of file
 });
 
 function fixUserlistLayout() {
@@ -4826,9 +5189,11 @@ if (msgBuffer) {
     gifObserver.observe(msgBuffer, { childList: true, subtree: true });
 }
 
-socket.on('chatMsg', function(data) {
+// Register formatChatMsg with dispatcher (priority 40 - runs after sync checks)
+BokiChatDispatcher.register('formatChatMsg', function(data) {
     formatChatMsg(data, $("#messagebuffer > div").last());
-});
+    return false; // Continue to other handlers
+}, 40);
 
 // Hook into niconico script to strip username tags and show GIFs in scrolling messages
 (function() {
@@ -6394,14 +6759,15 @@ function initClickToMention() {
 function initMentionNotifications() {
     var myUsername = CLIENT && CLIENT.name ? CLIENT.name.toLowerCase() : '';
 
-    socket.on('chatMsg', function(data) {
+    // Register with dispatcher (priority 30 - runs after formatting)
+    BokiChatDispatcher.register('mentionNotifications', function(data) {
         if (!myUsername) {
             myUsername = CLIENT && CLIENT.name ? CLIENT.name.toLowerCase() : '';
         }
-        if (!myUsername || !data.msg) return;
+        if (!myUsername || !data.msg) return false;
 
         // Skip buddy sync messages - they contain usernames but aren't real mentions
-        if (isBuddySyncMessage(data.msg)) return;
+        if (isBuddySyncMessage(data.msg)) return false;
 
         var msgLower = data.msg.toLowerCase();
         if (msgLower.indexOf('@' + myUsername) !== -1 || msgLower.indexOf(myUsername) !== -1) {
@@ -6419,7 +6785,8 @@ function initMentionNotifications() {
                 }
             }, 100);
         }
-    });
+        return false; // Continue to other handlers
+    }, 30);
 }
 
 // User ignore list
@@ -6433,8 +6800,8 @@ function initIgnoreList() {
         }
     });
 
-    // Filter messages from ignored users
-    socket.on('chatMsg', function(data) {
+    // Register with dispatcher (priority 20 - runs after mentions)
+    BokiChatDispatcher.register('ignoreList', function(data) {
         if (ignoredUsers.indexOf(data.username.toLowerCase()) !== -1) {
             setTimeout(function() {
                 var msgs = document.querySelectorAll('#messagebuffer > div');
@@ -6445,7 +6812,8 @@ function initIgnoreList() {
                 }
             }, 50);
         }
-    });
+        return false; // Continue to other handlers
+    }, 20);
 }
 
 function addToIgnoreList(username) {
@@ -7292,10 +7660,9 @@ function initScreenspamCommand() {
 
 // Process incoming messages for screenspam
 function initScreenspamReceiver() {
-    if (typeof socket === 'undefined') return;
-
-    socket.on('chatMsg', function(data) {
-        if (!data.msg) return;
+    // Register with dispatcher (priority 80 - runs early, can hide screenspam messages)
+    BokiChatDispatcher.register('screenspam', function(data) {
+        if (!data.msg) return false;
 
         // Check for screenspam marker
         var markerPattern = screenspamMarker + 'SCREENSPAM:';
@@ -7324,12 +7691,14 @@ function initScreenspamReceiver() {
                 }, 100);
             }
         }
-    });
+        return false; // Continue to other handlers (message still needs formatting)
+    }, 80);
 }
 
 // Initialize all enhanced features
 $(document).ready(function() {
     setTimeout(function() {
+        // Initialize chat dispatcher first (registers handlers, then starts listening)
         initMentionAutocomplete();
         initClickToMention();
         initMentionNotifications();
@@ -7351,6 +7720,12 @@ $(document).ready(function() {
         applyTimestampVisibility();
         applyChatFontSize();
         if (compactMode) document.body.classList.add('compact-mode');
+
+        // Start the unified chat dispatcher (after all handlers registered)
+        BokiChatDispatcher.init();
+
+        // Start memory auto-cleanup (every 60 seconds)
+        BokiTheme.Memory.startAutoCleanup();
     }, 2000);
 });
 
@@ -7378,7 +7753,6 @@ var buddyAnimationId = null;
 var buddiesInitialized = false;
 var chatWordTargets = [];
 var recentChatMessages = [];
-var activeConversations = [];  // Track ongoing conversations
 var customBuddySettings = {};  // Store custom settings received from other users
 var myBuddySettings = null;    // Current user's custom settings
 var lastSettingsBroadcast = 0; // Debounce settings broadcast
@@ -7983,41 +8357,30 @@ function getBuddyPhrase(buddy, phraseType, defaultPhrases, seededRandom) {
 
 // Initialize sync message listener
 function initBuddySyncListener() {
-    // Intercept socket chatMsg to prevent sync messages from displaying at all
-    if (typeof socket !== 'undefined') {
-        // Store original emit handlers
-        var originalOn = socket.on.bind(socket);
-        var chatMsgHandlers = [];
+    // Register with dispatcher (priority 100 - HIGHEST, runs first to filter sync messages)
+    BokiChatDispatcher.register('buddySync', function(data) {
+        if (!data.msg) return false;
 
-        // Wrap socket.on to intercept chatMsg handlers
-        socket.on = function(event, handler) {
-            if (event === 'chatMsg') {
-                // Wrap the handler to filter sync messages
-                var wrappedHandler = function(data) {
-                    if (data.msg && isBuddySyncMessage(data.msg)) {
-                        // Process sync data but don't pass to original handler
-                        parseBuddySyncMessage(data.msg);
-                        return; // Don't display this message
-                    }
-                    handler(data);
-                };
-                return originalOn(event, wrappedHandler);
-            }
-            return originalOn(event, handler);
-        };
-
-        // Also listen directly for sync messages
-        originalOn('chatMsg', function(data) {
-            // Debug: log ALL incoming chat messages to see what we're receiving
-            if (data.msg && (data.msg.indexOf('BSET') !== -1 || data.msg.indexOf('BACT') !== -1)) {
-                console.log('[BuddySync] Raw chatMsg received:', data.msg.substring(0, 100));
-            }
-            if (data.msg && isBuddySyncMessage(data.msg)) {
+        if (isBuddySyncMessage(data.msg)) {
+            // Debug logging
+            if (data.msg.indexOf('BSET') !== -1 || data.msg.indexOf('BACT') !== -1) {
                 console.log('[BuddySync] Sync message detected, parsing...');
-                parseBuddySyncMessage(data.msg);
             }
-        });
-    }
+            parseBuddySyncMessage(data.msg);
+
+            // Hide the message from chat display
+            setTimeout(function() {
+                var msgs = document.querySelectorAll('#messagebuffer > div');
+                var lastMsg = msgs[msgs.length - 1];
+                if (lastMsg && isBuddySyncMessage(lastMsg.textContent)) {
+                    lastMsg.remove();
+                }
+            }, 50);
+
+            return true; // STOP processing - don't pass to other handlers
+        }
+        return false; // Not a sync message, continue to other handlers
+    }, 100);
 
     // Clean up EXISTING messages in chat history (from before we joined)
     function cleanupExistingMessages() {

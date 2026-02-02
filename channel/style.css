@@ -1009,3 +1009,101 @@ textarea.form-control { height: 500px; }
     0% { transform: rotate(0deg); }
     100% { transform: rotate(360deg); }
 }
+
+/* ========== ENHANCED RESPONSIVE BREAKPOINTS ========== */
+
+/* Ultra-wide and 4K monitors (2560px+) */
+@media (min-width: 2560px) {
+    #content-wrap {
+        max-width: 3400px;
+        margin: 0 auto;
+    }
+    #rightcontent {
+        min-width: 350px;
+    }
+    .channel-emote {
+        height: 100px;
+        max-width: 250px;
+    }
+    #messagebuffer > div {
+        padding: 0.2rem 0.4rem;
+        margin-bottom: 5px;
+    }
+    .emote-panel {
+        width: 500px;
+    }
+}
+
+/* Large desktop monitors (1920-2559px) */
+@media (min-width: 1920px) and (max-width: 2559px) {
+    #rightcontent {
+        min-width: 320px;
+    }
+}
+
+/* Small laptops (1024-1264px) */
+@media (min-width: 1024px) and (max-width: 1264px) {
+    #leftcontent {
+        width: 70% !important;
+    }
+    #rightcontent {
+        width: 30% !important;
+        min-width: 290px;
+    }
+    #leftcontrols .btn {
+        padding: 4px 8px;
+        font-size: 11px;
+    }
+    .emote-panel {
+        width: 350px;
+    }
+}
+
+/* Large tablets landscape (769-1023px) */
+@media (min-width: 769px) and (max-width: 1023px) {
+    #leftcontent {
+        width: 62% !important;
+    }
+    #rightcontent {
+        width: 38% !important;
+        min-width: 280px;
+    }
+    #leftcontrols .btn {
+        padding: 4px 6px;
+        font-size: 11px;
+    }
+    .channel-emote {
+        height: 60px;
+        max-width: 150px;
+    }
+}
+
+/* Ultra-wide monitor handling (21:9 and wider) */
+@media (min-aspect-ratio: 21/9) {
+    #leftcontent {
+        width: 72% !important;
+    }
+    #rightcontent {
+        width: 28% !important;
+        min-width: 380px;
+    }
+}
+
+/* High DPI displays */
+@media (-webkit-min-device-pixel-ratio: 2), (min-resolution: 192dpi) {
+    * {
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+    }
+}
+
+/* Aspect ratio container for video (modern browsers) */
+@supports (aspect-ratio: 16/9) {
+    @media (max-width: 768px) {
+        #video-container {
+            height: auto !important;
+            aspect-ratio: 16/9;
+            max-height: 50vh;
+        }
+    }
+}
