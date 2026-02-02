@@ -1,26 +1,49 @@
-/* AGGRESSIVE: Remove Name Color button - runs every 500ms forever */
+/* Remove Name Color button - uses MutationObserver instead of polling */
 (function removeNameColorButton() {
-    function killIt() {
-        // Find by text content
-        document.querySelectorAll('button, .btn, span, a, div').forEach(function(el) {
-            if (el.textContent.trim() === 'Name Color') {
-                el.style.display = 'none';
-                el.remove();
-            }
-        });
-        // Find by green background
-        document.querySelectorAll('button, .btn').forEach(function(el) {
+    function isNameColorButton(el) {
+        if (!el || el.nodeType !== 1) return false;
+        if (el.textContent.trim() === 'Name Color') return true;
+        if (el.classList.contains('btn-success')) return true;
+        // Check computed style only for buttons (expensive operation)
+        if (el.tagName === 'BUTTON' || el.classList.contains('btn')) {
             var style = window.getComputedStyle(el);
             var bg = style.backgroundColor;
             if (bg.indexOf('40, 167, 69') !== -1 || bg.indexOf('0, 128, 0') !== -1 ||
-                bg.indexOf('34, 139, 34') !== -1 || el.classList.contains('btn-success')) {
-                el.style.display = 'none';
-                el.remove();
-            }
-        });
+                bg.indexOf('34, 139, 34') !== -1) return true;
+        }
+        return false;
     }
-    killIt();
-    setInterval(killIt, 500);
+
+    function removeButton(el) {
+        el.style.display = 'none';
+        el.remove();
+    }
+
+    // Initial cleanup
+    document.querySelectorAll('button, .btn, .btn-success').forEach(function(el) {
+        if (isNameColorButton(el)) removeButton(el);
+    });
+
+    // Watch for dynamically added buttons
+    var observer = new MutationObserver(function(mutations) {
+        mutations.forEach(function(mutation) {
+            mutation.addedNodes.forEach(function(node) {
+                if (isNameColorButton(node)) {
+                    removeButton(node);
+                } else if (node.nodeType === 1) {
+                    // Check children of added nodes
+                    node.querySelectorAll && node.querySelectorAll('button, .btn, .btn-success').forEach(function(el) {
+                        if (isNameColorButton(el)) removeButton(el);
+                    });
+                }
+            });
+        });
+    });
+
+    observer.observe(document.body, { childList: true, subtree: true });
+
+    // Disconnect after 60 seconds - button should be loaded by then
+    setTimeout(function() { observer.disconnect(); }, 60000);
 })();
 
 /* Removes the buttons for resizing video and user list size toggle */
@@ -83,8 +106,19 @@ chatline.removeAttribute("placeholder");
 chatline.setAttribute("placeholder", "Send a message");
 chatline.setAttribute("spellcheck", "false");
 
-/* Sets the variable used for mobile chat sizing */
-setInterval(function () {document.documentElement.style.setProperty('--vh', window.innerHeight/100 + 'px');}, 20);
+/* Sets the variable used for mobile chat sizing - uses resize event instead of polling */
+(function() {
+    function updateVH() {
+        document.documentElement.style.setProperty('--vh', window.innerHeight/100 + 'px');
+    }
+    var vhTimer;
+    window.addEventListener('resize', function() {
+        clearTimeout(vhTimer);
+        vhTimer = setTimeout(updateVH, 100);
+    });
+    window.addEventListener('orientationchange', updateVH);
+    updateVH(); // Initial call
+})();
 
 /* Positions the chat depending on media query */
 function chatPosition(x) {
@@ -3333,59 +3367,7 @@ $(document).ready(function() {
     // Fix userlist display - with delay to ensure elements exist
     setTimeout(fixUserlistLayout, 1500);
 
-    // Hide Name Color button from external scripts (search everywhere, runs periodically)
-    function hideNameColorBtn() {
-        // Search ALL elements that could be buttons
-        $('button, .btn, [role="button"], input[type="button"], a.btn').each(function() {
-            var $el = $(this);
-            var text = $el.text().trim().toLowerCase();
-
-            // Hide if text contains "name color" in any form
-            if (text === 'name color' || text === 'namecolor' || text === 'name  color' ||
-                (text.indexOf('name') !== -1 && text.indexOf('color') !== -1)) {
-                $el.remove();
-                return;
-            }
-
-            // Check for green backgrounds (multiple formats)
-            var bg = $el.css('background-color');
-            var style = $el.attr('style') || '';
-            var isGreen = bg === 'rgb(0, 128, 0)' ||
-                          bg === 'rgb(40, 167, 69)' ||
-                          bg === 'rgb(34, 139, 34)' ||
-                          bg === 'rgb(50, 205, 50)' ||
-                          bg.indexOf('0, 128, 0') !== -1 ||
-                          bg.indexOf('40, 167, 69') !== -1 ||
-                          style.toLowerCase().indexOf('green') !== -1 ||
-                          style.indexOf('#28a745') !== -1 ||
-                          style.indexOf('#008000') !== -1 ||
-                          $el.hasClass('btn-success');
-
-            // Only remove green buttons that are NOT in leftcontrols (keep theme buttons)
-            if (isGreen && !$el.closest('#leftcontrols').length) {
-                $el.remove();
-            }
-        });
-    }
-
-    // Run immediately and repeatedly
-    hideNameColorBtn();
-    setTimeout(hideNameColorBtn, 500);
-    setTimeout(hideNameColorBtn, 1000);
-    setTimeout(hideNameColorBtn, 2000);
-    setTimeout(hideNameColorBtn, 3000);
-    setTimeout(hideNameColorBtn, 5000);
-
-    // Keep observer running longer (30 seconds)
-    var btnObserver = new MutationObserver(function() {
-        setTimeout(hideNameColorBtn, 50);
-    });
-    btnObserver.observe(document.body, { childList: true, subtree: true });
-    setTimeout(function() { btnObserver.disconnect(); }, 30000);
-
-    // Also run periodically every 5 seconds for first minute
-    var hideInterval = setInterval(hideNameColorBtn, 5000);
-    setTimeout(function() { clearInterval(hideInterval); }, 60000);
+    // Name Color button removal is handled by MutationObserver at top of file
 });
 
 function fixUserlistLayout() {
