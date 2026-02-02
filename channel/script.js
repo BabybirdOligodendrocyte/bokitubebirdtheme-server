@@ -8030,10 +8030,13 @@ function broadcastMyBuddySettings() {
 
     var hiddenMsg = '\u200B\u200CBSET:' + myName + ':' + encoded + ':BSET\u200B\u200C';
     console.log('[BuddySync] Message length:', hiddenMsg.length, '(must be <240 for Cytube)');
+    console.log('[BuddySync] Broadcasting settings - spriteIndex:', minimalSettings.si, 'size:', minimalSettings.sz);
 
     if (typeof socket !== 'undefined' && socket.emit) {
         socket.emit('chatMsg', { msg: hiddenMsg, meta: {} });
-        console.log('[BuddySync] Chat broadcast sent for', myName);
+        console.log('[BuddySync] Chat broadcast sent for', myName, '- check other browser for "[BuddySync] Sync message from" log');
+    } else {
+        console.log('[BuddySync] ERROR: socket not available for broadcast!');
     }
 }
 
@@ -8063,8 +8066,11 @@ function broadcastInteraction(user1, user2, interactionType, seed) {
 
     // Fallback to chat-based sync
     var hiddenMsg = '\u200B\u200CBACT:' + user1 + ':' + user2 + ':' + interactionType + ':' + seed + ':' + pos1 + ':' + pos2 + ':BACT\u200B\u200C';
+    console.log('[BuddySync] Broadcasting action:', interactionType, 'between', user1, 'and', user2);
     if (typeof socket !== 'undefined' && socket.emit) {
         socket.emit('chatMsg', { msg: hiddenMsg, meta: {} });
+    } else {
+        console.log('[BuddySync] ERROR: socket not available for action broadcast!');
     }
 }
 
@@ -8132,11 +8138,13 @@ function parseBuddySyncMessage(msgText) {
             if (username !== myName) {
                 // Store settings for other users
                 customBuddySettings[username] = settings;
-                console.log('[BuddySync] Stored settings for', username, '- buddy exists:', !!buddyCharacters[username]);
+                console.log('[BuddySync] ✓ SUCCESS: Received settings for', username, '- spriteIndex:', settings.spriteIndex);
                 // Force update existing buddy if present
                 if (buddyCharacters[username]) {
                     applyCustomSettingsToBuddy(username);
-                    console.log('[BuddySync] Applied settings to existing buddy:', username);
+                    console.log('[BuddySync] ✓ SUCCESS: Applied settings to buddy:', username);
+                } else {
+                    console.log('[BuddySync] Settings stored but buddy not yet created for:', username);
                 }
             } else {
                 console.log('[BuddySync] Ignoring own settings broadcast');
@@ -8160,6 +8168,7 @@ function parseBuddySyncMessage(msgText) {
         // Only process if we didn't initiate this (to avoid double-triggering)
         var myName = getMyUsername();
         if (user1 !== myName) {
+            console.log('[BuddySync] ✓ SUCCESS: Received action', actionType, 'between', user1, 'and', user2);
             handleSyncedInteraction(user1, user2, actionType, seed, pos1, pos2);
         }
         return true;
@@ -8175,6 +8184,7 @@ function parseBuddySyncMessage(msgText) {
 
         var myName = getMyUsername();
         if (user1 !== myName) {
+            console.log('[BuddySync] ✓ SUCCESS: Received action (old format)', actionType, 'between', user1, 'and', user2);
             handleSyncedInteraction(user1, user2, actionType, seed);
         }
         return true;
@@ -8357,17 +8367,42 @@ function getBuddyPhrase(buddy, phraseType, defaultPhrases, seededRandom) {
 
 // Initialize sync message listener
 function initBuddySyncListener() {
+    console.log('[BuddySync] Initializing sync listener...');
+
+    // Track if we've processed a message to avoid duplicates
+    var processedMessages = new Set();
+    var MAX_PROCESSED = 100;
+
+    function processSyncMessage(msgText, source) {
+        if (!msgText) return false;
+
+        // Create a simple hash to track processed messages
+        var msgHash = msgText.length + ':' + msgText.substring(0, 50);
+        if (processedMessages.has(msgHash)) {
+            return true; // Already processed
+        }
+
+        if (isBuddySyncMessage(msgText)) {
+            console.log('[BuddySync] Sync message from ' + source + ', length:', msgText.length);
+
+            // Mark as processed
+            processedMessages.add(msgHash);
+            if (processedMessages.size > MAX_PROCESSED) {
+                var first = processedMessages.values().next().value;
+                processedMessages.delete(first);
+            }
+
+            parseBuddySyncMessage(msgText);
+            return true;
+        }
+        return false;
+    }
+
     // Register with dispatcher (priority 100 - HIGHEST, runs first to filter sync messages)
     BokiChatDispatcher.register('buddySync', function(data) {
         if (!data.msg) return false;
 
-        if (isBuddySyncMessage(data.msg)) {
-            // Debug logging
-            if (data.msg.indexOf('BSET') !== -1 || data.msg.indexOf('BACT') !== -1) {
-                console.log('[BuddySync] Sync message detected, parsing...');
-            }
-            parseBuddySyncMessage(data.msg);
-
+        if (processSyncMessage(data.msg, 'dispatcher')) {
             // Hide the message from chat display
             setTimeout(function() {
                 var msgs = document.querySelectorAll('#messagebuffer > div');
@@ -8381,6 +8416,31 @@ function initBuddySyncListener() {
         }
         return false; // Not a sync message, continue to other handlers
     }, 100);
+
+    // CRITICAL: Add DIRECT socket.on handler as backup
+    // The dispatcher might miss messages due to timing issues
+    // This ensures buddy sync works regardless of dispatcher state
+    if (typeof socket !== 'undefined' && socket.on) {
+        socket.on('chatMsg', function(data) {
+            if (data && data.msg && isBuddySyncMessage(data.msg)) {
+                processSyncMessage(data.msg, 'direct-socket');
+            }
+        });
+        console.log('[BuddySync] Direct socket handler registered');
+    } else {
+        console.log('[BuddySync] WARNING: socket not available for direct handler');
+        // Retry after delay
+        setTimeout(function() {
+            if (typeof socket !== 'undefined' && socket.on) {
+                socket.on('chatMsg', function(data) {
+                    if (data && data.msg && isBuddySyncMessage(data.msg)) {
+                        processSyncMessage(data.msg, 'direct-socket-delayed');
+                    }
+                });
+                console.log('[BuddySync] Direct socket handler registered (delayed)');
+            }
+        }, 2000);
+    }
 
     // Clean up EXISTING messages in chat history (from before we joined)
     function cleanupExistingMessages() {
