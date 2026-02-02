@@ -4477,14 +4477,20 @@ function buildUsernameCloseTags() {
 }
 
 function applyUsernameTagsToMessage() {
-    if (!usernameStyleSettings.enabled) return;
+    console.log('[UsernameStyle] applyUsernameTagsToMessage called, enabled:', usernameStyleSettings.enabled);
+    if (!usernameStyleSettings.enabled) {
+        console.log('[UsernameStyle] Skipping - not enabled');
+        return;
+    }
 
     var myName = getMyUsername();
+    console.log('[UsernameStyle] myName:', myName);
     if (!myName) return;
 
     var c = document.getElementById('chatline');
     if (!c) return;
     var msg = c.value;
+    console.log('[UsernameStyle] Original message:', msg);
 
     // Skip commands
     if (msg.startsWith('/')) return;
@@ -4495,10 +4501,12 @@ function applyUsernameTagsToMessage() {
 
     var openTags = buildUsernameOpenTags();
     var closeTags = buildUsernameCloseTags();
+    console.log('[UsernameStyle] Tags - open:', openTags, 'close:', closeTags);
 
     // Always add [uname] wrapper when enabled, even without specific styles
     // This ensures the styled-username CSS is applied
     c.value = '[uname]' + openTags + myName + closeTags + '[/uname] ' + msg;
+    console.log('[UsernameStyle] Modified message:', c.value);
 }
 
 function processStyledUsername(msgElement) {
