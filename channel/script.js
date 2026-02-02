@@ -9416,16 +9416,37 @@ function removeBuddy(username) {
 function startBuddyAnimation() {
     if (buddyAnimationId) return;
 
-    // Get position preference for a buddy
-    function getBuddyPositionPref(name) {
+    // Get ALL settings for a buddy (combines myBuddySettings, customBuddySettings, and defaults)
+    function getBuddySettings(name) {
         var myName = getMyUsername();
+        var settings = null;
+
         if (name === myName && myBuddySettings) {
-            return myBuddySettings.positionPreference || 'roam';
+            settings = myBuddySettings;
+        } else if (customBuddySettings[name]) {
+            settings = customBuddySettings[name];
         }
-        if (customBuddySettings[name] && customBuddySettings[name].positionPreference) {
-            return customBuddySettings[name].positionPreference;
-        }
-        return 'roam'; // Default to roam
+
+        // Return settings with defaults
+        return {
+            positionPreference: (settings && settings.positionPreference) || 'roam',
+            movementSpeed: (settings && settings.movementSpeed) || 1.0,
+            movementStyle: (settings && settings.movementStyle) || 'default',
+            energyLevel: (settings && settings.energyLevel) || 1.0,
+            chattiness: (settings && settings.chattiness) || 1.0,
+            interactionFrequency: (settings && settings.interactionFrequency) || 1.0,
+            catchphrase: (settings && settings.catchphrase) || null,
+            customPhrases: (settings && settings.customPhrases) || [],
+            greeting: (settings && settings.greeting) || null,
+            victoryLine: (settings && settings.victoryLine) || null,
+            defeatLine: (settings && settings.defeatLine) || null,
+            loveLine: (settings && settings.loveLine) || null
+        };
+    }
+
+    // Get position preference for a buddy (legacy helper)
+    function getBuddyPositionPref(name) {
+        return getBuddySettings(name).positionPreference;
     }
 
     // Generate a random target anywhere in the zone based on position preference
@@ -9460,6 +9481,45 @@ function startBuddyAnimation() {
         return { x: x, y: y };
     }
 
+    // Apply movement style modifiers
+    function applyMovementStyle(b, settings, baseVx, baseVy) {
+        var style = settings.movementStyle;
+        var speed = settings.movementSpeed;
+
+        switch (style) {
+            case 'smooth':
+                // Smooth: slower, more gradual movement
+                b.vx = baseVx * speed * 0.7;
+                b.vy = (baseVy || 0) * speed * 0.7;
+                break;
+            case 'bouncy':
+                // Bouncy: more vertical action
+                b.vx = baseVx * speed;
+                b.vy = (baseVy || 0) * speed * 1.5 + (Math.random() - 0.5) * 2;
+                break;
+            case 'floaty':
+                // Floaty: slow, drifting movement
+                b.vx = baseVx * speed * 0.5;
+                b.vy = (baseVy || 0) * speed * 0.3;
+                break;
+            case 'erratic':
+                // Erratic: unpredictable direction changes
+                b.vx = baseVx * speed * (0.5 + Math.random());
+                b.vy = (baseVy || 0) * speed * (0.5 + Math.random());
+                if (Math.random() < 0.3) b.vx *= -1;
+                break;
+            case 'teleporty':
+                // Teleporty: occasional instant position shifts
+                b.vx = baseVx * speed * 1.5;
+                b.vy = (baseVy || 0) * speed * 1.5;
+                break;
+            default:
+                // Default: just apply speed multiplier
+                b.vx = baseVx * speed;
+                b.vy = (baseVy || 0) * speed;
+        }
+    }
+
     function update() {
         var names = Object.keys(buddyCharacters);
         var zone = getBuddyZone();
@@ -9468,31 +9528,42 @@ function startBuddyAnimation() {
             var b = buddyCharacters[name];
             if (!b || b.interacting) return;
 
-            var posPref = getBuddyPositionPref(name);
+            // Get all settings for this buddy
+            var settings = getBuddySettings(name);
+            var posPref = settings.positionPreference;
+            var energy = settings.energyLevel;
+            var speed = settings.movementSpeed;
 
             if (b.interactCooldown > 0) b.interactCooldown -= BUDDY_CONFIG.updateInterval;
-            b.stateTime += BUDDY_CONFIG.updateInterval;
+            b.stateTime += BUDDY_CONFIG.updateInterval * energy; // Energy affects time progression
 
             if (b.state === 'idle') {
-                if (b.stateTime > 2000 + Math.random() * 2000) {
+                // Higher energy = less idle time (divide by energy)
+                var idleTime = (2000 + Math.random() * 2000) / energy;
+                if (b.stateTime > idleTime) {
                     var action = Math.random();
-                    // For chatFollow, prefer chat targets; for roam, use random zone targets
                     var useChatTargets = (posPref === 'chatFollow') && chatWordTargets.length > 0;
 
-                    if (action < 0.6) {
-                        // Jump to a target
+                    // Teleporty style: chance to teleport instead of jump
+                    if (settings.movementStyle === 'teleporty' && Math.random() < 0.3) {
+                        var teleportTarget = useChatTargets
+                            ? chatWordTargets[Math.floor(Math.random() * chatWordTargets.length)]
+                            : getRandomTarget(zone, posPref);
+                        b.x = teleportTarget.x;
+                        b.y = teleportTarget.y;
+                        showExpression(b, '✨');
+                        b.stateTime = 0;
+                    } else if (action < 0.6) {
                         var target = useChatTargets
                             ? chatWordTargets[Math.floor(Math.random() * chatWordTargets.length)]
                             : getRandomTarget(zone, posPref);
-                        startJumpTo(b, target);
+                        startJumpTo(b, target, speed);
                     } else {
                         b.state = 'hopping';
                         b.stateTime = 0;
-                        b.vx = (Math.random() - 0.5) * BUDDY_CONFIG.hopSpeed * 2;
-                        // For roam mode, also add vertical velocity
-                        if (posPref === 'roam') {
-                            b.vy = (Math.random() - 0.5) * BUDDY_CONFIG.hopSpeed;
-                        }
+                        var baseVx = (Math.random() - 0.5) * BUDDY_CONFIG.hopSpeed * 2;
+                        var baseVy = (posPref === 'roam') ? (Math.random() - 0.5) * BUDDY_CONFIG.hopSpeed : 0;
+                        applyMovementStyle(b, settings, baseVx, baseVy);
                         setAnim(b, 'hopping');
                         updateFace(b);
                     }
@@ -9515,35 +9586,39 @@ function startBuddyAnimation() {
                     setAnim(b, 'idle');
                 } else if (b.y < zone.top) {
                     b.y = zone.top;
-                    b.vy = Math.abs(b.vy) * 0.5; // Bounce off top
+                    b.vy = Math.abs(b.vy) * 0.5;
                 }
                 b.x = Math.max(zone.left, Math.min(zone.right, b.x));
             } else if (b.state === 'perched') {
-                if (b.stateTime > BUDDY_CONFIG.perchDuration) {
+                var perchTime = BUDDY_CONFIG.perchDuration / energy;
+                if (b.stateTime > perchTime) {
                     var useChatTargets = (posPref === 'chatFollow') && chatWordTargets.length > 1;
 
                     if (Math.random() < 0.6) {
                         var newTarget = useChatTargets
                             ? chatWordTargets[Math.floor(Math.random() * chatWordTargets.length)]
                             : getRandomTarget(zone, posPref);
-                        startJumpTo(b, newTarget);
+                        startJumpTo(b, newTarget, speed);
                     } else {
                         b.state = 'hopping';
                         b.stateTime = 0;
-                        b.vx = (Math.random() - 0.5) * BUDDY_CONFIG.hopSpeed * 2;
-                        if (posPref === 'roam') {
-                            b.vy = (Math.random() - 0.5) * BUDDY_CONFIG.hopSpeed;
-                        }
+                        var baseVx = (Math.random() - 0.5) * BUDDY_CONFIG.hopSpeed * 2;
+                        var baseVy = (posPref === 'roam') ? (Math.random() - 0.5) * BUDDY_CONFIG.hopSpeed : 0;
+                        applyMovementStyle(b, settings, baseVx, baseVy);
                         setAnim(b, 'hopping');
                         updateFace(b);
                     }
                 }
             } else if (b.state === 'hopping') {
+                // Erratic style: random direction changes while hopping
+                if (settings.movementStyle === 'erratic' && Math.random() < 0.1) {
+                    b.vx += (Math.random() - 0.5) * 2;
+                    if (b.vy) b.vy += (Math.random() - 0.5) * 2;
+                }
+
                 b.x += b.vx;
-                // For roam mode, also move vertically while hopping
                 if (posPref === 'roam' && b.vy) {
                     b.y += b.vy;
-                    // Bounce off top/bottom
                     if (b.y <= zone.top) { b.y = zone.top; b.vy = Math.abs(b.vy); }
                     else if (b.y >= zone.bottom) { b.y = zone.bottom; b.vy = -Math.abs(b.vy); }
                 }
@@ -9551,14 +9626,15 @@ function startBuddyAnimation() {
                 if (b.x <= zone.left) { b.x = zone.left; b.vx = Math.abs(b.vx); updateFace(b); }
                 else if (b.x >= zone.right) { b.x = zone.right; b.vx = -Math.abs(b.vx); updateFace(b); }
 
-                if (b.stateTime > 2500 + Math.random() * 2000) {
+                var hopTime = (2500 + Math.random() * 2000) / energy;
+                if (b.stateTime > hopTime) {
                     var useChatTargets = (posPref === 'chatFollow') && chatWordTargets.length > 0;
 
                     if (Math.random() < 0.6) {
                         var t = useChatTargets
                             ? chatWordTargets[Math.floor(Math.random() * chatWordTargets.length)]
                             : getRandomTarget(zone, posPref);
-                        startJumpTo(b, t);
+                        startJumpTo(b, t, speed);
                     } else {
                         b.state = 'idle';
                         b.stateTime = 0;
@@ -9577,13 +9653,15 @@ function startBuddyAnimation() {
     update();
 }
 
-function startJumpTo(b, target) {
+function startJumpTo(b, target, speedMultiplier) {
+    speedMultiplier = speedMultiplier || 1.0;
     b.state = 'jumping';
     b.stateTime = 0;
     b.target = target;
     var dx = target.x - b.x;
     var dy = target.y - b.y;
-    var frames = 18;
+    // Higher speed = fewer frames = faster arrival
+    var frames = Math.max(8, Math.round(18 / speedMultiplier));
     b.vx = dx / frames;
     b.vy = (dy - 0.5 * BUDDY_CONFIG.gravity * frames * frames) / frames;
     setAnim(b, 'idle');
@@ -9657,20 +9735,73 @@ function isInteractionMaster() {
     return onlineUsers[0] === myName.toLowerCase();
 }
 
+// Get buddy settings helper (used outside animation loop)
+function getBuddySettingsForName(name) {
+    var myName = getMyUsername();
+    var settings = null;
+
+    if (name === myName && myBuddySettings) {
+        settings = myBuddySettings;
+    } else if (customBuddySettings[name]) {
+        settings = customBuddySettings[name];
+    }
+
+    return {
+        chattiness: (settings && settings.chattiness) || 1.0,
+        interactionFrequency: (settings && settings.interactionFrequency) || 1.0,
+        catchphrase: (settings && settings.catchphrase) || null,
+        customPhrases: (settings && settings.customPhrases) || [],
+        greeting: (settings && settings.greeting) || null,
+        victoryLine: (settings && settings.victoryLine) || null,
+        defeatLine: (settings && settings.defeatLine) || null,
+        loveLine: (settings && settings.loveLine) || null
+    };
+}
+
+// Get a phrase for a buddy - uses custom phrases, catchphrase, or falls back to chat quotes
+function getBuddySpeechPhrase(name, phraseType) {
+    var settings = getBuddySettingsForName(name);
+
+    // Check for specific phrase types first
+    if (phraseType === 'victory' && settings.victoryLine) return settings.victoryLine;
+    if (phraseType === 'defeat' && settings.defeatLine) return settings.defeatLine;
+    if (phraseType === 'love' && settings.loveLine) return settings.loveLine;
+    if (phraseType === 'greeting' && settings.greeting) return settings.greeting;
+
+    // Check catchphrase (40% chance if set)
+    if (settings.catchphrase && Math.random() < 0.4) {
+        return settings.catchphrase;
+    }
+
+    // Check custom phrases (50% chance if any exist)
+    var validPhrases = settings.customPhrases.filter(function(p) { return p && p.trim(); });
+    if (validPhrases.length > 0 && Math.random() < 0.5) {
+        return validPhrases[Math.floor(Math.random() * validPhrases.length)];
+    }
+
+    // Fall back to chat quote
+    return getRandomChatQuote();
+}
+
 // Check for all interactions between buddies
 function checkInteractions(names) {
-    // Random speech from chat (local only, doesn't need sync)
+    // Random speech (local only, doesn't need sync)
     names.forEach(function(name) {
         var b = buddyCharacters[name];
         if (!b || b.interacting || b.speechCooldown > 0) return;
         b.speechCooldown -= BUDDY_CONFIG.updateInterval;
 
-        if (Math.random() < BUDDY_CONFIG.speechChance) {
-            var quote = getRandomChatQuote();
-            if (quote) {
-                showSpeechBubble(b, quote, 'flirt');
+        // Get chattiness setting - higher = more likely to speak
+        var settings = getBuddySettingsForName(name);
+        var speechChance = BUDDY_CONFIG.speechChance * settings.chattiness;
+
+        if (Math.random() < speechChance) {
+            var phrase = getBuddySpeechPhrase(name, 'random');
+            if (phrase) {
+                showSpeechBubble(b, phrase, 'flirt');
                 showExpression(b, ['💬', '😊', '🗣️', '💭'][Math.floor(Math.random() * 4)]);
-                b.speechCooldown = 8000; // 8 second cooldown
+                // Lower chattiness = longer cooldown between speeches
+                b.speechCooldown = 8000 / settings.chattiness;
             }
         }
     });
@@ -9689,8 +9820,15 @@ function checkInteractions(names) {
 
             var dist = Math.sqrt(Math.pow(b1.x - b2.x, 2) + Math.pow(b1.y - b2.y, 2));
             if (dist < BUDDY_CONFIG.interactDistance) {
-                // Choose interaction based on both personalities
-                startInteraction(names[i], names[j], b1, b2);
+                // Get interaction frequency for both buddies (average them)
+                var settings1 = getBuddySettingsForName(names[i]);
+                var settings2 = getBuddySettingsForName(names[j]);
+                var avgInteractionFreq = (settings1.interactionFrequency + settings2.interactionFrequency) / 2;
+
+                // Higher frequency = more likely to interact when close
+                if (Math.random() < avgInteractionFreq) {
+                    startInteraction(names[i], names[j], b1, b2);
+                }
             }
         }
     }
