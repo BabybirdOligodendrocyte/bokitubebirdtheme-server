@@ -7977,46 +7977,19 @@ function initBuddySyncListener() {
         }
     }, 100);
 
-    // Load my settings and broadcast on init
+    // Load my settings and broadcast ONCE on init
+    // We only broadcast when: 1) We first join, 2) Our settings change
+    // This prevents flooding chat history with sync messages
     loadMyBuddySettings();
 
-    // Broadcast settings multiple times initially to ensure sync
-    // First broadcast after 1 second
+    // Single broadcast after joining (give time for socket to be ready)
     setTimeout(function() {
         broadcastMyBuddySettings();
-    }, 1000);
+    }, 2000);
 
-    // Second broadcast after 3 seconds (for late joiners)
-    setTimeout(function() {
-        lastSettingsBroadcast = 0;
-        broadcastMyBuddySettings();
-    }, 3000);
-
-    // Third broadcast after 6 seconds
-    setTimeout(function() {
-        lastSettingsBroadcast = 0;
-        broadcastMyBuddySettings();
-    }, 6000);
-
-    // Re-broadcast settings periodically so new users see our customizations
-    setInterval(function() {
-        if (myBuddySettings) {
-            // Force broadcast by resetting the debounce timer
-            lastSettingsBroadcast = 0;
-            broadcastMyBuddySettings();
-        }
-    }, 15000); // Every 15 seconds (reduced from 30)
-
-    // Also broadcast when a new user joins
-    if (typeof socket !== 'undefined') {
-        socket.on('addUser', function(data) {
-            // When someone joins, broadcast our settings so they see our customization
-            setTimeout(function() {
-                lastSettingsBroadcast = 0;
-                broadcastMyBuddySettings();
-            }, 1500); // Small delay to let them initialize
-        });
-    }
+    // NO periodic broadcasts - they flood chat history
+    // NO broadcast when others join - hash-based defaults handle most cases
+    // Settings only broadcast when user explicitly changes them
 }
 
 // Hash function for deterministic assignment
