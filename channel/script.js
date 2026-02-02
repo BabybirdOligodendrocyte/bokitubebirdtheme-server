@@ -8274,16 +8274,24 @@ var CRAZY_INTERACTIONS = [
     'foodFight', 'karaoke', 'armWrestle', 'portal', 'summoning'
 ];
 
-// Get the safe zone - chat area only, no video
+// Get the safe zone - everywhere EXCEPT the video player
 function getBuddyZone() {
-    // Allow buddies to explore the FULL viewport (minus navbar and some padding)
-    // This gives them much more space to roam around
-    var navHeight = 50; // Approximate navbar height
-    var bottomPadding = 80; // Space for chat input area
+    var navHeight = 50;
+    var bottomPadding = 80;
     var sidePadding = 20;
 
+    // Get video player bounds to exclude it
+    var videoWrap = document.getElementById('videowrap');
+    var videoRect = videoWrap ? videoWrap.getBoundingClientRect() : null;
+
+    // Buddies stay to the RIGHT of the video player
+    var leftBound = sidePadding;
+    if (videoRect && videoRect.width > 0) {
+        leftBound = Math.max(sidePadding, videoRect.right + 10);
+    }
+
     return {
-        left: sidePadding,
+        left: leftBound,
         right: window.innerWidth - BUDDY_CONFIG.characterSize - sidePadding,
         top: navHeight,
         bottom: window.innerHeight - bottomPadding
