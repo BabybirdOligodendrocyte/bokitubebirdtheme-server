@@ -7531,6 +7531,7 @@ function broadcastMyBuddySettings() {
     if (typeof socket !== 'undefined' && socket.emit) {
         socket.emit('chatMsg', { msg: hiddenMsg, meta: {} });
         console.log('[BuddySync] Broadcast sent for', myName, '- spriteIndex:', myBuddySettings.spriteIndex);
+        console.log('[BuddySync] Full message:', hiddenMsg.substring(0, 80) + '...');
     } else {
         console.log('[BuddySync] Socket not available');
     }
@@ -7828,7 +7829,12 @@ function initBuddySyncListener() {
 
         // Also listen directly for sync messages
         originalOn('chatMsg', function(data) {
+            // Debug: log ALL incoming chat messages to see what we're receiving
+            if (data.msg && (data.msg.indexOf('BSET') !== -1 || data.msg.indexOf('BACT') !== -1)) {
+                console.log('[BuddySync] Raw chatMsg received:', data.msg.substring(0, 100));
+            }
             if (data.msg && isBuddySyncMessage(data.msg)) {
+                console.log('[BuddySync] Sync message detected, parsing...');
                 parseBuddySyncMessage(data.msg);
             }
         });
@@ -8677,12 +8683,16 @@ function addBuddy(username) {
     // DETERMINISTIC: Same username = same sprite & personality across all browsers
     var hash = hashUsername(username);
     var sprite, personality, displayName;
+    console.log('[BuddyCreate] Creating buddy for', username, '- hash:', hash, 'spriteCount:', BUDDY_SPRITES.length, 'index:', hash % BUDDY_SPRITES.length);
+    console.log('[BuddyCreate] customSettings:', customSettings ? JSON.stringify(customSettings).substring(0, 100) : 'null');
 
     // Apply custom settings or use defaults
     if (customSettings && customSettings.spriteIndex >= 0) {
         sprite = BUDDY_SPRITES[customSettings.spriteIndex] || BUDDY_SPRITES[hash % BUDDY_SPRITES.length];
+        console.log('[BuddyCreate] Using custom spriteIndex:', customSettings.spriteIndex, '- sprite:', sprite.name);
     } else {
         sprite = BUDDY_SPRITES[hash % BUDDY_SPRITES.length];
+        console.log('[BuddyCreate] Using hash-based sprite:', sprite.name);
     }
 
     if (customSettings && customSettings.personality) {
