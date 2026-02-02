@@ -7900,15 +7900,10 @@ function initBuddySyncListener() {
             var msgs = msgBuffer.querySelectorAll(':scope > div');
             msgs.forEach(function(msg) {
                 var text = msg.textContent || '';
-                // Only remove if it's a sync message AND doesn't have real chat content
+                // Remove if it contains BSET or BACT sync markers
                 if (isBuddySyncMessage(text)) {
-                    // Real chat messages have .username span - sync messages don't
-                    var hasUsername = msg.querySelector('.username');
-                    // Only remove pure sync messages (no username, or starts with marker)
-                    if (!hasUsername || text.trim().indexOf('BSET:') === 0 || text.indexOf('\u200B\u200CBSET:') !== -1) {
-                        parseBuddySyncMessage(text);
-                        msg.remove();
-                    }
+                    parseBuddySyncMessage(text);
+                    msg.remove();
                 }
             });
         }
@@ -7918,24 +7913,17 @@ function initBuddySyncListener() {
     setTimeout(cleanupExistingMessages, 1000);
     setTimeout(cleanupExistingMessages, 3000);
 
-    // Watch messagebuffer for NEW sync messages - ONLY direct children, not subtree
+    // Watch messagebuffer for NEW sync messages
     var msgBuffer = document.getElementById('messagebuffer');
     if (msgBuffer) {
         var observer = new MutationObserver(function(mutations) {
             mutations.forEach(function(mutation) {
                 mutation.addedNodes.forEach(function(node) {
                     if (node.nodeType === 1) {
-                        // Only check direct children of messagebuffer
-                        if (node.parentNode !== msgBuffer) return;
                         var text = node.textContent || '';
-                        // Only remove if it's PURELY a sync message (very short and contains only markers)
-                        if (isBuddySyncMessage(text) && text.length < 500) {
-                            // Double check - real messages have username spans
-                            var hasUsername = node.querySelector('.username');
-                            if (!hasUsername || text.indexOf('BSET:') === 0 || text.indexOf('\u200B\u200CBSET:') === 0) {
-                                parseBuddySyncMessage(text);
-                                node.remove();
-                            }
+                        if (isBuddySyncMessage(text)) {
+                            parseBuddySyncMessage(text);
+                            node.remove();
                         }
                     }
                 });
