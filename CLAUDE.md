@@ -451,6 +451,162 @@ if (tab === 'message') {
 - `priorityQueueItems` - Priority queue video items (dual playlist system)
 - `dualPlaylistPlaybackState` - Playback state for dual playlist system
 
+## Cytube Platform Limitations (CRITICAL)
+
+### Message Length Limit (~240 characters)
+**CRITICAL**: Cytube truncates chat messages longer than ~240 characters WITHOUT WARNING. This affects any feature that sends data via hidden chat messages.
+
+**Symptoms of truncation:**
+- Messages missing their end markers (e.g., `:BSET` marker missing)
+- Regex patterns fail to match because message is incomplete
+- Debug logs show `start: true end: false` for marker detection
+
+**Solution patterns:**
+1. **Use minimal data formats** - Short property names (`si` not `spriteIndex`)
+2. **Only send essential data** - Don't include optional/default values
+3. **Log message length** - Always log: `console.log('Message length:', msg.length, '(must be <240)')`
+4. **Test with longest possible values** - Usernames can be up to 20 chars
+
+### Hidden Message Format for Cross-Browser Sync
+Use zero-width characters to hide sync messages from chat display:
+```javascript
+var hiddenMsg = '\u200B\u200CBSET:' + username + ':' + data + ':BSET\u200B\u200C';
+```
+- `\u200B` = Zero-width space
+- `\u200C` = Zero-width non-joiner
+- Always include START and END markers (e.g., `BSET:...:BSET`)
+- Regex must handle cases where zero-width chars are stripped
+
+### Socket Event Timing
+- `socket.on('chatMsg')` handlers may be registered BEFORE your script runs
+- Wrapping `socket.on` only affects FUTURE handler registrations
+- Always add a direct listener as backup: `originalOn('chatMsg', handler)`
+- Cytube may process messages before passing to handlers
+
+## Buddy System Sync (2026-02)
+
+### Architecture
+The buddy system syncs character appearance between browsers using hidden chat messages.
+
+**Two message types:**
+1. **BSET** (Settings) - Syncs visual appearance (sprite, size, colors)
+2. **BACT** (Action) - Syncs interactions (animations, speech bubbles)
+
+### BSET Message Format (Minimal)
+```javascript
+// Send only essential visual data to stay under message limit
+var minimalSettings = {
+    si: spriteIndex,      // number (-1 = hash-based, 0+ = specific sprite)
+    sz: size,             // string: 'small', 'medium', 'large'
+    hr: hueRotate,        // number: 0-360
+    st: saturation,       // number: 0-200 (100 = normal)
+    br: brightness,       // number: 0-200 (100 = normal)
+    dn: displayName       // string: custom display name
+};
+// Optional: cu (customSpriteUrl) - only include if set
+```
+
+### Why BACT Works But BSET Failed
+- **BACT messages are SHORT**: `BACT:user1:user2:action:seed:x,y:x,y:BACT` (~80 chars)
+- **Old BSET messages were LONG**: Full settings object with personality, behavior, phrases (~350+ chars)
+- **Solution**: Reduced BSET to essential visual data only (~120 chars)
+
+### Sprite Index Convention
+- `-1` = Use deterministic hash of username (same sprite across all browsers)
+- `0+` = Specific sprite from BUDDY_SPRITES array
+- Hash function must be identical across all clients
+
+### Key Functions
+| Function | Purpose |
+|----------|---------|
+| `broadcastMyBuddySettings()` | Send minimal BSET message |
+| `parseBuddySyncMessage(text)` | Parse incoming BSET/BACT messages |
+| `applyCustomSettingsToBuddy(username)` | Apply received settings to buddy element |
+| `encodeBuddySettings(obj)` | JSON stringify + base64 encode |
+| `decodeBuddySettings(str)` | base64 decode + JSON parse |
+| `hashUsername(str)` | Deterministic hash for default sprite |
+
+### Debugging Buddy Sync
+Console logs to look for:
+```
+[BuddySync] Message length: 120 (must be <240 for Cytube)  ← GOOD
+[BuddySync] BSET markers - start: true end: true match: true  ← GOOD
+[BuddySync] BSET markers - start: true end: false  ← BAD: Message truncated!
+[BuddySync] Decoded settings - spriteIndex: 5 size: medium  ← Successfully parsed
+```
+
+## Username Styling System
+
+### Requirements
+1. **Cytube filter MUST exist**: `[uname]` filter in Channel Settings → Edit → Chat Filters
+2. **User must enable**: Toggle "Enable Username Styling" in Style Settings → Username tab
+3. **usernameStyleSettings.enabled** must be `true`
+
+### How It Works
+1. User types message in chatline
+2. `applyUsernameTagsToMessage()` intercepts Enter key
+3. Message is wrapped: `[uname][color]Username[/][/uname] original message`
+4. Cytube filter converts to: `<span class="styled-username">...</span>`
+5. CSS hides original `.username` element, shows styled version
+
+### Common Issues
+| Symptom | Cause | Fix |
+|---------|-------|-----|
+| Username not styled | `[uname]` filter missing | Add filter in Cytube channel settings |
+| Username not styled | Toggle not enabled | Check `usernameStyleSettings.enabled` |
+| Username shows twice | CSS selector wrong | Use `.chat-msg-with-styled-name > .username` |
+| Message content hidden | CSS selector too broad | Don't use `.username + *` selector |
+
+### CSS Selectors (Correct)
+```css
+/* Hide original username when styled version present */
+.chat-msg-with-styled-name > .username {
+    display: none !important;
+}
+
+/* Ensure unstyled usernames remain visible */
+#messagebuffer > div:not(.chat-msg-with-styled-name) > .username {
+    display: flex !important;
+}
+```
+
+### Settings Object
+```javascript
+var USERNAME_STYLE_DEFAULTS = {
+    enabled: false,      // MUST be true for styling to work
+    color: null,         // 'red', 'blue', etc.
+    gradient: null,      // 'rainbow', 'fire', etc.
+    glow: null,          // 'glow-gold', 'glow-red', etc.
+    customGlow: null,    // hex color for custom glow
+    animation: null,     // 'shake', 'pulse', etc.
+    font: null,          // 'comic', 'impact', etc.
+    bold: false,
+    customColor: null    // hex color
+};
+```
+
+## NND (NicoNico) Chat Overlay Filtering
+
+### Filtering Hidden Messages
+The NND overlay must NOT display sync messages. Hook into the NND message handler:
+```javascript
+window.nnd._fn.addScrollingMessage = function(message, extraClass) {
+    // Skip buddy sync messages
+    if (message.indexOf('BSET:') !== -1 || message.indexOf('BACT:') !== -1) {
+        return;
+    }
+    // Skip screenspam (displayed separately)
+    if (message.indexOf('SCREENSPAM:') !== -1) {
+        return;
+    }
+    // Also check for zero-width character markers
+    if (message.indexOf('\u200B\u200C') !== -1) {
+        return;
+    }
+    // ... normal processing
+};
+```
+
 ## Dual Playlist System (2026-02)
 
 A dual playlist system with a main playlist (mod-only visible) and priority queue (visible to mods only). Manages video playback between two playlists with visibility and permission controls.
