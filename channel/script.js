@@ -428,6 +428,153 @@ var BokiTheme = (function() {
             }
         },
 
+        // Memory management
+        Memory: {
+            // Configuration
+            config: {
+                maxChatMessages: 500,      // Max DOM nodes in message buffer
+                maxBuddySettings: 100,     // Max cached buddy settings
+                cleanupInterval: 60000     // Cleanup every 60 seconds
+            },
+
+            // Cleanup message buffer (remove old messages from DOM)
+            cleanupMessageBuffer: function() {
+                var msgBuffer = document.getElementById('messagebuffer');
+                if (!msgBuffer) return 0;
+
+                var messages = msgBuffer.querySelectorAll(':scope > div');
+                var removed = 0;
+                var maxMessages = this.config.maxChatMessages;
+
+                if (messages.length > maxMessages) {
+                    var toRemove = messages.length - maxMessages;
+                    for (var i = 0; i < toRemove; i++) {
+                        messages[i].remove();
+                        removed++;
+                    }
+                }
+                return removed;
+            },
+
+            // Cleanup buddy settings for users no longer present
+            cleanupBuddySettings: function() {
+                if (typeof customBuddySettings === 'undefined' || typeof buddyCharacters === 'undefined') return 0;
+
+                var removed = 0;
+                var activeUsers = Object.keys(buddyCharacters);
+
+                Object.keys(customBuddySettings).forEach(function(username) {
+                    if (activeUsers.indexOf(username) === -1) {
+                        delete customBuddySettings[username];
+                        removed++;
+                    }
+                });
+                return removed;
+            },
+
+            // Run all cleanup tasks
+            runCleanup: function() {
+                var results = {
+                    messages: this.cleanupMessageBuffer(),
+                    buddySettings: this.cleanupBuddySettings(),
+                    timestamp: new Date().toISOString()
+                };
+
+                if (results.messages > 0 || results.buddySettings > 0) {
+                    console.log('[BokiTheme:Memory] Cleanup:', results);
+                }
+                return results;
+            },
+
+            // Start automatic cleanup interval
+            _intervalId: null,
+            startAutoCleanup: function() {
+                var self = this;
+                if (this._intervalId) return;
+
+                this._intervalId = setInterval(function() {
+                    self.runCleanup();
+                }, this.config.cleanupInterval);
+
+                console.log('[BokiTheme:Memory] Auto-cleanup started (interval: ' + this.config.cleanupInterval + 'ms)');
+            },
+
+            stopAutoCleanup: function() {
+                if (this._intervalId) {
+                    clearInterval(this._intervalId);
+                    this._intervalId = null;
+                    console.log('[BokiTheme:Memory] Auto-cleanup stopped');
+                }
+            },
+
+            // Get memory stats
+            getStats: function() {
+                var msgBuffer = document.getElementById('messagebuffer');
+                return {
+                    chatMessages: msgBuffer ? msgBuffer.querySelectorAll(':scope > div').length : 0,
+                    buddySettings: typeof customBuddySettings !== 'undefined' ? Object.keys(customBuddySettings).length : 0,
+                    buddyCharacters: typeof buddyCharacters !== 'undefined' ? Object.keys(buddyCharacters).length : 0,
+                    autoCleanupActive: this._intervalId !== null
+                };
+            }
+        },
+
+        // Error handling utilities
+        Safe: {
+            // Wrap a function with try-catch error handling
+            wrap: function(fn, fallback, context) {
+                return function() {
+                    try {
+                        return fn.apply(context || this, arguments);
+                    } catch (e) {
+                        console.error('[BokiTheme:Error]', e.message, e.stack);
+                        return typeof fallback === 'function' ? fallback(e) : fallback;
+                    }
+                };
+            },
+
+            // Execute a function safely with optional fallback
+            exec: function(fn, fallback) {
+                try {
+                    return fn();
+                } catch (e) {
+                    console.error('[BokiTheme:Error]', e.message);
+                    return fallback;
+                }
+            },
+
+            // Safe JSON parse
+            parseJSON: function(str, fallback) {
+                try {
+                    return JSON.parse(str);
+                } catch (e) {
+                    return fallback !== undefined ? fallback : null;
+                }
+            },
+
+            // Safe localStorage get
+            getStorage: function(key, fallback) {
+                try {
+                    var value = localStorage.getItem(key);
+                    if (value === null) return fallback;
+                    return JSON.parse(value);
+                } catch (e) {
+                    return fallback;
+                }
+            },
+
+            // Safe localStorage set
+            setStorage: function(key, value) {
+                try {
+                    localStorage.setItem(key, JSON.stringify(value));
+                    return true;
+                } catch (e) {
+                    console.error('[BokiTheme:Storage] Failed to save:', key, e.message);
+                    return false;
+                }
+            }
+        },
+
         // Debug utilities
         Debug: {
             getState: function() {
@@ -438,6 +585,7 @@ var BokiTheme = (function() {
                     ignoredUsers: ignoredUsers.length,
                     buddyCount: typeof buddyCharacters !== 'undefined' ? Object.keys(buddyCharacters).length : 0,
                     pusherEnabled: typeof pusherEnabled !== 'undefined' ? pusherEnabled : false,
+                    memory: BokiTheme.Memory.getStats(),
                     settings: {
                         emoteSize: emoteSize,
                         chatFontSize: chatFontSize,
@@ -7575,6 +7723,9 @@ $(document).ready(function() {
 
         // Start the unified chat dispatcher (after all handlers registered)
         BokiChatDispatcher.init();
+
+        // Start memory auto-cleanup (every 60 seconds)
+        BokiTheme.Memory.startAutoCleanup();
     }, 2000);
 });
 
@@ -7602,7 +7753,6 @@ var buddyAnimationId = null;
 var buddiesInitialized = false;
 var chatWordTargets = [];
 var recentChatMessages = [];
-var activeConversations = [];  // Track ongoing conversations
 var customBuddySettings = {};  // Store custom settings received from other users
 var myBuddySettings = null;    // Current user's custom settings
 var lastSettingsBroadcast = 0; // Debounce settings broadcast
