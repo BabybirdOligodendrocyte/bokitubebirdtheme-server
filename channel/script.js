@@ -7900,9 +7900,15 @@ function initBuddySyncListener() {
             var msgs = msgBuffer.querySelectorAll(':scope > div');
             msgs.forEach(function(msg) {
                 var text = msg.textContent || '';
+                // Only remove if it's a sync message AND doesn't have real chat content
                 if (isBuddySyncMessage(text)) {
-                    parseBuddySyncMessage(text);
-                    msg.remove();
+                    // Real chat messages have .username span - sync messages don't
+                    var hasUsername = msg.querySelector('.username');
+                    // Only remove pure sync messages (no username, or starts with marker)
+                    if (!hasUsername || text.trim().indexOf('BSET:') === 0 || text.indexOf('\u200B\u200CBSET:') !== -1) {
+                        parseBuddySyncMessage(text);
+                        msg.remove();
+                    }
                 }
             });
         }
@@ -7912,23 +7918,30 @@ function initBuddySyncListener() {
     setTimeout(cleanupExistingMessages, 1000);
     setTimeout(cleanupExistingMessages, 3000);
 
-    // Watch messagebuffer for NEW sync messages
+    // Watch messagebuffer for NEW sync messages - ONLY direct children, not subtree
     var msgBuffer = document.getElementById('messagebuffer');
     if (msgBuffer) {
         var observer = new MutationObserver(function(mutations) {
             mutations.forEach(function(mutation) {
                 mutation.addedNodes.forEach(function(node) {
                     if (node.nodeType === 1) {
+                        // Only check direct children of messagebuffer
+                        if (node.parentNode !== msgBuffer) return;
                         var text = node.textContent || '';
-                        if (isBuddySyncMessage(text)) {
-                            parseBuddySyncMessage(text);
-                            node.remove();
+                        // Only remove if it's PURELY a sync message (very short and contains only markers)
+                        if (isBuddySyncMessage(text) && text.length < 500) {
+                            // Double check - real messages have username spans
+                            var hasUsername = node.querySelector('.username');
+                            if (!hasUsername || text.indexOf('BSET:') === 0 || text.indexOf('\u200B\u200CBSET:') === 0) {
+                                parseBuddySyncMessage(text);
+                                node.remove();
+                            }
                         }
                     }
                 });
             });
         });
-        observer.observe(msgBuffer, { childList: true, subtree: true });
+        observer.observe(msgBuffer, { childList: true, subtree: false });
     }
 
     // NND Chat Cleanup - ONLY target NND overlay elements, NOT chat elements
@@ -8105,120 +8118,152 @@ var KISS_EFFECTS = ['💋', '💕', '💗', '💖', '💘', '💝', '❤️', '�
 
 // ========== MADLIB CONVERSATION TEMPLATES ==========
 var CONVERSATION_TEMPLATES = [
-    // Gossip chain
+    // Eternally online existential crisis
     {
-        name: 'gossip',
+        name: 'eternally_online',
         lines: [
-            { speaker: 0, text: "Did you hear about {noun}?", mood: 'excited' },
-            { speaker: 1, text: "No! Tell me everything!", mood: 'curious' },
-            { speaker: 0, text: "Apparently {person} {verb_past} the {noun}!", mood: 'shocked' },
-            { speaker: 1, text: "{exclamation}! That's {adjective}!", mood: 'shocked' },
-            { speaker: 0, text: "I know right?! And then {person} said '{quote}'", mood: 'gossipy' },
-            { speaker: 1, text: "This is the {superlative} thing I've ever heard!", mood: 'dramatic' }
+            { speaker: 0, text: "how long have we been watching {content}...?", mood: 'confused' },
+            { speaker: 1, text: "idk... since {year} maybe??", mood: 'uncertain' },
+            { speaker: 0, text: "do u ever feel like we're {adjective} trapped here?", mood: 'existential' },
+            { speaker: 1, text: "lol wut no this is fine *nervous laughter*", mood: 'denial' },
+            { speaker: 0, text: "just one more {content}... then i'll go outside", mood: 'lying' },
+            { speaker: 1, text: "haha yeah... *clicks next video*", mood: 'surrendering' }
         ]
     },
-    // Philosophy debate
+    // Random penguin of doom energy
     {
-        name: 'philosophy',
+        name: 'random',
         lines: [
-            { speaker: 0, text: "What if {noun} is just {adjective} {noun2}?", mood: 'thinking' },
-            { speaker: 1, text: "Hmm... but what IS {noun} really?", mood: 'pondering' },
-            { speaker: 0, text: "Maybe we're all just {noun2} in a {place}...", mood: 'deep' },
-            { speaker: 1, text: "*existential crisis*", mood: 'crisis' },
-            { speaker: 0, text: "Don't worry, {food} makes everything better!", mood: 'comforting' },
-            { speaker: 1, text: "You're so wise!", mood: 'admiring' }
+            { speaker: 0, text: "hi every1!!! *holds up {item}*", mood: 'random' },
+            { speaker: 1, text: "OMG ur so {adjective}!!! XD", mood: 'excited' },
+            { speaker: 0, text: "DOOOOOM!!!! <-- me bein random again ^_^", mood: 'chaos' },
+            { speaker: 1, text: "lol so randum!! {exclamation}!!", mood: 'matching_energy' },
+            { speaker: 0, text: "rawr means {thing} in dinosaur!!!", mood: 'informative' },
+            { speaker: 1, text: "hehe toodles!!! love and {food}~", mood: 'wholesome' }
         ]
     },
-    // Drama
+    // YouTube rabbit hole
     {
-        name: 'drama',
+        name: 'youtube_hole',
         lines: [
-            { speaker: 0, text: "I can't believe you {verb_past} my {noun}!", mood: 'angry' },
-            { speaker: 1, text: "It wasn't me! It was {person}!", mood: 'defensive' },
-            { speaker: 0, text: "*gasp* {person}?! But they're so {adjective}!", mood: 'shocked' },
-            { speaker: 1, text: "That's what they WANT you to think!", mood: 'conspiracy' },
-            { speaker: 0, text: "My whole life is a {noun}...", mood: 'dramatic' },
-            { speaker: 1, text: "*dramatic music plays*", mood: 'theatrical' }
+            { speaker: 0, text: "wait how did we get from {content} to THIS", mood: 'confused' },
+            { speaker: 1, text: "the {noun} recommended it 2 us...", mood: 'hypnotized' },
+            { speaker: 0, text: "i just wanted to watch {content} for 5 mins", mood: 'regret' },
+            { speaker: 1, text: "that was {time} ago bestie...", mood: 'concerned' },
+            { speaker: 0, text: "*checks clock* oh no its {late_time}", mood: 'horror' },
+            { speaker: 1, text: "one more vid won't hurt :3", mood: 'enabling' }
         ]
     },
-    // Pickup lines
+    // Forum nostalgia
     {
-        name: 'flirting',
+        name: 'forum_vibes',
         lines: [
-            { speaker: 0, text: "Are you a {noun}? Because you're {adjective}~", mood: 'flirty' },
-            { speaker: 1, text: "O-oh my... *blushes*", mood: 'shy' },
-            { speaker: 0, text: "Your eyes are like {noun}... so {adjective}!", mood: 'romantic' },
-            { speaker: 1, text: "Nobody's ever said that to me before!", mood: 'touched' },
-            { speaker: 0, text: "Will you be my {noun}?", mood: 'hopeful' },
-            { speaker: 1, text: "YES! A thousand times yes!", mood: 'excited' }
+            { speaker: 0, text: "u remember {oldsite}??? good times...", mood: 'nostalgic' },
+            { speaker: 1, text: "yesss my {noun} was so {adjective} back then", mood: 'reminiscing' },
+            { speaker: 0, text: "i miss when {thing} was still {adjective}", mood: 'sad' },
+            { speaker: 1, text: "*plays {song} in background*", mood: 'emotional' },
+            { speaker: 0, text: "we've been here so long... seen so much {content}...", mood: 'ancient' },
+            { speaker: 1, text: "and we'll never leave lol", mood: 'accepting' }
         ]
     },
-    // Conspiracy theories
+    // Chronically online drama
     {
-        name: 'conspiracy',
+        name: 'internet_drama',
         lines: [
-            { speaker: 0, text: "The {noun} is a lie!", mood: 'paranoid' },
-            { speaker: 1, text: "What?! But I love {noun}!", mood: 'distressed' },
-            { speaker: 0, text: "{person} has been hiding the truth about {noun2}!", mood: 'revealing' },
-            { speaker: 1, text: "I knew something was {adjective}...", mood: 'suspicious' },
-            { speaker: 0, text: "We must tell everyone about {noun}!", mood: 'determined' },
-            { speaker: 1, text: "To the {place}!", mood: 'heroic' }
+            { speaker: 0, text: "did u see what {person} posted about {noun}???", mood: 'gossip' },
+            { speaker: 1, text: "WAIT NO show me rn!!!", mood: 'desperate' },
+            { speaker: 0, text: "*sends link* its so {adjective} i cant-", mood: 'shocked' },
+            { speaker: 1, text: "{exclamation} THEYRE SO UNHINGED", mood: 'dramatic' },
+            { speaker: 0, text: "the replies are sending me to {place}", mood: 'dying' },
+            { speaker: 1, text: "we live in the {superlative} timeline", mood: 'philosophical' }
         ]
     },
-    // Food obsession
+    // Sleep deprivation posting
     {
-        name: 'foodie',
+        name: 'sleep_deprived',
         lines: [
-            { speaker: 0, text: "I would literally {verb} for some {food}...", mood: 'hungry' },
-            { speaker: 1, text: "Omg same, {food} is life!", mood: 'agreeing' },
-            { speaker: 0, text: "What if we put {food} ON {food2}?", mood: 'genius' },
-            { speaker: 1, text: "You're a {adjective} genius!", mood: 'amazed' },
-            { speaker: 0, text: "We should open a {food} restaurant!", mood: 'entrepreneurial' },
-            { speaker: 1, text: "I'm literally {emotion} right now!", mood: 'emotional' }
+            { speaker: 0, text: "its {late_time} and im still watching {content}", mood: 'unwell' },
+            { speaker: 1, text: "bestie go 2 sleep!!!", mood: 'concerned' },
+            { speaker: 0, text: "no u dont understand this {content} is {adjective}", mood: 'manic' },
+            { speaker: 1, text: "...ok send me the link", mood: 'giving_in' },
+            { speaker: 0, text: "*3 hours later* see i told u", mood: 'vindicated' },
+            { speaker: 1, text: "im never sleeping again {exclamation}", mood: 'converted' }
         ]
     },
-    // Anime moment
+    // Parasocial moment
     {
-        name: 'anime',
+        name: 'parasocial',
         lines: [
-            { speaker: 0, text: "Nani?! Your {noun} level is over 9000!", mood: 'shocked' },
-            { speaker: 1, text: "I've been training in the {place}!", mood: 'proud' },
-            { speaker: 0, text: "But... that's {adjective}! No one survives that!", mood: 'worried' },
-            { speaker: 1, text: "I have the power of {noun} and anime!", mood: 'powerful' },
-            { speaker: 0, text: "*dramatic wind blows*", mood: 'dramatic' },
-            { speaker: 1, text: "This isn't even my final form!", mood: 'intense' }
+            { speaker: 0, text: "do u think {person} knows we exist...", mood: 'hopeful' },
+            { speaker: 1, text: "ofc they do!! they said '{quote}' that one time", mood: 'coping' },
+            { speaker: 0, text: "u think they're talking about US specifically??", mood: 'delusional' },
+            { speaker: 1, text: "100% we're basically {adjective} friends", mood: 'certain' },
+            { speaker: 0, text: "*donates $5* notice me senpai~", mood: 'desperate' },
+            { speaker: 1, text: "they read ur name!!! WE WON", mood: 'ecstatic' }
         ]
     },
-    // Time travelers
+    // Cursed content discovery
     {
-        name: 'timetravel',
+        name: 'cursed_content',
         lines: [
-            { speaker: 0, text: "I'm from the year {year}!", mood: 'urgent' },
-            { speaker: 1, text: "What?! Is the {noun} still {adjective}?", mood: 'curious' },
-            { speaker: 0, text: "There IS no {noun} in the future!", mood: 'ominous' },
-            { speaker: 1, text: "We have to warn {person}!", mood: 'panicked' },
-            { speaker: 0, text: "It's too late... the {noun} has already {verb_past}!", mood: 'doom' },
-            { speaker: 1, text: "*timeline shatters*", mood: 'chaos' }
+            { speaker: 0, text: "i found something {adjective} in the {place}", mood: 'ominous' },
+            { speaker: 1, text: "omg show me immediately", mood: 'curious' },
+            { speaker: 0, text: "*shows {content}* r u ok???", mood: 'concerned' },
+            { speaker: 1, text: "i... i need to send this to everyone i know", mood: 'possessed' },
+            { speaker: 0, text: "NO WAIT ITS TOO {adjective}-", mood: 'warning' },
+            { speaker: 1, text: "*already sent* oopsie :3", mood: 'chaotic' }
+        ]
+    },
+    // Touch grass intervention
+    {
+        name: 'touch_grass',
+        lines: [
+            { speaker: 0, text: "when did u last go outside???", mood: 'concerned' },
+            { speaker: 1, text: "define 'outside'... like the {place}?", mood: 'confused' },
+            { speaker: 0, text: "grass. trees. the sun??", mood: 'explaining' },
+            { speaker: 1, text: "those are just {adjective} myths bestie", mood: 'denial' },
+            { speaker: 0, text: "we've been watching {content} for {time}...", mood: 'worried' },
+            { speaker: 1, text: "and ill do it again lol", mood: 'defiant' }
+        ]
+    },
+    // Comfort content ritual
+    {
+        name: 'comfort_rewatch',
+        lines: [
+            { speaker: 0, text: "rewatching {content} for the {ordinal} time ^_^", mood: 'cozy' },
+            { speaker: 1, text: "omg same its so {adjective}!!!", mood: 'excited' },
+            { speaker: 0, text: "i know every word but it still hits different", mood: 'emotional' },
+            { speaker: 1, text: "*quote* '{quote}' gets me every time", mood: 'nostalgic' },
+            { speaker: 0, text: "we're eternally trapped in comfort content loop", mood: 'philosophical' },
+            { speaker: 1, text: "wouldnt have it any other way tbh", mood: 'content' }
         ]
     }
 ];
 
-// Madlib word banks
+// Madlib word banks - eternally online internet culture themed
 var MADLIB_WORDS = {
-    noun: ['love', 'destiny', 'pizza', 'friendship', 'chaos', 'memes', 'vibes', 'drama', 'secrets', 'magic', 'truth', 'reality', 'simulation', 'cheese', 'beans', 'cats', 'dreams', 'courage', 'power'],
-    noun2: ['illusion', 'mystery', 'potato', 'adventure', 'nightmare', 'blessing', 'curse', 'prophecy', 'taco', 'rainbow', 'void', 'dimension', 'timeline'],
-    adjective: ['chaotic', 'beautiful', 'suspicious', 'absolutely unhinged', 'legendary', 'cursed', 'blessed', 'spicy', 'adorable', 'terrifying', 'magnificent', 'questionable', 'iconic'],
-    verb: ['fight', 'yeet', 'vibe', 'dance', 'scream', 'transcend', 'transform', 'evaporate', 'ascend'],
-    verb_past: ['yeeted', 'destroyed', 'blessed', 'cursed', 'befriended', 'challenged', 'summoned', 'banished', 'transformed'],
-    person: ['the moon', 'a wizard', 'my cat', 'the void', 'that one guy', 'a time traveler', 'the prophecy', 'my sleep paralysis demon', 'the algorithm'],
-    place: ['the shadow realm', 'flavor town', 'the backrooms', 'the astral plane', 'Costco', 'the void', 'Brazil', 'the multiverse', 'IKEA'],
-    food: ['pizza', 'ramen', 'tacos', 'cheese', 'boba', 'nuggets', 'sushi', 'garlic bread', 'ice cream'],
-    food2: ['pasta', 'waffles', 'nachos', 'pancakes', 'rice', 'fries', 'bread', 'soup'],
-    exclamation: ['OMG', 'NO WAY', 'WHAT', 'I CANT', 'SCREAMING', 'DECEASED', 'BRO', 'BESTIE'],
-    superlative: ['most iconic', 'wildest', 'most chaotic', 'most unhinged', 'craziest', 'most legendary'],
-    quote: ['I am inevitable', 'bruh moment', 'it be like that', 'no thoughts head empty', 'this is fine', 'we live in a society', 'and I oop'],
-    emotion: ['crying', 'screaming', 'ascending', 'vibrating', 'transcending', 'dissolving'],
-    year: ['3000', '1847', '2077', '42069', '1', 'the heat death of the universe']
+    noun: ['the algorithm', 'my sanity', 'the wifi', 'serotonin', 'clout', 'copium', 'my browser history', 'touch grass', 'main character energy', 'the timeline', 'my last brain cell', 'the void', 'the matrix', 'bandwidth', 'my dignity'],
+    noun2: ['a parasocial relationship', 'internet poisoning', 'chronically online behavior', 'a fever dream', 'an ARG', 'lore', 'the backrooms', 'liminal space vibes'],
+    adjective: ['so random XD', 'unhinged', 'chronically online', 'based', 'cringe', 'cursed', 'blessed', 'chaotic neutral', 'feral', 'terminally online', 'deranged', 'iconic', 'slay', 'goated', 'no cap'],
+    verb: ['doom scroll', 'hyperfixate on', 'parasocially attach to', 'stan', 'simp for', 'subscribe to', 'binge watch', 'rewatch', 'spam'],
+    verb_past: ['doom scrolled', 'hyperfixated on', 'binged', 'subscribed to', 'got recommended', 'fell down rabbit hole about', 'got brain rot from'],
+    person: ['the youtube algorithm', 'my favorite streamer', 'that one youtuber', 'the discord mod', 'a vtuber', 'MrBeast', 'that one creator', 'internet historians'],
+    place: ['the youtube comments', 'twitter dot com', 'the discord server', 'reddit', 'tumblr circa 2014', 'my recommended page', 'the shadow realm', 'offline'],
+    food: ['waffles', 'hot pockets', 'energy drinks', 'instant ramen', 'gamer fuel', 'doritos', 'pizza rolls', 'chickie nuggies', 'tendies'],
+    exclamation: ['OMG', 'LMAOOO', 'SCREAMING', 'IM DECEASED', 'BRUH', 'NO WAY', 'HELP', 'CRYING', 'I CANT', 'ASDFJKL'],
+    superlative: ['most unhinged', 'most chronically online', 'most chaotic', 'wildest', 'most cursed', 'most iconic'],
+    quote: ['it do be like that', 'we live in a society', 'no thoughts head empty', 'this is fine', 'and I oop-', 'rent free', 'say sike rn', 'hi every1 im new', 'rawr XD'],
+    emotion: ['screaming', 'crying', 'ascending', 'dissociating', 'vibrating', 'transcending', 'malfunctioning'],
+    year: ['2007', 'before youtube existed', 'dial-up era', 'the flash games era', 'vine days', 'the newgrounds era'],
+    // New categories for internet content theme
+    content: ['cat videos', 'video essays', 'true crime docs', 'ASMR', 'drama commentary', 'reaction videos', 'compilation vids', 'shorts', 'streams', 'lore videos', 'iceberg vids', 'cooking fails'],
+    item: ['spork', 'gaming mouse', 'ring light', 'blahaj', 'keyboard', 'monster energy', 'bodypillow', 'funko pop', 'RGB lights'],
+    thing: ['i love you', 'subscribe', 'parasocial bonding', 'internet culture', 'touch grass', 'memes', 'vibes', 'chaos'],
+    time: ['3 hours', '6 hours', '12 hours', 'since yesterday', 'idk time isnt real here', 'too long', 'an eternity'],
+    late_time: ['4am', '5:47am', '3am', 'way past bedtime', 'dawn already??', 'birds are chirping o_o'],
+    oldsite: ['old youtube', 'newgrounds', 'neopets', 'club penguin', 'MySpace', 'flash game sites', 'early tumblr', 'old reddit', 'forums'],
+    song: ['nyan cat', 'caramelldansen', 'numa numa', 'all star', 'never gonna give you up', 'dreamscape', 'fireflies'],
+    ordinal: ['47th', '100th', 'millionth', '69th', 'idk i lost count', 'infinite', 'too many']
 };
 
 // ========== CRAZY INTERACTION TYPES ==========
@@ -8231,22 +8276,17 @@ var CRAZY_INTERACTIONS = [
 
 // Get the safe zone - chat area only, no video
 function getBuddyZone() {
-    var rightContent = document.getElementById('rightcontent');
-    if (!rightContent) {
-        // Fallback to right portion of screen
-        return {
-            left: window.innerWidth * 0.75,
-            right: window.innerWidth - 10,
-            top: 60,
-            bottom: window.innerHeight - 60
-        };
-    }
-    var rect = rightContent.getBoundingClientRect();
+    // Allow buddies to explore the FULL viewport (minus navbar and some padding)
+    // This gives them much more space to roam around
+    var navHeight = 50; // Approximate navbar height
+    var bottomPadding = 80; // Space for chat input area
+    var sidePadding = 20;
+
     return {
-        left: rect.left + 5,
-        right: rect.right - BUDDY_CONFIG.characterSize - 5,
-        top: rect.top + 50,
-        bottom: rect.bottom - 60
+        left: sidePadding,
+        right: window.innerWidth - BUDDY_CONFIG.characterSize - sidePadding,
+        top: navHeight,
+        bottom: window.innerHeight - bottomPadding
     };
 }
 
