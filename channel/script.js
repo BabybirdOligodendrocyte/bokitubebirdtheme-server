@@ -9416,6 +9416,50 @@ function removeBuddy(username) {
 function startBuddyAnimation() {
     if (buddyAnimationId) return;
 
+    // Get position preference for a buddy
+    function getBuddyPositionPref(name) {
+        var myName = getMyUsername();
+        if (name === myName && myBuddySettings) {
+            return myBuddySettings.positionPreference || 'roam';
+        }
+        if (customBuddySettings[name] && customBuddySettings[name].positionPreference) {
+            return customBuddySettings[name].positionPreference;
+        }
+        return 'roam'; // Default to roam
+    }
+
+    // Generate a random target anywhere in the zone based on position preference
+    function getRandomTarget(zone, posPref) {
+        var x = zone.left + Math.random() * (zone.right - zone.left);
+        var y;
+
+        switch (posPref) {
+            case 'ground':
+                // Stay in bottom third of zone
+                y = zone.bottom - Math.random() * ((zone.bottom - zone.top) * 0.3);
+                break;
+            case 'high':
+                // Stay in top third of zone
+                y = zone.top + Math.random() * ((zone.bottom - zone.top) * 0.3);
+                break;
+            case 'chatFollow':
+                // Only go where chat messages are (use chatWordTargets)
+                if (chatWordTargets.length > 0) {
+                    return chatWordTargets[Math.floor(Math.random() * chatWordTargets.length)];
+                }
+                // Fallback to random if no chat targets
+                y = zone.top + Math.random() * (zone.bottom - zone.top);
+                break;
+            case 'roam':
+            default:
+                // Full freedom - anywhere in the zone
+                y = zone.top + Math.random() * (zone.bottom - zone.top);
+                break;
+        }
+
+        return { x: x, y: y };
+    }
+
     function update() {
         var names = Object.keys(buddyCharacters);
         var zone = getBuddyZone();
@@ -9424,19 +9468,31 @@ function startBuddyAnimation() {
             var b = buddyCharacters[name];
             if (!b || b.interacting) return;
 
+            var posPref = getBuddyPositionPref(name);
+
             if (b.interactCooldown > 0) b.interactCooldown -= BUDDY_CONFIG.updateInterval;
             b.stateTime += BUDDY_CONFIG.updateInterval;
 
             if (b.state === 'idle') {
                 if (b.stateTime > 2000 + Math.random() * 2000) {
                     var action = Math.random();
-                    if (action < 0.5 && chatWordTargets.length > 0) {
-                        var target = chatWordTargets[Math.floor(Math.random() * chatWordTargets.length)];
+                    // For chatFollow, prefer chat targets; for roam, use random zone targets
+                    var useChatTargets = (posPref === 'chatFollow') && chatWordTargets.length > 0;
+
+                    if (action < 0.6) {
+                        // Jump to a target
+                        var target = useChatTargets
+                            ? chatWordTargets[Math.floor(Math.random() * chatWordTargets.length)]
+                            : getRandomTarget(zone, posPref);
                         startJumpTo(b, target);
                     } else {
                         b.state = 'hopping';
                         b.stateTime = 0;
                         b.vx = (Math.random() - 0.5) * BUDDY_CONFIG.hopSpeed * 2;
+                        // For roam mode, also add vertical velocity
+                        if (posPref === 'roam') {
+                            b.vy = (Math.random() - 0.5) * BUDDY_CONFIG.hopSpeed;
+                        }
                         setAnim(b, 'hopping');
                         updateFace(b);
                     }
@@ -9457,29 +9513,51 @@ function startBuddyAnimation() {
                     b.state = 'idle';
                     b.stateTime = 0;
                     setAnim(b, 'idle');
+                } else if (b.y < zone.top) {
+                    b.y = zone.top;
+                    b.vy = Math.abs(b.vy) * 0.5; // Bounce off top
                 }
                 b.x = Math.max(zone.left, Math.min(zone.right, b.x));
             } else if (b.state === 'perched') {
                 if (b.stateTime > BUDDY_CONFIG.perchDuration) {
-                    if (chatWordTargets.length > 1 && Math.random() < 0.6) {
-                        var newTarget = chatWordTargets[Math.floor(Math.random() * chatWordTargets.length)];
+                    var useChatTargets = (posPref === 'chatFollow') && chatWordTargets.length > 1;
+
+                    if (Math.random() < 0.6) {
+                        var newTarget = useChatTargets
+                            ? chatWordTargets[Math.floor(Math.random() * chatWordTargets.length)]
+                            : getRandomTarget(zone, posPref);
                         startJumpTo(b, newTarget);
                     } else {
                         b.state = 'hopping';
                         b.stateTime = 0;
                         b.vx = (Math.random() - 0.5) * BUDDY_CONFIG.hopSpeed * 2;
+                        if (posPref === 'roam') {
+                            b.vy = (Math.random() - 0.5) * BUDDY_CONFIG.hopSpeed;
+                        }
                         setAnim(b, 'hopping');
                         updateFace(b);
                     }
                 }
             } else if (b.state === 'hopping') {
                 b.x += b.vx;
+                // For roam mode, also move vertically while hopping
+                if (posPref === 'roam' && b.vy) {
+                    b.y += b.vy;
+                    // Bounce off top/bottom
+                    if (b.y <= zone.top) { b.y = zone.top; b.vy = Math.abs(b.vy); }
+                    else if (b.y >= zone.bottom) { b.y = zone.bottom; b.vy = -Math.abs(b.vy); }
+                }
+
                 if (b.x <= zone.left) { b.x = zone.left; b.vx = Math.abs(b.vx); updateFace(b); }
                 else if (b.x >= zone.right) { b.x = zone.right; b.vx = -Math.abs(b.vx); updateFace(b); }
 
                 if (b.stateTime > 2500 + Math.random() * 2000) {
-                    if (chatWordTargets.length > 0 && Math.random() < 0.6) {
-                        var t = chatWordTargets[Math.floor(Math.random() * chatWordTargets.length)];
+                    var useChatTargets = (posPref === 'chatFollow') && chatWordTargets.length > 0;
+
+                    if (Math.random() < 0.6) {
+                        var t = useChatTargets
+                            ? chatWordTargets[Math.floor(Math.random() * chatWordTargets.length)]
+                            : getRandomTarget(zone, posPref);
                         startJumpTo(b, t);
                     } else {
                         b.state = 'idle';
