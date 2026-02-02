@@ -4473,28 +4473,27 @@ function buildUsernameCloseTags() {
 
 function applyUsernameTagsToMessage() {
     if (!usernameStyleSettings.enabled) return;
-    
+
     var myName = getMyUsername();
     if (!myName) return;
-    
+
     var c = document.getElementById('chatline');
     if (!c) return;
     var msg = c.value;
-    
+
     // Skip commands
     if (msg.startsWith('/')) return;
     // Skip empty
     if (!msg.trim()) return;
     // Skip if already has username tag
     if (msg.startsWith('[uname]')) return;
-    
+
     var openTags = buildUsernameOpenTags();
     var closeTags = buildUsernameCloseTags();
-    
-    // Only add if there are actual styles
-    if (openTags) {
-        c.value = '[uname]' + openTags + myName + closeTags + '[/uname] ' + msg;
-    }
+
+    // Always add [uname] wrapper when enabled, even without specific styles
+    // This ensures the styled-username CSS is applied
+    c.value = '[uname]' + openTags + myName + closeTags + '[/uname] ' + msg;
 }
 
 function processStyledUsername(msgElement) {
@@ -7876,9 +7875,24 @@ function initBuddySyncListener() {
 
     // Load my settings and broadcast on init
     loadMyBuddySettings();
+
+    // Broadcast settings multiple times initially to ensure sync
+    // First broadcast after 1 second
     setTimeout(function() {
         broadcastMyBuddySettings();
-    }, 3000); // Delay to ensure connection is ready
+    }, 1000);
+
+    // Second broadcast after 3 seconds (for late joiners)
+    setTimeout(function() {
+        lastSettingsBroadcast = 0;
+        broadcastMyBuddySettings();
+    }, 3000);
+
+    // Third broadcast after 6 seconds
+    setTimeout(function() {
+        lastSettingsBroadcast = 0;
+        broadcastMyBuddySettings();
+    }, 6000);
 
     // Re-broadcast settings periodically so new users see our customizations
     setInterval(function() {
@@ -7887,7 +7901,7 @@ function initBuddySyncListener() {
             lastSettingsBroadcast = 0;
             broadcastMyBuddySettings();
         }
-    }, 30000); // Every 30 seconds
+    }, 15000); // Every 15 seconds (reduced from 30)
 
     // Also broadcast when a new user joins
     if (typeof socket !== 'undefined') {
@@ -7896,7 +7910,7 @@ function initBuddySyncListener() {
             setTimeout(function() {
                 lastSettingsBroadcast = 0;
                 broadcastMyBuddySettings();
-            }, 2000); // Small delay to let them initialize
+            }, 1500); // Small delay to let them initialize
         });
     }
 }
@@ -8705,6 +8719,20 @@ function addBuddy(username) {
         currentTarget: null,
         inConversation: false
     };
+
+    // Delayed re-sync: if custom settings arrive after buddy creation, apply them
+    // Check multiple times in case sync messages arrive later
+    setTimeout(function() {
+        if (customBuddySettings[username] && buddyCharacters[username]) {
+            applyCustomSettingsToBuddy(username);
+        }
+    }, 2000);
+
+    setTimeout(function() {
+        if (customBuddySettings[username] && buddyCharacters[username]) {
+            applyCustomSettingsToBuddy(username);
+        }
+    }, 5000);
 }
 
 function removeBuddy(username) {
