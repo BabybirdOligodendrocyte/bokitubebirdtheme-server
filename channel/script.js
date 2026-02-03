@@ -8158,10 +8158,15 @@ function handlePusherBuddySettings(data) {
         customPhrases: data.ph || []
     };
     customBuddySettings[data.username] = settings;
+    console.log('[Pusher] Received settings for', data.username, '- hue:', settings.hueRotate, 'glow:', settings.glowColor, 'sprite:', settings.spriteIndex);
+    console.log('[Pusher] Buddy exists for', data.username, '?', !!buddyCharacters[data.username]);
+    console.log('[Pusher] Current buddyCharacters keys:', Object.keys(buddyCharacters));
     if (buddyCharacters[data.username]) {
+        console.log('[Pusher] Applying settings to existing buddy:', data.username);
         applyCustomSettingsToBuddy(data.username);
+    } else {
+        console.log('[Pusher] Buddy not found, settings stored for later application');
     }
-    console.log('[Pusher] Received settings for', data.username, '- hue:', settings.hueRotate, 'glow:', settings.glowColor);
 }
 
 function handlePusherBuddyAction(data) {
@@ -9127,6 +9132,17 @@ function initConnectedBuddies() {
         startBuddyAnimation();
     }, 1500);
 
+    // Re-apply custom settings after enough time for responses to arrive
+    // This catches late-arriving settings from other users
+    setTimeout(function() {
+        console.log('[BuddySync] Applying late-arriving custom settings...');
+        Object.keys(customBuddySettings).forEach(function(username) {
+            if (buddyCharacters[username]) {
+                applyCustomSettingsToBuddy(username);
+            }
+        });
+    }, 3000);
+
     // Rescan periodically
     setInterval(scanChatForWords, 3000);
 
@@ -9493,6 +9509,14 @@ function syncBuddiesWithUserlist() {
     });
     currentUsers.forEach(function(u) {
         if (!buddyCharacters[u]) addBuddy(u);
+    });
+
+    // After all buddies are created/synced, apply any stored custom settings
+    // This catches settings that arrived before buddies were created
+    Object.keys(customBuddySettings).forEach(function(username) {
+        if (buddyCharacters[username]) {
+            applyCustomSettingsToBuddy(username);
+        }
     });
 }
 
