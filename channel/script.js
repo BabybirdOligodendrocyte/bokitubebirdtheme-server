@@ -8610,23 +8610,73 @@ function handleSyncedInteraction(user1, user2, actionType, seed, pos1, pos2) {
     // Get current zone bounds for this client (may differ from sender's screen size)
     var zone = getBuddyZone();
 
-    // Sync buddy positions WITH BOUNDS CLAMPING to prevent characters going over video
-    // Different clients have different window/video sizes, so positions must be constrained
+    // Calculate target positions with bounds clamping
+    var target1 = null;
+    var target2 = null;
+    var maxAnimationTime = 0;
+    var SYNC_DISTANCE_THRESHOLD = 20; // Only animate if > 20px away
+    var SYNC_SPEED_MULTIPLIER = 1.5;  // Fast animated movement
+    var FRAME_DURATION = BUDDY_CONFIG.updateInterval || 50;
+
+    // Check if buddy 1 needs to move
     if (pos1 && pos1.length === 2 && !isNaN(pos1[0])) {
-        b1.x = Math.max(zone.left, Math.min(zone.right, pos1[0]));
-        b1.y = Math.max(zone.top, Math.min(zone.bottom, pos1[1]));
-        b1.element.style.left = b1.x + 'px';
-        b1.element.style.top = b1.y + 'px';
-    }
-    if (pos2 && pos2.length === 2 && !isNaN(pos2[0])) {
-        b2.x = Math.max(zone.left, Math.min(zone.right, pos2[0]));
-        b2.y = Math.max(zone.top, Math.min(zone.bottom, pos2[1]));
-        b2.element.style.left = b2.x + 'px';
-        b2.element.style.top = b2.y + 'px';
+        var targetX1 = Math.max(zone.left, Math.min(zone.right, pos1[0]));
+        var targetY1 = Math.max(zone.top, Math.min(zone.bottom, pos1[1]));
+        var dist1 = Math.sqrt(Math.pow(b1.x - targetX1, 2) + Math.pow(b1.y - targetY1, 2));
+
+        if (dist1 > SYNC_DISTANCE_THRESHOLD) {
+            target1 = { x: targetX1, y: targetY1 };
+            var frames1 = Math.max(8, Math.round(18 / SYNC_SPEED_MULTIPLIER));
+            maxAnimationTime = Math.max(maxAnimationTime, frames1 * FRAME_DURATION);
+        } else {
+            // Close enough, just set position directly
+            b1.x = targetX1;
+            b1.y = targetY1;
+            b1.element.style.left = b1.x + 'px';
+            b1.element.style.top = b1.y + 'px';
+        }
     }
 
-    // Route through startInteraction with sync flag
-    startInteraction(user1, user2, b1, b2, true, actionType, seed);
+    // Check if buddy 2 needs to move
+    if (pos2 && pos2.length === 2 && !isNaN(pos2[0])) {
+        var targetX2 = Math.max(zone.left, Math.min(zone.right, pos2[0]));
+        var targetY2 = Math.max(zone.top, Math.min(zone.bottom, pos2[1]));
+        var dist2 = Math.sqrt(Math.pow(b2.x - targetX2, 2) + Math.pow(b2.y - targetY2, 2));
+
+        if (dist2 > SYNC_DISTANCE_THRESHOLD) {
+            target2 = { x: targetX2, y: targetY2 };
+            var frames2 = Math.max(8, Math.round(18 / SYNC_SPEED_MULTIPLIER));
+            maxAnimationTime = Math.max(maxAnimationTime, frames2 * FRAME_DURATION);
+        } else {
+            // Close enough, just set position directly
+            b2.x = targetX2;
+            b2.y = targetY2;
+            b2.element.style.left = b2.x + 'px';
+            b2.element.style.top = b2.y + 'px';
+        }
+    }
+
+    // Start animated movement for buddies that need it
+    if (target1) {
+        startJumpTo(b1, target1, SYNC_SPEED_MULTIPLIER);
+    }
+    if (target2) {
+        startJumpTo(b2, target2, SYNC_SPEED_MULTIPLIER);
+    }
+
+    // Delay interaction start until movement completes (or start immediately if no movement needed)
+    if (maxAnimationTime > 0) {
+        setTimeout(function() {
+            // Re-check that buddies still exist and aren't in another interaction
+            if (buddyCharacters[user1] && buddyCharacters[user2] &&
+                !buddyCharacters[user1].interacting && !buddyCharacters[user2].interacting) {
+                startInteraction(user1, user2, buddyCharacters[user1], buddyCharacters[user2], true, actionType, seed);
+            }
+        }, maxAnimationTime + 100); // Add 100ms buffer for animation to fully complete
+    } else {
+        // No movement needed, start interaction immediately
+        startInteraction(user1, user2, b1, b2, true, actionType, seed);
+    }
 }
 
 // Legacy handler for backwards compatibility - kept for reference
