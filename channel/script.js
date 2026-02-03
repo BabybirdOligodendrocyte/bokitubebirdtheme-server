@@ -11332,15 +11332,22 @@ function endCrazyInteraction(n1, n2) {
 // ========== VIDEO DRAWING TOOL ==========
 
 var drawingState = {
-    active: false,          // Is drawing mode active (timer running)
-    overlayOpen: false,     // Is overlay visible
-    isDrawing: false,       // Currently drawing a stroke
-    currentStroke: [],      // Points in current stroke
-    sessionId: null,        // Unique session ID for this drawing
-    timerInterval: null,    // Timer interval reference
-    timeRemaining: 10,      // Seconds remaining
-    brushSize: 'medium',    // small, medium, large
-    brushColor: '#ffffff'   // Current color
+    sessionActive: false,       // Is a drawing session in progress (timer running)
+    isDrawing: false,           // Currently drawing a stroke (mouse down + ctrl+shift)
+    currentStroke: [],          // Points in current stroke
+    sessionId: null,            // Unique session ID for this drawing
+    timerTimeout: null,         // Timer timeout reference
+    keysHeld: false,            // Are Ctrl+Shift currently held
+    sessionEnded: false,        // Flag to require key release after session ends
+    brushSize: 'medium',        // small, medium, large
+    brushColor: '#ffffff'       // Current color
+};
+
+// Drawing settings (saved to localStorage)
+var DRAWING_SETTINGS_KEY = 'drawingToolSettings';
+var drawingSettings = {
+    brushSize: 'medium',
+    brushColor: '#ffffff'
 };
 
 // Brush sizes as percentage of video height
@@ -11357,159 +11364,202 @@ var DRAW_COLOR_PALETTE = [
     '#ff8080', '#80ff80', '#8080ff', '#ff80ff', '#80ffff', '#ffff80', '#ff8000', '#ff0080'
 ];
 
-var DRAW_DURATION = 10; // seconds
+var DRAW_DURATION = 10000; // 10 seconds in ms
 
-// Inject drawing overlay CSS
+// Load drawing settings from localStorage
+function loadDrawingSettings() {
+    try {
+        var saved = localStorage.getItem(DRAWING_SETTINGS_KEY);
+        if (saved) {
+            var parsed = JSON.parse(saved);
+            drawingSettings.brushSize = parsed.brushSize || 'medium';
+            drawingSettings.brushColor = parsed.brushColor || '#ffffff';
+        }
+    } catch (e) {
+        console.log('[Drawing] Failed to load settings:', e);
+    }
+}
+
+// Save drawing settings to localStorage
+function saveDrawingSettings() {
+    try {
+        localStorage.setItem(DRAWING_SETTINGS_KEY, JSON.stringify(drawingSettings));
+    } catch (e) {
+        console.log('[Drawing] Failed to save settings:', e);
+    }
+}
+
+// Inject drawing CSS
 function injectDrawingCSS() {
-    if (document.getElementById('drawing-overlay-css')) return;
+    if (document.getElementById('drawing-tool-css')) return;
     var css = document.createElement('style');
-    css.id = 'drawing-overlay-css';
+    css.id = 'drawing-tool-css';
     css.textContent = `
-        #drawing-overlay {
-            position: absolute;
+        /* Drawing settings popup */
+        #drawing-settings-overlay {
+            position: fixed;
             top: 0;
             left: 0;
             width: 100%;
             height: 100%;
-            z-index: 1000;
-            pointer-events: none;
-        }
-        #drawing-overlay.drawing-active {
-            pointer-events: auto;
-        }
-        #drawing-canvas {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            cursor: crosshair;
-        }
-        #drawing-controls {
-            position: absolute;
-            top: 10px;
-            right: 10px;
-            display: flex;
-            flex-direction: column;
-            gap: 8px;
-            background: rgba(0, 0, 0, 0.85);
-            padding: 10px;
-            border-radius: 8px;
-            border: 1px solid #444;
-            pointer-events: auto;
-        }
-        #drawing-timer {
-            position: absolute;
-            top: 10px;
-            left: 10px;
-            font-size: 32px;
-            font-weight: bold;
-            color: #fff;
-            text-shadow: 2px 2px 4px #000, -1px -1px 2px #000;
-            font-family: 'Impact', sans-serif;
-            display: none;
-        }
-        #drawing-timer.visible {
-            display: block;
-        }
-        .drawing-action-btns {
-            display: flex;
-            gap: 8px;
-            justify-content: center;
-        }
-        .drawing-action-btn {
-            width: 40px;
-            height: 40px;
-            border: none;
-            border-radius: 6px;
-            font-size: 20px;
-            cursor: pointer;
+            background: rgba(0,0,0,0.5);
+            z-index: 10000;
             display: flex;
             align-items: center;
             justify-content: center;
         }
-        .drawing-start-btn {
-            background: #28a745;
-            color: white;
+        #drawing-settings-popup {
+            background: #1a1a1a;
+            border: 1px solid #444;
+            border-radius: 8px;
+            width: 320px;
+            max-width: 90vw;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.5);
         }
-        .drawing-start-btn:hover {
-            background: #218838;
+        #drawing-settings-popup .popup-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 16px;
+            background: #252525;
+            border-bottom: 1px solid #333;
+            border-radius: 8px 8px 0 0;
+            cursor: move;
         }
-        .drawing-start-btn:disabled {
-            background: #555;
-            cursor: not-allowed;
+        #drawing-settings-popup .popup-header span {
+            font-weight: bold;
+            color: #fff;
         }
-        .drawing-close-btn {
-            background: #dc3545;
-            color: white;
+        #drawing-settings-popup .popup-close {
+            background: none;
+            border: none;
+            color: #888;
+            font-size: 20px;
+            cursor: pointer;
+            padding: 0 4px;
         }
-        .drawing-close-btn:hover {
-            background: #c82333;
+        #drawing-settings-popup .popup-close:hover {
+            color: #fff;
+        }
+        #drawing-settings-popup .popup-content {
+            padding: 16px;
+        }
+        .drawing-section {
+            margin-bottom: 16px;
+        }
+        .drawing-section:last-child {
+            margin-bottom: 0;
+        }
+        .drawing-section h4 {
+            color: #aaa;
+            font-size: 12px;
+            margin: 0 0 8px 0;
+            text-transform: uppercase;
         }
         .drawing-brush-sizes {
             display: flex;
-            gap: 6px;
+            gap: 8px;
             justify-content: center;
         }
         .drawing-brush-btn {
-            width: 32px;
-            height: 32px;
-            border: 2px solid #666;
+            width: 48px;
+            height: 48px;
+            border: 2px solid #555;
             border-radius: 50%;
-            background: #333;
+            background: #2a2a2a;
             cursor: pointer;
             display: flex;
             align-items: center;
             justify-content: center;
+            transition: border-color 0.2s, background 0.2s;
         }
         .drawing-brush-btn.active {
             border-color: #fff;
-            background: #555;
+            background: #444;
         }
         .drawing-brush-btn:hover {
-            border-color: #aaa;
+            border-color: #888;
         }
         .drawing-brush-dot {
             background: #fff;
             border-radius: 50%;
         }
         .drawing-brush-btn[data-size="small"] .drawing-brush-dot {
-            width: 6px;
-            height: 6px;
+            width: 8px;
+            height: 8px;
         }
         .drawing-brush-btn[data-size="medium"] .drawing-brush-dot {
-            width: 12px;
-            height: 12px;
+            width: 16px;
+            height: 16px;
         }
         .drawing-brush-btn[data-size="large"] .drawing-brush-dot {
-            width: 20px;
-            height: 20px;
+            width: 28px;
+            height: 28px;
         }
         .drawing-color-palette {
             display: grid;
             grid-template-columns: repeat(8, 1fr);
-            gap: 3px;
+            gap: 4px;
         }
         .drawing-color-btn {
-            width: 20px;
-            height: 20px;
-            border: 2px solid #444;
-            border-radius: 3px;
+            width: 100%;
+            aspect-ratio: 1;
+            border: 2px solid #333;
+            border-radius: 4px;
             cursor: pointer;
             padding: 0;
+            transition: border-color 0.2s, transform 0.1s;
         }
         .drawing-color-btn.active {
             border-color: #fff;
-            box-shadow: 0 0 4px #fff;
+            box-shadow: 0 0 6px rgba(255,255,255,0.5);
+            transform: scale(1.1);
         }
         .drawing-color-btn:hover {
-            border-color: #aaa;
+            border-color: #888;
         }
-        .drawing-label {
+        .drawing-preview {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            background: #111;
+            border-radius: 6px;
+            min-height: 60px;
+        }
+        .drawing-preview-dot {
+            border-radius: 50%;
+        }
+        .drawing-instructions {
+            background: #252525;
+            border-radius: 6px;
+            padding: 12px;
+            margin-top: 16px;
+            border: 1px solid #333;
+        }
+        .drawing-instructions p {
+            margin: 0;
             color: #aaa;
-            font-size: 11px;
-            text-align: center;
-            margin-bottom: 2px;
+            font-size: 12px;
+            line-height: 1.5;
+        }
+        .drawing-instructions kbd {
+            background: #333;
+            border: 1px solid #555;
+            border-radius: 3px;
+            padding: 2px 6px;
+            font-family: monospace;
+            color: #fff;
+        }
+        /* Drawing canvas (for user's own strokes) */
+        #drawing-canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 1000;
         }
         /* Receiver canvas for other users' strokes */
         #drawing-receiver-canvas {
@@ -11525,73 +11575,158 @@ function injectDrawingCSS() {
     document.head.appendChild(css);
 }
 
-// Create or get the drawing overlay
-function createDrawingOverlay() {
-    injectDrawingCSS();
+// Create drawing settings popup
+function createDrawingSettingsPopup() {
+    if (document.getElementById('drawing-settings-overlay')) return;
 
+    var overlay = document.createElement('div');
+    overlay.id = 'drawing-settings-overlay';
+    overlay.onclick = function(e) { if (e.target === overlay) closeDrawingSettingsPopup(); };
+
+    var popup = document.createElement('div');
+    popup.id = 'drawing-settings-popup';
+
+    // Build color palette buttons
+    var colorBtns = DRAW_COLOR_PALETTE.map(function(color) {
+        var isActive = drawingSettings.brushColor === color ? ' active' : '';
+        return '<button class="drawing-color-btn' + isActive + '" data-color="' + color + '" style="background:' + color + '"></button>';
+    }).join('');
+
+    popup.innerHTML =
+        '<div class="popup-header" id="drawing-popup-header">' +
+            '<span>🖌️ Drawing Settings</span>' +
+            '<button class="popup-close" onclick="closeDrawingSettingsPopup()">×</button>' +
+        '</div>' +
+        '<div class="popup-content">' +
+            '<div class="drawing-section">' +
+                '<h4>Brush Size</h4>' +
+                '<div class="drawing-brush-sizes">' +
+                    '<button class="drawing-brush-btn' + (drawingSettings.brushSize === 'small' ? ' active' : '') + '" data-size="small" title="Small">' +
+                        '<div class="drawing-brush-dot"></div>' +
+                    '</button>' +
+                    '<button class="drawing-brush-btn' + (drawingSettings.brushSize === 'medium' ? ' active' : '') + '" data-size="medium" title="Medium">' +
+                        '<div class="drawing-brush-dot"></div>' +
+                    '</button>' +
+                    '<button class="drawing-brush-btn' + (drawingSettings.brushSize === 'large' ? ' active' : '') + '" data-size="large" title="Large">' +
+                        '<div class="drawing-brush-dot"></div>' +
+                    '</button>' +
+                '</div>' +
+            '</div>' +
+            '<div class="drawing-section">' +
+                '<h4>Color</h4>' +
+                '<div class="drawing-color-palette">' + colorBtns + '</div>' +
+            '</div>' +
+            '<div class="drawing-section">' +
+                '<h4>Preview</h4>' +
+                '<div class="drawing-preview">' +
+                    '<div class="drawing-preview-dot" id="drawing-preview-dot"></div>' +
+                '</div>' +
+            '</div>' +
+            '<div class="drawing-instructions">' +
+                '<p>Hold <kbd>Ctrl</kbd> + <kbd>Shift</kbd> and draw on the video.<br>Drawing lasts 10 seconds then clears.</p>' +
+            '</div>' +
+        '</div>';
+
+    overlay.appendChild(popup);
+    document.body.appendChild(overlay);
+
+    // Make draggable
+    makeDraggable(popup, document.getElementById('drawing-popup-header'));
+
+    // Attach event listeners
+    popup.querySelectorAll('.drawing-brush-btn').forEach(function(btn) {
+        btn.onclick = function() { selectDrawingBrushSize(btn.dataset.size); };
+    });
+
+    popup.querySelectorAll('.drawing-color-btn').forEach(function(btn) {
+        btn.onclick = function() { selectDrawingColor(btn.dataset.color); };
+    });
+
+    updateDrawingPreview();
+}
+
+// Update the preview dot
+function updateDrawingPreview() {
+    var dot = document.getElementById('drawing-preview-dot');
+    if (!dot) return;
+
+    var sizes = { small: 12, medium: 24, large: 40 };
+    var size = sizes[drawingSettings.brushSize] || 24;
+
+    dot.style.width = size + 'px';
+    dot.style.height = size + 'px';
+    dot.style.background = drawingSettings.brushColor;
+}
+
+// Select brush size in popup
+function selectDrawingBrushSize(size) {
+    drawingSettings.brushSize = size;
+    saveDrawingSettings();
+
+    document.querySelectorAll('#drawing-settings-popup .drawing-brush-btn').forEach(function(btn) {
+        btn.classList.toggle('active', btn.dataset.size === size);
+    });
+
+    updateDrawingPreview();
+}
+
+// Select color in popup
+function selectDrawingColor(color) {
+    drawingSettings.brushColor = color;
+    saveDrawingSettings();
+
+    document.querySelectorAll('#drawing-settings-popup .drawing-color-btn').forEach(function(btn) {
+        btn.classList.toggle('active', btn.dataset.color === color);
+    });
+
+    updateDrawingPreview();
+}
+
+// Toggle drawing settings popup
+function toggleDrawingOverlay() {
+    var overlay = document.getElementById('drawing-settings-overlay');
+    if (overlay) {
+        closeDrawingSettingsPopup();
+    } else {
+        openDrawingSettingsPopup();
+    }
+}
+
+// Open drawing settings popup
+function openDrawingSettingsPopup() {
+    if (!pusherEnabled) {
+        alert('Drawing requires Pusher to be configured. Please set up Pusher in channel settings.');
+        return;
+    }
+    createDrawingSettingsPopup();
+}
+
+// Close drawing settings popup
+function closeDrawingSettingsPopup() {
+    var overlay = document.getElementById('drawing-settings-overlay');
+    if (overlay) {
+        overlay.remove();
+    }
+}
+
+// ========== CTRL+SHIFT DRAWING ==========
+
+// Create drawing canvas for local user
+function createDrawingCanvas() {
     var videoContainer = document.getElementById('videowrap');
     if (!videoContainer) return null;
 
     videoContainer.style.position = 'relative';
 
-    var overlay = document.getElementById('drawing-overlay');
-    if (!overlay) {
-        overlay = document.createElement('div');
-        overlay.id = 'drawing-overlay';
-        overlay.innerHTML = `
-            <canvas id="drawing-canvas"></canvas>
-            <div id="drawing-timer">10</div>
-            <div id="drawing-controls">
-                <div class="drawing-label">Brush Size</div>
-                <div class="drawing-brush-sizes">
-                    <button class="drawing-brush-btn" data-size="small" title="Small">
-                        <div class="drawing-brush-dot"></div>
-                    </button>
-                    <button class="drawing-brush-btn active" data-size="medium" title="Medium">
-                        <div class="drawing-brush-dot"></div>
-                    </button>
-                    <button class="drawing-brush-btn" data-size="large" title="Large">
-                        <div class="drawing-brush-dot"></div>
-                    </button>
-                </div>
-                <div class="drawing-label">Color</div>
-                <div class="drawing-color-palette" id="drawing-palette"></div>
-                <div class="drawing-action-btns">
-                    <button class="drawing-action-btn drawing-start-btn" id="drawing-start-btn" title="Start Drawing (10s)">✓</button>
-                    <button class="drawing-action-btn drawing-close-btn" id="drawing-close-btn" title="Close">✕</button>
-                </div>
-            </div>
-        `;
-        videoContainer.appendChild(overlay);
-
-        // Build color palette
-        var palette = overlay.querySelector('#drawing-palette');
-        DRAW_COLOR_PALETTE.forEach(function(color) {
-            var btn = document.createElement('button');
-            btn.className = 'drawing-color-btn' + (color === drawingState.brushColor ? ' active' : '');
-            btn.style.background = color;
-            btn.dataset.color = color;
-            btn.onclick = function() { selectDrawingColor(color); };
-            palette.appendChild(btn);
-        });
-
-        // Brush size buttons
-        overlay.querySelectorAll('.drawing-brush-btn').forEach(function(btn) {
-            btn.onclick = function() { selectBrushSize(btn.dataset.size); };
-        });
-
-        // Start button
-        overlay.querySelector('#drawing-start-btn').onclick = startDrawingSession;
-
-        // Close button
-        overlay.querySelector('#drawing-close-btn').onclick = closeDrawingOverlay;
-
-        // Canvas setup
-        var canvas = overlay.querySelector('#drawing-canvas');
-        setupDrawingCanvas(canvas);
+    var canvas = document.getElementById('drawing-canvas');
+    if (!canvas) {
+        canvas = document.createElement('canvas');
+        canvas.id = 'drawing-canvas';
+        videoContainer.appendChild(canvas);
     }
 
-    return overlay;
+    resizeDrawingCanvas();
+    return canvas;
 }
 
 // Create receiver canvas for other users' drawings
@@ -11608,10 +11743,19 @@ function createReceiverCanvas() {
         videoContainer.appendChild(canvas);
     }
 
-    // Size canvas to match video
     resizeReceiverCanvas();
-
     return canvas;
+}
+
+function resizeDrawingCanvas() {
+    var canvas = document.getElementById('drawing-canvas');
+    if (!canvas) return;
+
+    var videoContainer = document.getElementById('videowrap');
+    if (!videoContainer) return;
+
+    canvas.width = videoContainer.offsetWidth;
+    canvas.height = videoContainer.offsetHeight;
 }
 
 function resizeReceiverCanvas() {
@@ -11625,80 +11769,119 @@ function resizeReceiverCanvas() {
     canvas.height = videoContainer.offsetHeight;
 }
 
-// Setup canvas with event handlers
-function setupDrawingCanvas(canvas) {
-    var resizeCanvas = function() {
-        var container = canvas.parentElement;
-        canvas.width = container.offsetWidth;
-        canvas.height = container.offsetHeight;
-    };
-    resizeCanvas();
-    window.addEventListener('resize', resizeCanvas);
+// Get relative coordinates (0-1) from mouse event
+function getDrawingRelativeCoords(e) {
+    var videoContainer = document.getElementById('videowrap');
+    if (!videoContainer) return null;
 
-    // Mouse events
-    canvas.addEventListener('mousedown', onDrawStart);
-    canvas.addEventListener('mousemove', onDrawMove);
-    canvas.addEventListener('mouseup', onDrawEnd);
-    canvas.addEventListener('mouseleave', onDrawEnd);
-
-    // Touch events
-    canvas.addEventListener('touchstart', function(e) {
-        e.preventDefault();
-        var touch = e.touches[0];
-        var rect = canvas.getBoundingClientRect();
-        onDrawStart({ clientX: touch.clientX, clientY: touch.clientY, target: canvas });
-    });
-    canvas.addEventListener('touchmove', function(e) {
-        e.preventDefault();
-        var touch = e.touches[0];
-        onDrawMove({ clientX: touch.clientX, clientY: touch.clientY, target: canvas });
-    });
-    canvas.addEventListener('touchend', function(e) {
-        e.preventDefault();
-        onDrawEnd(e);
-    });
-}
-
-// Get relative coordinates (0-1)
-function getRelativeCoords(e, canvas) {
-    var rect = canvas.getBoundingClientRect();
+    var rect = videoContainer.getBoundingClientRect();
     return {
         x: (e.clientX - rect.left) / rect.width,
         y: (e.clientY - rect.top) / rect.height
     };
 }
 
-// Drawing event handlers
-function onDrawStart(e) {
-    if (!drawingState.active) return;
+// Check if mouse is over video
+function isOverVideo(e) {
+    var videoContainer = document.getElementById('videowrap');
+    if (!videoContainer) return false;
 
-    var canvas = e.target;
-    var coords = getRelativeCoords(e, canvas);
+    var rect = videoContainer.getBoundingClientRect();
+    return e.clientX >= rect.left && e.clientX <= rect.right &&
+           e.clientY >= rect.top && e.clientY <= rect.bottom;
+}
+
+// Start a drawing session (first stroke with Ctrl+Shift)
+function startDrawingSession() {
+    if (drawingState.sessionActive) return;
+
+    drawingState.sessionActive = true;
+    drawingState.sessionId = getMyUsername() + '_' + Date.now();
+    drawingState.sessionEnded = false;
+
+    // Start 10-second timer
+    drawingState.timerTimeout = setTimeout(function() {
+        endDrawingSession();
+    }, DRAW_DURATION);
+
+    console.log('[Drawing] Session started:', drawingState.sessionId);
+}
+
+// End drawing session
+function endDrawingSession() {
+    if (!drawingState.sessionActive) return;
+
+    // Clear timer
+    if (drawingState.timerTimeout) {
+        clearTimeout(drawingState.timerTimeout);
+        drawingState.timerTimeout = null;
+    }
+
+    // Broadcast clear
+    broadcastDrawingClear();
+
+    // Clear local canvas
+    var canvas = document.getElementById('drawing-canvas');
+    if (canvas) {
+        var ctx = canvas.getContext('2d');
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+    }
+
+    drawingState.sessionActive = false;
+    drawingState.isDrawing = false;
+    drawingState.currentStroke = [];
+    drawingState.sessionEnded = true; // Require key release before new session
+
+    console.log('[Drawing] Session ended:', drawingState.sessionId);
+}
+
+// Handle mouse down for drawing
+function onDrawingMouseDown(e) {
+    if (!drawingState.keysHeld) return;
+    if (!isOverVideo(e)) return;
+    if (drawingState.sessionEnded) return; // Must release keys first
+
+    // Start session on first stroke
+    if (!drawingState.sessionActive) {
+        startDrawingSession();
+    }
+
+    var coords = getDrawingRelativeCoords(e);
+    if (!coords) return;
 
     drawingState.isDrawing = true;
     drawingState.currentStroke = [coords];
 
-    // Draw starting point
+    // Draw starting point on local canvas
+    var canvas = document.getElementById('drawing-canvas');
+    if (!canvas) canvas = createDrawingCanvas();
+    if (!canvas) return;
+
     var ctx = canvas.getContext('2d');
-    var absSize = DRAW_BRUSH_SIZES[drawingState.brushSize] * canvas.height;
-    ctx.fillStyle = drawingState.brushColor;
+    var absSize = DRAW_BRUSH_SIZES[drawingSettings.brushSize] * canvas.height;
+
+    ctx.fillStyle = drawingSettings.brushColor;
     ctx.beginPath();
     ctx.arc(coords.x * canvas.width, coords.y * canvas.height, absSize / 2, 0, Math.PI * 2);
     ctx.fill();
 }
 
-function onDrawMove(e) {
-    if (!drawingState.isDrawing || !drawingState.active) return;
+// Handle mouse move for drawing
+function onDrawingMouseMove(e) {
+    if (!drawingState.isDrawing || !drawingState.keysHeld) return;
 
-    var canvas = document.getElementById('drawing-canvas');
-    var coords = getRelativeCoords(e, canvas);
+    var coords = getDrawingRelativeCoords(e);
+    if (!coords) return;
+
     var lastCoords = drawingState.currentStroke[drawingState.currentStroke.length - 1];
 
-    // Draw line segment
-    var ctx = canvas.getContext('2d');
-    var absSize = DRAW_BRUSH_SIZES[drawingState.brushSize] * canvas.height;
+    var canvas = document.getElementById('drawing-canvas');
+    if (!canvas) return;
 
-    ctx.strokeStyle = drawingState.brushColor;
+    var ctx = canvas.getContext('2d');
+    var absSize = DRAW_BRUSH_SIZES[drawingSettings.brushSize] * canvas.height;
+
+    ctx.strokeStyle = drawingSettings.brushColor;
     ctx.lineWidth = absSize;
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
@@ -11711,16 +11894,17 @@ function onDrawMove(e) {
     drawingState.currentStroke.push(coords);
 }
 
-function onDrawEnd(e) {
+// Handle mouse up for drawing
+function onDrawingMouseUp(e) {
     if (!drawingState.isDrawing) return;
 
     drawingState.isDrawing = false;
 
     // Broadcast completed stroke
-    if (drawingState.currentStroke.length > 0) {
+    if (drawingState.currentStroke.length > 0 && drawingState.sessionActive) {
         broadcastStroke({
-            color: drawingState.brushColor,
-            size: drawingState.brushSize,
+            color: drawingSettings.brushColor,
+            size: drawingSettings.brushSize,
             points: drawingState.currentStroke
         });
     }
@@ -11728,139 +11912,38 @@ function onDrawEnd(e) {
     drawingState.currentStroke = [];
 }
 
-// Select brush size
-function selectBrushSize(size) {
-    drawingState.brushSize = size;
+// Handle key down
+function onDrawingKeyDown(e) {
+    if (e.ctrlKey && e.shiftKey) {
+        // Check if session ended and keys need to be released
+        if (drawingState.sessionEnded) return;
 
-    document.querySelectorAll('.drawing-brush-btn').forEach(function(btn) {
-        btn.classList.toggle('active', btn.dataset.size === size);
-    });
-}
-
-// Select color
-function selectDrawingColor(color) {
-    drawingState.brushColor = color;
-
-    document.querySelectorAll('.drawing-color-btn').forEach(function(btn) {
-        btn.classList.toggle('active', btn.dataset.color === color);
-    });
-}
-
-// Toggle drawing overlay
-function toggleDrawingOverlay() {
-    if (drawingState.overlayOpen) {
-        closeDrawingOverlay();
-    } else {
-        openDrawingOverlay();
-    }
-}
-
-// Open drawing overlay
-function openDrawingOverlay() {
-    if (!pusherEnabled) {
-        alert('Drawing requires Pusher to be configured. Please set up Pusher in channel settings.');
-        return;
-    }
-
-    var overlay = createDrawingOverlay();
-    if (!overlay) return;
-
-    overlay.style.display = 'block';
-    overlay.classList.add('drawing-active');
-    drawingState.overlayOpen = true;
-
-    // Reset state
-    drawingState.active = false;
-    drawingState.timeRemaining = DRAW_DURATION;
-
-    // Update UI
-    var timer = document.getElementById('drawing-timer');
-    if (timer) {
-        timer.textContent = DRAW_DURATION;
-        timer.classList.remove('visible');
-    }
-
-    var startBtn = document.getElementById('drawing-start-btn');
-    if (startBtn) startBtn.disabled = false;
-
-    // Clear canvas
-    var canvas = document.getElementById('drawing-canvas');
-    if (canvas) {
-        var ctx = canvas.getContext('2d');
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-    }
-}
-
-// Close drawing overlay
-function closeDrawingOverlay() {
-    var overlay = document.getElementById('drawing-overlay');
-    if (overlay) {
-        overlay.style.display = 'none';
-        overlay.classList.remove('drawing-active');
-    }
-
-    drawingState.overlayOpen = false;
-    drawingState.active = false;
-    drawingState.isDrawing = false;
-
-    // Stop timer
-    if (drawingState.timerInterval) {
-        clearInterval(drawingState.timerInterval);
-        drawingState.timerInterval = null;
-    }
-}
-
-// Start drawing session (checkmark clicked)
-function startDrawingSession() {
-    if (drawingState.active) return;
-
-    // Generate unique session ID
-    drawingState.sessionId = getMyUsername() + '_' + Date.now();
-    drawingState.active = true;
-    drawingState.timeRemaining = DRAW_DURATION;
-
-    // Disable start button
-    var startBtn = document.getElementById('drawing-start-btn');
-    if (startBtn) startBtn.disabled = true;
-
-    // Show timer
-    var timer = document.getElementById('drawing-timer');
-    if (timer) {
-        timer.textContent = drawingState.timeRemaining;
-        timer.classList.add('visible');
-    }
-
-    // Start countdown
-    drawingState.timerInterval = setInterval(function() {
-        drawingState.timeRemaining--;
-
-        if (timer) {
-            timer.textContent = drawingState.timeRemaining;
+        if (!drawingState.keysHeld) {
+            drawingState.keysHeld = true;
+            document.body.style.cursor = 'crosshair';
         }
-
-        if (drawingState.timeRemaining <= 0) {
-            endDrawingSession();
-        }
-    }, 1000);
-
-    console.log('[Drawing] Session started:', drawingState.sessionId);
+    }
 }
 
-// End drawing session
-function endDrawingSession() {
-    // Stop timer
-    if (drawingState.timerInterval) {
-        clearInterval(drawingState.timerInterval);
-        drawingState.timerInterval = null;
+// Handle key up
+function onDrawingKeyUp(e) {
+    // If either Ctrl or Shift is released
+    if (!e.ctrlKey || !e.shiftKey) {
+        if (drawingState.keysHeld) {
+            drawingState.keysHeld = false;
+            document.body.style.cursor = '';
+
+            // If we were drawing, end the stroke
+            if (drawingState.isDrawing) {
+                onDrawingMouseUp(e);
+            }
+
+            // Reset sessionEnded flag when keys are released
+            if (drawingState.sessionEnded) {
+                drawingState.sessionEnded = false;
+            }
+        }
     }
-
-    // Broadcast clear command
-    broadcastDrawingClear();
-
-    // Close overlay
-    closeDrawingOverlay();
-
-    console.log('[Drawing] Session ended:', drawingState.sessionId);
 }
 
 // ========== PUSHER BROADCAST (Drawing) ==========
@@ -11981,7 +12064,22 @@ function initDrawingPusher() {
 // Initialize drawing system
 function initDrawingSystem() {
     injectDrawingCSS();
+    loadDrawingSettings();
+    createDrawingCanvas();
     createReceiverCanvas();
+
+    // Global event listeners for Ctrl+Shift drawing
+    document.addEventListener('keydown', onDrawingKeyDown);
+    document.addEventListener('keyup', onDrawingKeyUp);
+    document.addEventListener('mousedown', onDrawingMouseDown);
+    document.addEventListener('mousemove', onDrawingMouseMove);
+    document.addEventListener('mouseup', onDrawingMouseUp);
+
+    // Handle window resize
+    window.addEventListener('resize', function() {
+        resizeDrawingCanvas();
+        resizeReceiverCanvas();
+    });
 
     // Try to init Pusher listeners (may need to wait)
     if (!initDrawingPusher()) {
@@ -11998,10 +12096,7 @@ function initDrawingSystem() {
         }, 30000);
     }
 
-    // Handle window resize
-    window.addEventListener('resize', function() {
-        resizeReceiverCanvas();
-    });
+    console.log('[Drawing] System initialized');
 }
 
 // Initialize on document ready

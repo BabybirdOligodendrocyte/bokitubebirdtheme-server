@@ -859,12 +859,18 @@ var SCREENSPAM_MAX_LENGTH = 50;   // Max characters
 Allows users to draw on the video player with strokes synced in real-time to all viewers. Uses relative coordinates (0-1) for cross-screen interpolation so drawings appear in the same position regardless of screen size.
 
 ### User Flow
-1. Click 🖌️ (paintbrush) button in chat controls
-2. Overlay appears over video with brush controls (top-right)
-3. Select brush size (small/medium/large) and color (MSPaint palette)
-4. Click ✓ to start 10-second drawing session
-5. Draw strokes - each stroke broadcasts immediately on mouseup/touchend
-6. Timer counts down (top-left), at 0 all strokes cleared and overlay closes
+1. **Settings**: Click 🖌️ (paintbrush) button to open settings popup
+2. **Configure**: Select brush size (small/medium/large) and color (MSPaint palette)
+3. **Draw**: Hold `Ctrl+Shift` and draw on the video with mouse
+4. **Session**: First stroke starts invisible 10-second timer
+5. **Continue**: Can release keys, timer keeps running; re-hold to continue drawing
+6. **Clear**: After 10 seconds, all strokes clear; must release keys before new session
+
+### Drawing Controls
+- **Ctrl+Shift + Mouse**: Draw on video (must hold both keys)
+- **Release keys**: Pauses drawing but timer continues
+- **Re-hold keys**: Continue drawing on same canvas
+- **After 10s clear**: Must release Ctrl+Shift before starting new session
 
 ### Coordinate System
 Uses **normalized coordinates (0-1)** for cross-screen compatibility:
@@ -891,6 +897,11 @@ MSPaint-style 8x3 grid:
 - Row 2: White, Silver, Red, Yellow, Lime, Aqua, Blue, Magenta
 - Row 3: Light variants + Orange, Hot Pink
 
+### Multi-User Support
+- Multiple users can draw simultaneously
+- Each user has independent 10-second session
+- All strokes broadcast in real-time to all viewers
+
 ### Pusher Events
 **Requires Pusher** - no chat fallback (avoids message length limits).
 
@@ -902,20 +913,26 @@ MSPaint-style 8x3 grid:
 ### Key Functions
 | Function | Purpose |
 |----------|---------|
-| `toggleDrawingOverlay()` | Opens/closes the drawing overlay |
-| `startDrawingSession()` | Begins 10-second countdown |
+| `toggleDrawingOverlay()` | Opens/closes the settings popup |
+| `createDrawingSettingsPopup()` | Creates the brush/color settings popup |
+| `onDrawingKeyDown/Up()` | Handles Ctrl+Shift detection |
+| `onDrawingMouseDown/Move/Up()` | Handles drawing on video |
+| `startDrawingSession()` | Begins invisible 10-second timer |
+| `endDrawingSession()` | Clears strokes and broadcasts clear |
 | `broadcastStroke(strokeData)` | Sends stroke via Pusher |
 | `handleReceivedStroke(data)` | Renders stroke from another user |
-| `createReceiverCanvas()` | Creates canvas for displaying others' drawings |
 
 ### CSS Classes
-- `#drawing-overlay` - Main overlay container (drawer only)
+- `#drawing-settings-overlay` - Settings popup overlay
+- `#drawing-settings-popup` - Settings popup container
 - `#drawing-canvas` - Canvas for drawer's strokes
 - `#drawing-receiver-canvas` - Canvas for receiving others' strokes
-- `#drawing-controls` - Brush size/color picker panel
-- `#drawing-timer` - Countdown timer display
 - `.drawing-brush-btn` - Brush size buttons
 - `.drawing-color-btn` - Color palette buttons
+- `.drawing-preview-dot` - Preview of current brush settings
+
+### localStorage
+- `drawingToolSettings` - Stores brush size and color preferences
 
 ### Data Format
 ```javascript
