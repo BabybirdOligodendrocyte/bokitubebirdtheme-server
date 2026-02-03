@@ -8894,11 +8894,29 @@ var CRAZY_INTERACTIONS = [
     'foodFight', 'karaoke', 'armWrestle', 'portal', 'summoning'
 ];
 
-// Get the safe zone - everywhere EXCEPT the video player
+// Get the safe zone - everywhere EXCEPT the video player and chat input area
 function getBuddyZone() {
     var navHeight = 50;
-    var bottomPadding = 80;
     var sidePadding = 20;
+
+    // Dynamically calculate bottom padding based on chat input position
+    // This ensures buddies never cover the typing area
+    var chatline = document.getElementById('chatline');
+    var chatwrap = document.getElementById('chatwrap');
+    var bottomPadding = 120; // Default fallback
+
+    if (chatline) {
+        var chatlineRect = chatline.getBoundingClientRect();
+        // Add 20px buffer above the chat input
+        bottomPadding = window.innerHeight - chatlineRect.top + 20;
+    } else if (chatwrap) {
+        // Fallback: use chatwrap bottom area
+        var chatwrapRect = chatwrap.getBoundingClientRect();
+        bottomPadding = window.innerHeight - chatwrapRect.bottom + 80;
+    }
+
+    // Ensure minimum padding
+    bottomPadding = Math.max(bottomPadding, 100);
 
     // Get video player bounds to exclude it
     var videoWrap = document.getElementById('videowrap');
