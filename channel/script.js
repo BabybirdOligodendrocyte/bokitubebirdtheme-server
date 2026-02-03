@@ -7729,7 +7729,7 @@ function showCooldownToast(seconds) {
     }, 2000);
 }
 
-// Intercept /screenspam command
+// Intercept /screenspam command (also /ss, /screenspam2, /ss2)
 function initScreenspamCommand() {
     var chatline = document.getElementById('chatline');
     if (!chatline) return;
@@ -7738,10 +7738,27 @@ function initScreenspamCommand() {
         if (e.key !== 'Enter' || e.shiftKey) return;
 
         var msg = chatline.value.trim();
-        if (!msg.toLowerCase().startsWith('/screenspam ')) return;
+        var msgLower = msg.toLowerCase();
 
-        // Extract message content
-        var content = msg.substring(12).trim();
+        // Check for all screenspam command variants
+        var isScreenspam = msgLower.startsWith('/screenspam ');
+        var isSS = msgLower.startsWith('/ss ') && !msgLower.startsWith('/ss2 ');
+        var isScreenspam2 = msgLower.startsWith('/screenspam2 ');
+        var isSS2 = msgLower.startsWith('/ss2 ');
+
+        if (!isScreenspam && !isSS && !isScreenspam2 && !isSS2) return;
+
+        // Determine if this is a multi-screenspam command
+        var isMulti = isScreenspam2 || isSS2;
+
+        // Extract message content based on command length
+        var commandLength;
+        if (isScreenspam2) commandLength = 13; // '/screenspam2 '
+        else if (isScreenspam) commandLength = 12; // '/screenspam '
+        else if (isSS2) commandLength = 5; // '/ss2 '
+        else commandLength = 4; // '/ss '
+
+        var content = msg.substring(commandLength).trim();
 
         // Validate length
         if (content.length === 0) {
@@ -7769,8 +7786,9 @@ function initScreenspamCommand() {
         e.preventDefault();
         e.stopImmediatePropagation();
 
-        // Send with special marker format: [SCREENSPAM]content[/SCREENSPAM]
-        var markedMessage = screenspamMarker + 'SCREENSPAM:' + content + ':SCREENSPAM' + screenspamMarker;
+        // Send with special marker format: [SCREENSPAM]content[/SCREENSPAM] or [SCREENSPAM2]content[/SCREENSPAM2]
+        var markerType = isMulti ? 'SCREENSPAM2' : 'SCREENSPAM';
+        var markedMessage = screenspamMarker + markerType + ':' + content + ':' + markerType + screenspamMarker;
 
         if (typeof socket !== 'undefined' && socket.emit) {
             socket.emit('chatMsg', { msg: markedMessage });
@@ -7787,7 +7805,30 @@ function initScreenspamReceiver() {
     BokiChatDispatcher.register('screenspam', function(data) {
         if (!data.msg) return false;
 
-        // Check for screenspam marker
+        // Check for screenspam2 marker FIRST (multi-effect, 3-6 at once)
+        var marker2Pattern = screenspamMarker + 'SCREENSPAM2:';
+        var endMarker2 = ':SCREENSPAM2' + screenspamMarker;
+
+        if (data.msg.indexOf(marker2Pattern) !== -1) {
+            var startIdx = data.msg.indexOf(marker2Pattern) + marker2Pattern.length;
+            var endIdx = data.msg.indexOf(endMarker2);
+
+            if (endIdx > startIdx) {
+                var screenspamContent = data.msg.substring(startIdx, endIdx);
+
+                // Display 3-6 screenspam effects at once
+                var effectCount = Math.floor(Math.random() * 4) + 3; // 3 to 6
+                for (var i = 0; i < effectCount; i++) {
+                    displayScreenspam(screenspamContent, data.username);
+                }
+
+                // Hide the chat message
+                hideScreenspamMessage('SCREENSPAM2:');
+            }
+            return false;
+        }
+
+        // Check for regular screenspam marker (single effect)
         var markerPattern = screenspamMarker + 'SCREENSPAM:';
         var endMarker = ':SCREENSPAM' + screenspamMarker;
 
@@ -7798,24 +7839,29 @@ function initScreenspamReceiver() {
             if (endIdx > startIdx) {
                 var screenspamContent = data.msg.substring(startIdx, endIdx);
 
-                // Display the screenspam effect
+                // Display single screenspam effect
                 displayScreenspam(screenspamContent, data.username);
 
-                // Hide the chat message (it's just for triggering the effect)
-                setTimeout(function() {
-                    var msgs = document.querySelectorAll('#messagebuffer > div');
-                    for (var i = msgs.length - 1; i >= 0; i--) {
-                        var msgEl = msgs[i];
-                        if (msgEl.textContent.indexOf('SCREENSPAM:') !== -1) {
-                            msgEl.style.display = 'none';
-                            break;
-                        }
-                    }
-                }, 100);
+                // Hide the chat message
+                hideScreenspamMessage('SCREENSPAM:');
             }
         }
         return false; // Continue to other handlers (message still needs formatting)
     }, 80);
+}
+
+// Helper to hide screenspam messages from chat
+function hideScreenspamMessage(marker) {
+    setTimeout(function() {
+        var msgs = document.querySelectorAll('#messagebuffer > div');
+        for (var i = msgs.length - 1; i >= 0; i--) {
+            var msgEl = msgs[i];
+            if (msgEl.textContent.indexOf(marker) !== -1) {
+                msgEl.style.display = 'none';
+                break;
+            }
+        }
+    }, 100);
 }
 
 // Initialize all enhanced features
