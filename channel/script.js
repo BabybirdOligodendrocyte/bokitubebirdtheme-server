@@ -8023,8 +8023,48 @@ function broadcastMyBuddySettings() {
     }
     lastSettingsBroadcast = now;
 
-    // Create settings object with all visual and phrase data
-    // Only include non-default values to save space (240 char limit)
+    // Try Pusher first (no message length limit - send ALL settings)
+    if (pusherEnabled && pusherChannel) {
+        try {
+            // Full settings object for Pusher - no truncation needed
+            var fullSettings = {
+                // Appearance
+                si: myBuddySettings.spriteIndex,
+                sz: myBuddySettings.size || 'medium',
+                hr: myBuddySettings.hueRotate || 0,
+                st: myBuddySettings.saturation || 100,
+                br: myBuddySettings.brightness || 100,
+                dn: myBuddySettings.displayName || '',
+                gc: myBuddySettings.glowColor || null,
+                gi: myBuddySettings.glowIntensity || 0,
+                cu: myBuddySettings.customSpriteUrl || null,
+
+                // Visual behavior
+                is: myBuddySettings.idleStyle || 'default',
+                ms: myBuddySettings.movementStyle || 'default',
+                el: myBuddySettings.energyLevel || 1.0,
+
+                // All phrases (no truncation over Pusher)
+                cp: myBuddySettings.catchphrase || null,
+                gr: myBuddySettings.greeting || null,
+                vl: myBuddySettings.victoryLine || null,
+                dl: myBuddySettings.defeatLine || null,
+                ll: myBuddySettings.loveLine || null,
+                ph: myBuddySettings.customPhrases || []
+            };
+
+            pusherChannel.trigger('client-buddy-settings', {
+                username: myName,
+                ...fullSettings
+            });
+            console.log('[Pusher] Broadcast sent for', myName, '(full settings)');
+            return;
+        } catch (e) {
+            console.log('[Pusher] Trigger failed, using chat fallback');
+        }
+    }
+
+    // Fallback to chat-based sync (240 char limit - minimal settings only)
     var minimalSettings = {
         si: myBuddySettings.spriteIndex,
         sz: myBuddySettings.size || 'medium',
@@ -8047,27 +8087,10 @@ function broadcastMyBuddySettings() {
         minimalSettings.cu = myBuddySettings.customSpriteUrl;
     }
 
-    // Catchphrase only (truncated to 15 chars to stay under 240 char message limit)
-    // Other phrases (greeting, victory, defeat, love, custom) are local-only
-    // due to Cytube's message length restrictions
+    // Catchphrase only (truncated to 15 chars for chat fallback)
     var cp = truncateForSync(myBuddySettings.catchphrase, 15);
     if (cp) minimalSettings.cp = cp;
 
-    // Try Pusher first (no chat pollution)
-    if (pusherEnabled && pusherChannel) {
-        try {
-            pusherChannel.trigger('client-buddy-settings', {
-                username: myName,
-                ...minimalSettings
-            });
-            console.log('[Pusher] Broadcast sent for', myName);
-            return;
-        } catch (e) {
-            console.log('[Pusher] Trigger failed, using chat fallback');
-        }
-    }
-
-    // Fallback to chat-based sync
     var encoded = encodeBuddySettings(minimalSettings);
     if (!encoded) {
         console.log('[BuddySync] Encoding failed');
@@ -8170,6 +8193,7 @@ function parseBuddySyncMessage(msgText) {
         var minimalSettings = decodeBuddySettings(encoded);
         if (minimalSettings) {
             // Convert minimal format (si, sz, hr, etc.) to full format (spriteIndex, size, hueRotate, etc.)
+            // Pusher sends all fields, chat fallback sends minimal - handle both
             var settings = {
                 // Appearance
                 spriteIndex: minimalSettings.si !== undefined ? minimalSettings.si : (minimalSettings.spriteIndex !== undefined ? minimalSettings.spriteIndex : -1),
@@ -8184,8 +8208,18 @@ function parseBuddySyncMessage(msgText) {
                 glowColor: minimalSettings.gc || minimalSettings.glowColor || null,
                 glowIntensity: minimalSettings.gi !== undefined ? minimalSettings.gi : (minimalSettings.glowIntensity || 0),
 
-                // Catchphrase (only phrase synced due to message length limits)
-                catchphrase: minimalSettings.cp || minimalSettings.catchphrase || null
+                // Visual behavior (from Pusher, defaults for chat fallback)
+                idleStyle: minimalSettings.is || minimalSettings.idleStyle || 'default',
+                movementStyle: minimalSettings.ms || minimalSettings.movementStyle || 'default',
+                energyLevel: minimalSettings.el !== undefined ? minimalSettings.el : (minimalSettings.energyLevel || 1.0),
+
+                // Phrases (full from Pusher, catchphrase only from chat fallback)
+                catchphrase: minimalSettings.cp || minimalSettings.catchphrase || null,
+                greeting: minimalSettings.gr || minimalSettings.greeting || null,
+                victoryLine: minimalSettings.vl || minimalSettings.victoryLine || null,
+                defeatLine: minimalSettings.dl || minimalSettings.defeatLine || null,
+                loveLine: minimalSettings.ll || minimalSettings.loveLine || null,
+                customPhrases: minimalSettings.ph || minimalSettings.customPhrases || []
             };
             console.log('[BuddySync] Decoded settings - spriteIndex:', settings.spriteIndex, 'size:', settings.size, 'hue:', settings.hueRotate, 'glow:', settings.glowColor, settings.glowIntensity);
             var myName = getMyUsername();
