@@ -854,6 +854,89 @@ var SCREENSPAM_DURATION = 5000;   // 5 seconds display
 var SCREENSPAM_MAX_LENGTH = 50;   // Max characters
 ```
 
+## Video Drawing Tool (2026-02)
+
+Allows users to draw on the video player with strokes synced in real-time to all viewers. Uses relative coordinates (0-1) for cross-screen interpolation so drawings appear in the same position regardless of screen size.
+
+### User Flow
+1. Click 🖌️ (paintbrush) button in chat controls
+2. Overlay appears over video with brush controls (top-right)
+3. Select brush size (small/medium/large) and color (MSPaint palette)
+4. Click ✓ to start 10-second drawing session
+5. Draw strokes - each stroke broadcasts immediately on mouseup/touchend
+6. Timer counts down (top-left), at 0 all strokes cleared and overlay closes
+
+### Coordinate System
+Uses **normalized coordinates (0-1)** for cross-screen compatibility:
+```javascript
+// When drawing
+var relX = mouseX / videoWidth;   // 0.0 to 1.0
+var relY = mouseY / videoHeight;  // 0.0 to 1.0
+
+// When rendering on another screen
+var screenX = relX * theirVideoWidth;
+var screenY = relY * theirVideoHeight;
+```
+
+### Brush Sizes
+| Size | Video Height % | Use Case |
+|------|----------------|----------|
+| small | 0.5% | Fine details |
+| medium | 1.5% | General drawing |
+| large | 3% | Bold strokes |
+
+### Color Palette (24 colors)
+MSPaint-style 8x3 grid:
+- Row 1: Black, Gray, Maroon, Olive, Green, Teal, Navy, Purple
+- Row 2: White, Silver, Red, Yellow, Lime, Aqua, Blue, Magenta
+- Row 3: Light variants + Orange, Hot Pink
+
+### Pusher Events
+**Requires Pusher** - no chat fallback (avoids message length limits).
+
+| Event | Purpose |
+|-------|---------|
+| `client-draw-stroke` | Broadcasts completed stroke with color, size, points array |
+| `client-draw-clear` | Clears all strokes when timer ends |
+
+### Key Functions
+| Function | Purpose |
+|----------|---------|
+| `toggleDrawingOverlay()` | Opens/closes the drawing overlay |
+| `startDrawingSession()` | Begins 10-second countdown |
+| `broadcastStroke(strokeData)` | Sends stroke via Pusher |
+| `handleReceivedStroke(data)` | Renders stroke from another user |
+| `createReceiverCanvas()` | Creates canvas for displaying others' drawings |
+
+### CSS Classes
+- `#drawing-overlay` - Main overlay container (drawer only)
+- `#drawing-canvas` - Canvas for drawer's strokes
+- `#drawing-receiver-canvas` - Canvas for receiving others' strokes
+- `#drawing-controls` - Brush size/color picker panel
+- `#drawing-timer` - Countdown timer display
+- `.drawing-brush-btn` - Brush size buttons
+- `.drawing-color-btn` - Color palette buttons
+
+### Data Format
+```javascript
+// Stroke broadcast
+{
+    username: 'drawer',
+    sessionId: 'drawer_1706976000000',
+    stroke: {
+        color: '#ff0000',
+        size: 'medium',
+        points: [{x: 0.5, y: 0.3}, {x: 0.51, y: 0.31}, ...]
+    }
+}
+
+// Clear broadcast
+{
+    username: 'drawer',
+    sessionId: 'drawer_1706976000000'
+}
+```
+
 ## BokiTheme API (v2.0.0)
 
 The theme exposes a centralized API via `window.BokiTheme` for customization, extension, and debugging.

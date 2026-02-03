@@ -3751,6 +3751,9 @@ $('<button id="font-tags-btn" class="btn btn-sm btn-default" title="Text Style">
 $('<button id="buddy-settings-btn" class="btn btn-sm btn-default" title="Buddy Settings">🐦</button>')
     .insertAfter("#font-tags-btn").on("click", toggleBuddySettingsPopup);
 
+$('<button id="draw-btn" class="btn btn-sm btn-default" title="Draw on Video">🖌️</button>')
+    .insertAfter("#buddy-settings-btn").on("click", toggleDrawingOverlay);
+
 $("#favorites-btn").after($("#voteskip"));
 $('#newpollbtn').prependTo($("#leftcontrols"));
 
@@ -11325,3 +11328,683 @@ function endCrazyInteraction(n1, n2) {
         setAnim(b2, 'idle');
     }
 }
+
+// ========== VIDEO DRAWING TOOL ==========
+
+var drawingState = {
+    active: false,          // Is drawing mode active (timer running)
+    overlayOpen: false,     // Is overlay visible
+    isDrawing: false,       // Currently drawing a stroke
+    currentStroke: [],      // Points in current stroke
+    sessionId: null,        // Unique session ID for this drawing
+    timerInterval: null,    // Timer interval reference
+    timeRemaining: 10,      // Seconds remaining
+    brushSize: 'medium',    // small, medium, large
+    brushColor: '#ffffff'   // Current color
+};
+
+// Brush sizes as percentage of video height
+var DRAW_BRUSH_SIZES = {
+    small: 0.005,    // 0.5% of video height
+    medium: 0.015,   // 1.5% of video height
+    large: 0.03      // 3% of video height
+};
+
+// MSPaint-style color palette
+var DRAW_COLOR_PALETTE = [
+    '#000000', '#808080', '#800000', '#808000', '#008000', '#008080', '#000080', '#800080',
+    '#ffffff', '#c0c0c0', '#ff0000', '#ffff00', '#00ff00', '#00ffff', '#0000ff', '#ff00ff',
+    '#ff8080', '#80ff80', '#8080ff', '#ff80ff', '#80ffff', '#ffff80', '#ff8000', '#ff0080'
+];
+
+var DRAW_DURATION = 10; // seconds
+
+// Inject drawing overlay CSS
+function injectDrawingCSS() {
+    if (document.getElementById('drawing-overlay-css')) return;
+    var css = document.createElement('style');
+    css.id = 'drawing-overlay-css';
+    css.textContent = `
+        #drawing-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 1000;
+            pointer-events: none;
+        }
+        #drawing-overlay.drawing-active {
+            pointer-events: auto;
+        }
+        #drawing-canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            cursor: crosshair;
+        }
+        #drawing-controls {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            background: rgba(0, 0, 0, 0.85);
+            padding: 10px;
+            border-radius: 8px;
+            border: 1px solid #444;
+            pointer-events: auto;
+        }
+        #drawing-timer {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            font-size: 32px;
+            font-weight: bold;
+            color: #fff;
+            text-shadow: 2px 2px 4px #000, -1px -1px 2px #000;
+            font-family: 'Impact', sans-serif;
+            display: none;
+        }
+        #drawing-timer.visible {
+            display: block;
+        }
+        .drawing-action-btns {
+            display: flex;
+            gap: 8px;
+            justify-content: center;
+        }
+        .drawing-action-btn {
+            width: 40px;
+            height: 40px;
+            border: none;
+            border-radius: 6px;
+            font-size: 20px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .drawing-start-btn {
+            background: #28a745;
+            color: white;
+        }
+        .drawing-start-btn:hover {
+            background: #218838;
+        }
+        .drawing-start-btn:disabled {
+            background: #555;
+            cursor: not-allowed;
+        }
+        .drawing-close-btn {
+            background: #dc3545;
+            color: white;
+        }
+        .drawing-close-btn:hover {
+            background: #c82333;
+        }
+        .drawing-brush-sizes {
+            display: flex;
+            gap: 6px;
+            justify-content: center;
+        }
+        .drawing-brush-btn {
+            width: 32px;
+            height: 32px;
+            border: 2px solid #666;
+            border-radius: 50%;
+            background: #333;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .drawing-brush-btn.active {
+            border-color: #fff;
+            background: #555;
+        }
+        .drawing-brush-btn:hover {
+            border-color: #aaa;
+        }
+        .drawing-brush-dot {
+            background: #fff;
+            border-radius: 50%;
+        }
+        .drawing-brush-btn[data-size="small"] .drawing-brush-dot {
+            width: 6px;
+            height: 6px;
+        }
+        .drawing-brush-btn[data-size="medium"] .drawing-brush-dot {
+            width: 12px;
+            height: 12px;
+        }
+        .drawing-brush-btn[data-size="large"] .drawing-brush-dot {
+            width: 20px;
+            height: 20px;
+        }
+        .drawing-color-palette {
+            display: grid;
+            grid-template-columns: repeat(8, 1fr);
+            gap: 3px;
+        }
+        .drawing-color-btn {
+            width: 20px;
+            height: 20px;
+            border: 2px solid #444;
+            border-radius: 3px;
+            cursor: pointer;
+            padding: 0;
+        }
+        .drawing-color-btn.active {
+            border-color: #fff;
+            box-shadow: 0 0 4px #fff;
+        }
+        .drawing-color-btn:hover {
+            border-color: #aaa;
+        }
+        .drawing-label {
+            color: #aaa;
+            font-size: 11px;
+            text-align: center;
+            margin-bottom: 2px;
+        }
+        /* Receiver canvas for other users' strokes */
+        #drawing-receiver-canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 999;
+        }
+    `;
+    document.head.appendChild(css);
+}
+
+// Create or get the drawing overlay
+function createDrawingOverlay() {
+    injectDrawingCSS();
+
+    var videoContainer = document.getElementById('videowrap');
+    if (!videoContainer) return null;
+
+    videoContainer.style.position = 'relative';
+
+    var overlay = document.getElementById('drawing-overlay');
+    if (!overlay) {
+        overlay = document.createElement('div');
+        overlay.id = 'drawing-overlay';
+        overlay.innerHTML = `
+            <canvas id="drawing-canvas"></canvas>
+            <div id="drawing-timer">10</div>
+            <div id="drawing-controls">
+                <div class="drawing-label">Brush Size</div>
+                <div class="drawing-brush-sizes">
+                    <button class="drawing-brush-btn" data-size="small" title="Small">
+                        <div class="drawing-brush-dot"></div>
+                    </button>
+                    <button class="drawing-brush-btn active" data-size="medium" title="Medium">
+                        <div class="drawing-brush-dot"></div>
+                    </button>
+                    <button class="drawing-brush-btn" data-size="large" title="Large">
+                        <div class="drawing-brush-dot"></div>
+                    </button>
+                </div>
+                <div class="drawing-label">Color</div>
+                <div class="drawing-color-palette" id="drawing-palette"></div>
+                <div class="drawing-action-btns">
+                    <button class="drawing-action-btn drawing-start-btn" id="drawing-start-btn" title="Start Drawing (10s)">✓</button>
+                    <button class="drawing-action-btn drawing-close-btn" id="drawing-close-btn" title="Close">✕</button>
+                </div>
+            </div>
+        `;
+        videoContainer.appendChild(overlay);
+
+        // Build color palette
+        var palette = overlay.querySelector('#drawing-palette');
+        DRAW_COLOR_PALETTE.forEach(function(color) {
+            var btn = document.createElement('button');
+            btn.className = 'drawing-color-btn' + (color === drawingState.brushColor ? ' active' : '');
+            btn.style.background = color;
+            btn.dataset.color = color;
+            btn.onclick = function() { selectDrawingColor(color); };
+            palette.appendChild(btn);
+        });
+
+        // Brush size buttons
+        overlay.querySelectorAll('.drawing-brush-btn').forEach(function(btn) {
+            btn.onclick = function() { selectBrushSize(btn.dataset.size); };
+        });
+
+        // Start button
+        overlay.querySelector('#drawing-start-btn').onclick = startDrawingSession;
+
+        // Close button
+        overlay.querySelector('#drawing-close-btn').onclick = closeDrawingOverlay;
+
+        // Canvas setup
+        var canvas = overlay.querySelector('#drawing-canvas');
+        setupDrawingCanvas(canvas);
+    }
+
+    return overlay;
+}
+
+// Create receiver canvas for other users' drawings
+function createReceiverCanvas() {
+    var videoContainer = document.getElementById('videowrap');
+    if (!videoContainer) return null;
+
+    videoContainer.style.position = 'relative';
+
+    var canvas = document.getElementById('drawing-receiver-canvas');
+    if (!canvas) {
+        canvas = document.createElement('canvas');
+        canvas.id = 'drawing-receiver-canvas';
+        videoContainer.appendChild(canvas);
+    }
+
+    // Size canvas to match video
+    resizeReceiverCanvas();
+
+    return canvas;
+}
+
+function resizeReceiverCanvas() {
+    var canvas = document.getElementById('drawing-receiver-canvas');
+    if (!canvas) return;
+
+    var videoContainer = document.getElementById('videowrap');
+    if (!videoContainer) return;
+
+    canvas.width = videoContainer.offsetWidth;
+    canvas.height = videoContainer.offsetHeight;
+}
+
+// Setup canvas with event handlers
+function setupDrawingCanvas(canvas) {
+    var resizeCanvas = function() {
+        var container = canvas.parentElement;
+        canvas.width = container.offsetWidth;
+        canvas.height = container.offsetHeight;
+    };
+    resizeCanvas();
+    window.addEventListener('resize', resizeCanvas);
+
+    // Mouse events
+    canvas.addEventListener('mousedown', onDrawStart);
+    canvas.addEventListener('mousemove', onDrawMove);
+    canvas.addEventListener('mouseup', onDrawEnd);
+    canvas.addEventListener('mouseleave', onDrawEnd);
+
+    // Touch events
+    canvas.addEventListener('touchstart', function(e) {
+        e.preventDefault();
+        var touch = e.touches[0];
+        var rect = canvas.getBoundingClientRect();
+        onDrawStart({ clientX: touch.clientX, clientY: touch.clientY, target: canvas });
+    });
+    canvas.addEventListener('touchmove', function(e) {
+        e.preventDefault();
+        var touch = e.touches[0];
+        onDrawMove({ clientX: touch.clientX, clientY: touch.clientY, target: canvas });
+    });
+    canvas.addEventListener('touchend', function(e) {
+        e.preventDefault();
+        onDrawEnd(e);
+    });
+}
+
+// Get relative coordinates (0-1)
+function getRelativeCoords(e, canvas) {
+    var rect = canvas.getBoundingClientRect();
+    return {
+        x: (e.clientX - rect.left) / rect.width,
+        y: (e.clientY - rect.top) / rect.height
+    };
+}
+
+// Drawing event handlers
+function onDrawStart(e) {
+    if (!drawingState.active) return;
+
+    var canvas = e.target;
+    var coords = getRelativeCoords(e, canvas);
+
+    drawingState.isDrawing = true;
+    drawingState.currentStroke = [coords];
+
+    // Draw starting point
+    var ctx = canvas.getContext('2d');
+    var absSize = DRAW_BRUSH_SIZES[drawingState.brushSize] * canvas.height;
+    ctx.fillStyle = drawingState.brushColor;
+    ctx.beginPath();
+    ctx.arc(coords.x * canvas.width, coords.y * canvas.height, absSize / 2, 0, Math.PI * 2);
+    ctx.fill();
+}
+
+function onDrawMove(e) {
+    if (!drawingState.isDrawing || !drawingState.active) return;
+
+    var canvas = document.getElementById('drawing-canvas');
+    var coords = getRelativeCoords(e, canvas);
+    var lastCoords = drawingState.currentStroke[drawingState.currentStroke.length - 1];
+
+    // Draw line segment
+    var ctx = canvas.getContext('2d');
+    var absSize = DRAW_BRUSH_SIZES[drawingState.brushSize] * canvas.height;
+
+    ctx.strokeStyle = drawingState.brushColor;
+    ctx.lineWidth = absSize;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+
+    ctx.beginPath();
+    ctx.moveTo(lastCoords.x * canvas.width, lastCoords.y * canvas.height);
+    ctx.lineTo(coords.x * canvas.width, coords.y * canvas.height);
+    ctx.stroke();
+
+    drawingState.currentStroke.push(coords);
+}
+
+function onDrawEnd(e) {
+    if (!drawingState.isDrawing) return;
+
+    drawingState.isDrawing = false;
+
+    // Broadcast completed stroke
+    if (drawingState.currentStroke.length > 0) {
+        broadcastStroke({
+            color: drawingState.brushColor,
+            size: drawingState.brushSize,
+            points: drawingState.currentStroke
+        });
+    }
+
+    drawingState.currentStroke = [];
+}
+
+// Select brush size
+function selectBrushSize(size) {
+    drawingState.brushSize = size;
+
+    document.querySelectorAll('.drawing-brush-btn').forEach(function(btn) {
+        btn.classList.toggle('active', btn.dataset.size === size);
+    });
+}
+
+// Select color
+function selectDrawingColor(color) {
+    drawingState.brushColor = color;
+
+    document.querySelectorAll('.drawing-color-btn').forEach(function(btn) {
+        btn.classList.toggle('active', btn.dataset.color === color);
+    });
+}
+
+// Toggle drawing overlay
+function toggleDrawingOverlay() {
+    if (drawingState.overlayOpen) {
+        closeDrawingOverlay();
+    } else {
+        openDrawingOverlay();
+    }
+}
+
+// Open drawing overlay
+function openDrawingOverlay() {
+    if (!pusherEnabled) {
+        alert('Drawing requires Pusher to be configured. Please set up Pusher in channel settings.');
+        return;
+    }
+
+    var overlay = createDrawingOverlay();
+    if (!overlay) return;
+
+    overlay.style.display = 'block';
+    overlay.classList.add('drawing-active');
+    drawingState.overlayOpen = true;
+
+    // Reset state
+    drawingState.active = false;
+    drawingState.timeRemaining = DRAW_DURATION;
+
+    // Update UI
+    var timer = document.getElementById('drawing-timer');
+    if (timer) {
+        timer.textContent = DRAW_DURATION;
+        timer.classList.remove('visible');
+    }
+
+    var startBtn = document.getElementById('drawing-start-btn');
+    if (startBtn) startBtn.disabled = false;
+
+    // Clear canvas
+    var canvas = document.getElementById('drawing-canvas');
+    if (canvas) {
+        var ctx = canvas.getContext('2d');
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+    }
+}
+
+// Close drawing overlay
+function closeDrawingOverlay() {
+    var overlay = document.getElementById('drawing-overlay');
+    if (overlay) {
+        overlay.style.display = 'none';
+        overlay.classList.remove('drawing-active');
+    }
+
+    drawingState.overlayOpen = false;
+    drawingState.active = false;
+    drawingState.isDrawing = false;
+
+    // Stop timer
+    if (drawingState.timerInterval) {
+        clearInterval(drawingState.timerInterval);
+        drawingState.timerInterval = null;
+    }
+}
+
+// Start drawing session (checkmark clicked)
+function startDrawingSession() {
+    if (drawingState.active) return;
+
+    // Generate unique session ID
+    drawingState.sessionId = getMyUsername() + '_' + Date.now();
+    drawingState.active = true;
+    drawingState.timeRemaining = DRAW_DURATION;
+
+    // Disable start button
+    var startBtn = document.getElementById('drawing-start-btn');
+    if (startBtn) startBtn.disabled = true;
+
+    // Show timer
+    var timer = document.getElementById('drawing-timer');
+    if (timer) {
+        timer.textContent = drawingState.timeRemaining;
+        timer.classList.add('visible');
+    }
+
+    // Start countdown
+    drawingState.timerInterval = setInterval(function() {
+        drawingState.timeRemaining--;
+
+        if (timer) {
+            timer.textContent = drawingState.timeRemaining;
+        }
+
+        if (drawingState.timeRemaining <= 0) {
+            endDrawingSession();
+        }
+    }, 1000);
+
+    console.log('[Drawing] Session started:', drawingState.sessionId);
+}
+
+// End drawing session
+function endDrawingSession() {
+    // Stop timer
+    if (drawingState.timerInterval) {
+        clearInterval(drawingState.timerInterval);
+        drawingState.timerInterval = null;
+    }
+
+    // Broadcast clear command
+    broadcastDrawingClear();
+
+    // Close overlay
+    closeDrawingOverlay();
+
+    console.log('[Drawing] Session ended:', drawingState.sessionId);
+}
+
+// ========== PUSHER BROADCAST (Drawing) ==========
+
+// Broadcast a stroke to all users
+function broadcastStroke(strokeData) {
+    if (!pusherEnabled || !pusherChannel) {
+        console.log('[Drawing] Pusher not available');
+        return;
+    }
+
+    try {
+        pusherChannel.trigger('client-draw-stroke', {
+            username: getMyUsername(),
+            sessionId: drawingState.sessionId,
+            stroke: strokeData
+        });
+        console.log('[Drawing] Stroke broadcast, points:', strokeData.points.length);
+    } catch (e) {
+        console.log('[Drawing] Stroke broadcast failed:', e);
+    }
+}
+
+// Broadcast clear command
+function broadcastDrawingClear() {
+    if (!pusherEnabled || !pusherChannel) return;
+
+    try {
+        pusherChannel.trigger('client-draw-clear', {
+            username: getMyUsername(),
+            sessionId: drawingState.sessionId
+        });
+        console.log('[Drawing] Clear broadcast');
+    } catch (e) {
+        console.log('[Drawing] Clear broadcast failed:', e);
+    }
+}
+
+// Handle received stroke from another user
+function handleReceivedStroke(data) {
+    if (data.username === getMyUsername()) return;
+
+    var canvas = document.getElementById('drawing-receiver-canvas');
+    if (!canvas) {
+        canvas = createReceiverCanvas();
+    }
+    if (!canvas) return;
+
+    // Ensure canvas is sized correctly
+    var videoContainer = document.getElementById('videowrap');
+    if (canvas.width !== videoContainer.offsetWidth || canvas.height !== videoContainer.offsetHeight) {
+        resizeReceiverCanvas();
+    }
+
+    var ctx = canvas.getContext('2d');
+    var stroke = data.stroke;
+    var absSize = DRAW_BRUSH_SIZES[stroke.size] * canvas.height;
+
+    ctx.strokeStyle = stroke.color;
+    ctx.fillStyle = stroke.color;
+    ctx.lineWidth = absSize;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+
+    if (stroke.points.length === 1) {
+        // Single point - draw a dot
+        var p = stroke.points[0];
+        ctx.beginPath();
+        ctx.arc(p.x * canvas.width, p.y * canvas.height, absSize / 2, 0, Math.PI * 2);
+        ctx.fill();
+    } else {
+        // Draw path
+        ctx.beginPath();
+        var first = stroke.points[0];
+        ctx.moveTo(first.x * canvas.width, first.y * canvas.height);
+
+        for (var i = 1; i < stroke.points.length; i++) {
+            var p = stroke.points[i];
+            ctx.lineTo(p.x * canvas.width, p.y * canvas.height);
+        }
+        ctx.stroke();
+    }
+
+    console.log('[Drawing] Received stroke from', data.username, 'points:', stroke.points.length);
+}
+
+// Handle received clear command
+function handleReceivedClear(data) {
+    var canvas = document.getElementById('drawing-receiver-canvas');
+    if (canvas) {
+        var ctx = canvas.getContext('2d');
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+    }
+    console.log('[Drawing] Received clear from', data.username);
+}
+
+// Initialize drawing system Pusher listeners
+function initDrawingPusher() {
+    if (!pusherEnabled || !pusherChannel) {
+        console.log('[Drawing] Waiting for Pusher...');
+        return false;
+    }
+
+    // Bind stroke listener
+    pusherChannel.bind('client-draw-stroke', function(data) {
+        handleReceivedStroke(data);
+    });
+
+    // Bind clear listener
+    pusherChannel.bind('client-draw-clear', function(data) {
+        handleReceivedClear(data);
+    });
+
+    console.log('[Drawing] Pusher listeners initialized');
+    return true;
+}
+
+// Initialize drawing system
+function initDrawingSystem() {
+    injectDrawingCSS();
+    createReceiverCanvas();
+
+    // Try to init Pusher listeners (may need to wait)
+    if (!initDrawingPusher()) {
+        // Retry after Pusher connects
+        var checkInterval = setInterval(function() {
+            if (initDrawingPusher()) {
+                clearInterval(checkInterval);
+            }
+        }, 1000);
+
+        // Give up after 30 seconds
+        setTimeout(function() {
+            clearInterval(checkInterval);
+        }, 30000);
+    }
+
+    // Handle window resize
+    window.addEventListener('resize', function() {
+        resizeReceiverCanvas();
+    });
+}
+
+// Initialize on document ready
+$(document).ready(function() {
+    setTimeout(initDrawingSystem, 2000);
+});
