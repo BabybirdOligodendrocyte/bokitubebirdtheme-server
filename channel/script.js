@@ -7956,6 +7956,17 @@ function connectPusher() {
             pusherEnabled = true;
             // Broadcast our settings once connected
             setTimeout(broadcastMyBuddySettings, 500);
+            // Request other users' settings after a delay (in case member_added doesn't fire)
+            setTimeout(function() {
+                console.log('[Pusher] Requesting settings from other users');
+                try {
+                    pusherChannel.trigger('client-request-settings', {
+                        username: getMyUsername()
+                    });
+                } catch (e) {
+                    console.log('[Pusher] Request settings trigger failed:', e);
+                }
+            }, 1000);
         });
 
         pusherChannel.bind('pusher:subscription_error', function(err) {
@@ -7973,6 +7984,19 @@ function connectPusher() {
                 lastSettingsBroadcast = 0;
                 broadcastMyBuddySettings();
             }, delay);
+        });
+
+        // Listen for settings requests from new users
+        pusherChannel.bind('client-request-settings', function(data) {
+            if (data.username && data.username !== getMyUsername()) {
+                console.log('[Pusher] Settings requested by:', data.username);
+                // Random delay to prevent flood
+                var delay = 100 + Math.random() * 1000;
+                setTimeout(function() {
+                    lastSettingsBroadcast = 0;
+                    broadcastMyBuddySettings();
+                }, delay);
+            }
         });
 
         // Listen for buddy settings
