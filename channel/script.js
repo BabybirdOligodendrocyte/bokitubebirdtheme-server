@@ -7963,6 +7963,18 @@ function connectPusher() {
             pusherEnabled = false;
         });
 
+        // When a new user joins, re-broadcast our settings so they see our customizations
+        pusherChannel.bind('pusher:member_added', function(member) {
+            console.log('[Pusher] New member joined:', member.id);
+            // Random delay (100-1500ms) to prevent all users broadcasting at once
+            var delay = 100 + Math.random() * 1400;
+            setTimeout(function() {
+                // Skip the debounce check for this broadcast
+                lastSettingsBroadcast = 0;
+                broadcastMyBuddySettings();
+            }, delay);
+        });
+
         // Listen for buddy settings
         pusherChannel.bind('client-buddy-settings', function(data) {
             if (data.username && data.username !== getMyUsername()) {
