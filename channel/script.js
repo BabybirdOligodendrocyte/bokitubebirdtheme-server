@@ -7864,6 +7864,41 @@ function hideScreenspamMessage(marker) {
     }, 100);
 }
 
+// Filter screenspam messages from chat history on page load
+// Hides both raw commands (/ss, /screenspam, /ss2, /screenspam2) and broadcast markers
+function filterScreenspamFromHistory() {
+    var msgs = document.querySelectorAll('#messagebuffer > div');
+    var hiddenCount = 0;
+
+    for (var i = 0; i < msgs.length; i++) {
+        var msgEl = msgs[i];
+        var text = msgEl.textContent || '';
+
+        // Check for screenspam broadcast markers
+        if (text.indexOf('SCREENSPAM:') !== -1 || text.indexOf('SCREENSPAM2:') !== -1) {
+            msgEl.style.display = 'none';
+            hiddenCount++;
+            continue;
+        }
+
+        // Check for raw commands - need to check the actual message content, not timestamps
+        // Look for the message span or text that contains the command
+        var msgSpan = msgEl.querySelector('.chat-msg');
+        var msgText = msgSpan ? msgSpan.textContent.trim() : text;
+
+        // Match commands at the start of the message
+        if (/^\/ss\s/.test(msgText) || /^\/screenspam\s/.test(msgText) ||
+            /^\/ss2\s/.test(msgText) || /^\/screenspam2\s/.test(msgText)) {
+            msgEl.style.display = 'none';
+            hiddenCount++;
+        }
+    }
+
+    if (hiddenCount > 0) {
+        console.log('[Screenspam] Filtered', hiddenCount, 'screenspam messages from chat history');
+    }
+}
+
 // Initialize all enhanced features
 $(document).ready(function() {
     setTimeout(function() {
@@ -7880,6 +7915,7 @@ $(document).ready(function() {
         initScreenspamCommand();
         initScreenspamReceiver();
         createScreenspamOverlay();
+        filterScreenspamFromHistory(); // Clean up screenspam from chat history on page load
 
         // Initialize connected users buddies
         initConnectedBuddies();
