@@ -7986,19 +7986,37 @@ function connectPusher() {
 
 function handlePusherBuddySettings(data) {
     var settings = {
+        // Appearance
         spriteIndex: data.si !== undefined ? data.si : -1,
         size: data.sz || 'medium',
         hueRotate: data.hr || 0,
         saturation: data.st || 100,
         brightness: data.br || 100,
         displayName: data.dn || '',
-        customSpriteUrl: data.cu || null
+        customSpriteUrl: data.cu || null,
+
+        // Glow settings
+        glowColor: data.gc || null,
+        glowIntensity: data.gi || 0,
+
+        // Visual behavior
+        idleStyle: data.is || 'default',
+        movementStyle: data.ms || 'default',
+        energyLevel: data.el || 1.0,
+
+        // Phrases
+        catchphrase: data.cp || null,
+        greeting: data.gr || null,
+        victoryLine: data.vl || null,
+        defeatLine: data.dl || null,
+        loveLine: data.ll || null,
+        customPhrases: data.ph || []
     };
     customBuddySettings[data.username] = settings;
     if (buddyCharacters[data.username]) {
         applyCustomSettingsToBuddy(data.username);
     }
-    console.log('[Pusher] Received settings for', data.username);
+    console.log('[Pusher] Received settings for', data.username, '- hue:', settings.hueRotate, 'glow:', settings.glowColor);
 }
 
 function handlePusherBuddyAction(data) {
