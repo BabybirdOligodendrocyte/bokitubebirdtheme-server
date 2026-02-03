@@ -854,6 +854,106 @@ var SCREENSPAM_DURATION = 5000;   // 5 seconds display
 var SCREENSPAM_MAX_LENGTH = 50;   // Max characters
 ```
 
+## Video Drawing Tool (2026-02)
+
+Allows users to draw on the video player with strokes synced in real-time to all viewers. Uses relative coordinates (0-1) for cross-screen interpolation so drawings appear in the same position regardless of screen size.
+
+### User Flow
+1. **Settings**: Click 🖌️ (paintbrush) button to open settings popup
+2. **Configure**: Select brush size (small/medium/large) and color (MSPaint palette)
+3. **Draw**: Hold `Ctrl+Shift` and draw on the video with mouse
+4. **Session**: First stroke starts invisible 10-second timer
+5. **Continue**: Can release keys, timer keeps running; re-hold to continue drawing
+6. **Clear**: After 10 seconds, all strokes clear; must release keys before new session
+
+### Drawing Controls
+- **Ctrl+Shift + Mouse**: Draw on video (must hold both keys)
+- **Release keys**: Pauses drawing but timer continues
+- **Re-hold keys**: Continue drawing on same canvas
+- **After 10s clear**: Must release Ctrl+Shift before starting new session
+
+### Coordinate System
+Uses **normalized coordinates (0-1)** for cross-screen compatibility:
+```javascript
+// When drawing
+var relX = mouseX / videoWidth;   // 0.0 to 1.0
+var relY = mouseY / videoHeight;  // 0.0 to 1.0
+
+// When rendering on another screen
+var screenX = relX * theirVideoWidth;
+var screenY = relY * theirVideoHeight;
+```
+
+### Brush Sizes
+| Size | Video Height % | Use Case |
+|------|----------------|----------|
+| small | 0.5% | Fine details |
+| medium | 1.5% | General drawing |
+| large | 3% | Bold strokes |
+
+### Color Palette (24 colors)
+MSPaint-style 8x3 grid:
+- Row 1: Black, Gray, Maroon, Olive, Green, Teal, Navy, Purple
+- Row 2: White, Silver, Red, Yellow, Lime, Aqua, Blue, Magenta
+- Row 3: Light variants + Orange, Hot Pink
+
+### Multi-User Support
+- Multiple users can draw simultaneously
+- Each user has independent 10-second session
+- All strokes broadcast in real-time to all viewers
+
+### Pusher Events
+**Requires Pusher** - no chat fallback (avoids message length limits).
+
+| Event | Purpose |
+|-------|---------|
+| `client-draw-stroke` | Broadcasts completed stroke with color, size, points array |
+| `client-draw-clear` | Clears all strokes when timer ends |
+
+### Key Functions
+| Function | Purpose |
+|----------|---------|
+| `toggleDrawingOverlay()` | Opens/closes the settings popup |
+| `createDrawingSettingsPopup()` | Creates the brush/color settings popup |
+| `onDrawingKeyDown/Up()` | Handles Ctrl+Shift detection |
+| `onDrawingMouseDown/Move/Up()` | Handles drawing on video |
+| `startDrawingSession()` | Begins invisible 10-second timer |
+| `endDrawingSession()` | Clears strokes and broadcasts clear |
+| `broadcastStroke(strokeData)` | Sends stroke via Pusher |
+| `handleReceivedStroke(data)` | Renders stroke from another user |
+
+### CSS Classes
+- `#drawing-settings-overlay` - Settings popup overlay
+- `#drawing-settings-popup` - Settings popup container
+- `#drawing-canvas` - Canvas for drawer's strokes
+- `#drawing-receiver-canvas` - Canvas for receiving others' strokes
+- `.drawing-brush-btn` - Brush size buttons
+- `.drawing-color-btn` - Color palette buttons
+- `.drawing-preview-dot` - Preview of current brush settings
+
+### localStorage
+- `drawingToolSettings` - Stores brush size and color preferences
+
+### Data Format
+```javascript
+// Stroke broadcast
+{
+    username: 'drawer',
+    sessionId: 'drawer_1706976000000',
+    stroke: {
+        color: '#ff0000',
+        size: 'medium',
+        points: [{x: 0.5, y: 0.3}, {x: 0.51, y: 0.31}, ...]
+    }
+}
+
+// Clear broadcast
+{
+    username: 'drawer',
+    sessionId: 'drawer_1706976000000'
+}
+```
+
 ## BokiTheme API (v2.0.0)
 
 The theme exposes a centralized API via `window.BokiTheme` for customization, extension, and debugging.
