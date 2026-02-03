@@ -11571,6 +11571,21 @@ function injectDrawingCSS() {
             pointer-events: none;
             z-index: 999;
         }
+        /* Transparent interaction overlay - captures mouse when Alt held */
+        #drawing-interaction-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 1001;
+            pointer-events: none;
+            cursor: default;
+        }
+        #drawing-interaction-overlay.active {
+            pointer-events: auto;
+            cursor: crosshair;
+        }
     `;
     document.head.appendChild(css);
 }
@@ -11623,7 +11638,7 @@ function createDrawingSettingsPopup() {
                 '</div>' +
             '</div>' +
             '<div class="drawing-instructions">' +
-                '<p>Hold <kbd>Ctrl</kbd> + <kbd>Shift</kbd> and draw on the video.<br>Drawing lasts 10 seconds then clears.</p>' +
+                '<p>Hold <kbd>Alt</kbd> and draw on the video.<br>Drawing lasts 10 seconds then clears.</p>' +
             '</div>' +
         '</div>';
 
@@ -11709,9 +11724,9 @@ function closeDrawingSettingsPopup() {
     }
 }
 
-// ========== CTRL+SHIFT DRAWING ==========
+// ========== ALT KEY DRAWING ==========
 
-// Create drawing canvas for local user
+// Create drawing canvas for local user's strokes
 function createDrawingCanvas() {
     var videoContainer = document.getElementById('videowrap');
     if (!videoContainer) return null;
@@ -11747,6 +11762,48 @@ function createReceiverCanvas() {
     return canvas;
 }
 
+// Create transparent interaction overlay (captures mouse events over video/iframe)
+function createDrawingInteractionOverlay() {
+    var videoContainer = document.getElementById('videowrap');
+    if (!videoContainer) return null;
+
+    videoContainer.style.position = 'relative';
+
+    var overlay = document.getElementById('drawing-interaction-overlay');
+    if (!overlay) {
+        overlay = document.createElement('div');
+        overlay.id = 'drawing-interaction-overlay';
+        videoContainer.appendChild(overlay);
+
+        // Attach mouse event listeners to the overlay
+        overlay.addEventListener('mousedown', onDrawingMouseDown);
+        overlay.addEventListener('mousemove', onDrawingMouseMove);
+        overlay.addEventListener('mouseup', onDrawingMouseUp);
+        overlay.addEventListener('mouseleave', onDrawingMouseUp);
+    }
+
+    return overlay;
+}
+
+// Show the interaction overlay (when Alt is held)
+function showDrawingOverlay() {
+    var overlay = document.getElementById('drawing-interaction-overlay');
+    if (!overlay) {
+        overlay = createDrawingInteractionOverlay();
+    }
+    if (overlay) {
+        overlay.classList.add('active');
+    }
+}
+
+// Hide the interaction overlay (when Alt is released)
+function hideDrawingOverlay() {
+    var overlay = document.getElementById('drawing-interaction-overlay');
+    if (overlay) {
+        overlay.classList.remove('active');
+    }
+}
+
 function resizeDrawingCanvas() {
     var canvas = document.getElementById('drawing-canvas');
     if (!canvas) return;
@@ -11769,29 +11826,19 @@ function resizeReceiverCanvas() {
     canvas.height = videoContainer.offsetHeight;
 }
 
-// Get relative coordinates (0-1) from mouse event
+// Get relative coordinates (0-1) from mouse event on the overlay
 function getDrawingRelativeCoords(e) {
-    var videoContainer = document.getElementById('videowrap');
-    if (!videoContainer) return null;
+    var overlay = document.getElementById('drawing-interaction-overlay');
+    if (!overlay) return null;
 
-    var rect = videoContainer.getBoundingClientRect();
+    var rect = overlay.getBoundingClientRect();
     return {
         x: (e.clientX - rect.left) / rect.width,
         y: (e.clientY - rect.top) / rect.height
     };
 }
 
-// Check if mouse is over video
-function isOverVideo(e) {
-    var videoContainer = document.getElementById('videowrap');
-    if (!videoContainer) return false;
-
-    var rect = videoContainer.getBoundingClientRect();
-    return e.clientX >= rect.left && e.clientX <= rect.right &&
-           e.clientY >= rect.top && e.clientY <= rect.bottom;
-}
-
-// Start a drawing session (first stroke with Ctrl+Shift)
+// Start a drawing session (first stroke with Alt held)
 function startDrawingSession() {
     if (drawingState.sessionActive) return;
 
@@ -11830,16 +11877,17 @@ function endDrawingSession() {
     drawingState.sessionActive = false;
     drawingState.isDrawing = false;
     drawingState.currentStroke = [];
-    drawingState.sessionEnded = true; // Require key release before new session
+    drawingState.sessionEnded = true; // Require Alt release before new session
 
     console.log('[Drawing] Session ended:', drawingState.sessionId);
 }
 
-// Handle mouse down for drawing
+// Handle mouse down for drawing (on the overlay)
 function onDrawingMouseDown(e) {
     if (!drawingState.keysHeld) return;
-    if (!isOverVideo(e)) return;
-    if (drawingState.sessionEnded) return; // Must release keys first
+    if (drawingState.sessionEnded) return; // Must release Alt first
+
+    e.preventDefault(); // Prevent text selection, etc.
 
     // Start session on first stroke
     if (!drawingState.sessionActive) {
@@ -11864,11 +11912,15 @@ function onDrawingMouseDown(e) {
     ctx.beginPath();
     ctx.arc(coords.x * canvas.width, coords.y * canvas.height, absSize / 2, 0, Math.PI * 2);
     ctx.fill();
+
+    console.log('[Drawing] Stroke started at', coords.x.toFixed(2), coords.y.toFixed(2));
 }
 
 // Handle mouse move for drawing
 function onDrawingMouseMove(e) {
     if (!drawingState.isDrawing || !drawingState.keysHeld) return;
+
+    e.preventDefault();
 
     var coords = getDrawingRelativeCoords(e);
     if (!coords) return;
@@ -11907,41 +11959,48 @@ function onDrawingMouseUp(e) {
             size: drawingSettings.brushSize,
             points: drawingState.currentStroke
         });
+        console.log('[Drawing] Stroke completed, points:', drawingState.currentStroke.length);
     }
 
     drawingState.currentStroke = [];
 }
 
-// Handle key down
+// Handle key down - Alt key activates drawing mode
 function onDrawingKeyDown(e) {
-    if (e.ctrlKey && e.shiftKey) {
-        // Check if session ended and keys need to be released
+    // Check for Alt key (e.key === 'Alt' or e.altKey on keydown)
+    if (e.key === 'Alt' || e.keyCode === 18) {
+        // Prevent default Alt behavior (menu focus in some browsers)
+        e.preventDefault();
+
+        // Check if session ended and key needs to be released first
         if (drawingState.sessionEnded) return;
 
         if (!drawingState.keysHeld) {
             drawingState.keysHeld = true;
-            document.body.style.cursor = 'crosshair';
+            showDrawingOverlay();
+            console.log('[Drawing] Alt held - drawing mode active');
         }
     }
 }
 
-// Handle key up
+// Handle key up - Alt release deactivates drawing mode
 function onDrawingKeyUp(e) {
-    // If either Ctrl or Shift is released
-    if (!e.ctrlKey || !e.shiftKey) {
+    if (e.key === 'Alt' || e.keyCode === 18) {
         if (drawingState.keysHeld) {
             drawingState.keysHeld = false;
-            document.body.style.cursor = '';
+            hideDrawingOverlay();
 
             // If we were drawing, end the stroke
             if (drawingState.isDrawing) {
                 onDrawingMouseUp(e);
             }
 
-            // Reset sessionEnded flag when keys are released
+            // Reset sessionEnded flag when Alt is released
             if (drawingState.sessionEnded) {
                 drawingState.sessionEnded = false;
             }
+
+            console.log('[Drawing] Alt released - drawing mode inactive');
         }
     }
 }
@@ -12067,13 +12126,11 @@ function initDrawingSystem() {
     loadDrawingSettings();
     createDrawingCanvas();
     createReceiverCanvas();
+    createDrawingInteractionOverlay();
 
-    // Global event listeners for Ctrl+Shift drawing
+    // Global key listeners for Alt key drawing
     document.addEventListener('keydown', onDrawingKeyDown);
     document.addEventListener('keyup', onDrawingKeyUp);
-    document.addEventListener('mousedown', onDrawingMouseDown);
-    document.addEventListener('mousemove', onDrawingMouseMove);
-    document.addEventListener('mouseup', onDrawingMouseUp);
 
     // Handle window resize
     window.addEventListener('resize', function() {

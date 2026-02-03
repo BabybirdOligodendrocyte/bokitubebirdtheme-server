@@ -861,16 +861,22 @@ Allows users to draw on the video player with strokes synced in real-time to all
 ### User Flow
 1. **Settings**: Click 🖌️ (paintbrush) button to open settings popup
 2. **Configure**: Select brush size (small/medium/large) and color (MSPaint palette)
-3. **Draw**: Hold `Ctrl+Shift` and draw on the video with mouse
+3. **Draw**: Hold `Alt` and draw on the video with mouse
 4. **Session**: First stroke starts invisible 10-second timer
-5. **Continue**: Can release keys, timer keeps running; re-hold to continue drawing
-6. **Clear**: After 10 seconds, all strokes clear; must release keys before new session
+5. **Continue**: Can release Alt, timer keeps running; re-hold to continue drawing
+6. **Clear**: After 10 seconds, all strokes clear; must release Alt before new session
 
 ### Drawing Controls
-- **Ctrl+Shift + Mouse**: Draw on video (must hold both keys)
-- **Release keys**: Pauses drawing but timer continues
-- **Re-hold keys**: Continue drawing on same canvas
-- **After 10s clear**: Must release Ctrl+Shift before starting new session
+- **Alt + Mouse**: Hold Alt, then click and drag on video to draw
+- **Release Alt**: Pauses drawing but timer continues
+- **Re-hold Alt**: Continue drawing on same canvas
+- **After 10s clear**: Must release Alt before starting new session
+
+### Technical: Interaction Overlay
+When Alt is held, a transparent overlay appears over the video player. This is necessary because:
+- Video players (YouTube, etc.) are iframes that capture mouse events
+- The overlay intercepts mouse events so drawing works over any video source
+- Overlay only appears when Alt is held (invisible otherwise)
 
 ### Coordinate System
 Uses **normalized coordinates (0-1)** for cross-screen compatibility:
@@ -927,6 +933,7 @@ MSPaint-style 8x3 grid:
 - `#drawing-settings-popup` - Settings popup container
 - `#drawing-canvas` - Canvas for drawer's strokes
 - `#drawing-receiver-canvas` - Canvas for receiving others' strokes
+- `#drawing-interaction-overlay` - Transparent overlay for mouse capture (active when Alt held)
 - `.drawing-brush-btn` - Brush size buttons
 - `.drawing-color-btn` - Color palette buttons
 - `.drawing-preview-dot` - Preview of current brush settings
