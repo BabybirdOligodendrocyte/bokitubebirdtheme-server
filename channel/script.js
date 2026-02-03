@@ -1833,6 +1833,12 @@ function hexToRgba(hex, opacity) {
             display: none !important;
         }
 
+        /* Pure CSS detection using :has() - hides original username instantly without waiting for JS */
+        /* This fixes the race condition where JS runs before Cytube filters process [uname] tags */
+        #messagebuffer > div:has(.styled-username) > .username {
+            display: none !important;
+        }
+
         /* Ensure regular usernames (without styled-username) are always visible */
         #messagebuffer > div:not(.chat-msg-with-styled-name) > .username {
             display: flex !important;
