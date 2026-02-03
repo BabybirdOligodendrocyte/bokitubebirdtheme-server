@@ -451,6 +451,48 @@ if (tab === 'message') {
 - `priorityQueueItems` - Priority queue video items (dual playlist system)
 - `dualPlaylistPlaybackState` - Playback state for dual playlist system
 
+### CSS :has() Selector for Race Condition Fixes
+When JavaScript needs to add a class based on DOM content that arrives asynchronously (e.g., Cytube chat filters), use CSS `:has()` instead to avoid race conditions.
+
+**Problem Example (Username Styling):**
+1. User sends message with `[uname]` tags
+2. MutationObserver detects new message, runs JS after 50ms delay
+3. Cytube's chat filter may not have processed `[uname]` → `.styled-username` yet
+4. JS checks for `.styled-username`, doesn't find it, returns early
+5. Class never added → CSS rule never applies → duplicate usernames show
+
+**Solution - Use CSS `:has()` instead of JS class detection:**
+```css
+/* BAD: Relies on JS adding a class (race condition) */
+.chat-msg-with-styled-name > .username {
+    display: none !important;
+}
+
+/* GOOD: Pure CSS detection, works instantly */
+#messagebuffer > div:has(.styled-username) > .username,
+#messagebuffer > div:has(.styled-username) .username {
+    display: none !important;
+}
+```
+
+**Key Points:**
+- `:has()` checks if element contains a descendant - no JS timing needed
+- Use BOTH direct child (`>`) and descendant (` `) selectors to handle different DOM structures
+- Watch for conflicting CSS rules that might override - they need `:not(:has())`:
+  ```css
+  /* This rule was OVERRIDING the hide rule above! */
+  #messagebuffer > div:not(.chat-msg-with-styled-name) > .username {
+      display: flex !important;  /* Shows username even when :has() hides it */
+  }
+
+  /* Fixed: Also exclude divs that have .styled-username */
+  #messagebuffer > div:not(.chat-msg-with-styled-name):not(:has(.styled-username)) > .username {
+      display: flex !important;
+  }
+  ```
+- Add CSS rules to BOTH `style.css` AND injected JS CSS for maximum compatibility
+- Browser support: Chrome 105+, Safari 15.4+, Firefox 121+ (all modern browsers)
+
 ## Cytube Platform Limitations (CRITICAL)
 
 ### Message Length Limit (~240 characters)
