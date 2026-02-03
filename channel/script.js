@@ -1791,6 +1791,18 @@ function hexToRgba(hex, opacity) {
             color: #ddd !important;
             font-size: 14px !important;
             line-height: 1.6 !important;
+            flex: 1 !important;
+            min-height: 0 !important;
+        }
+        #filter-popup-body details {
+            margin-bottom: 5px !important;
+        }
+        #filter-popup-body summary {
+            padding: 8px 0 !important;
+            user-select: none !important;
+        }
+        #filter-popup-body details[open] summary {
+            margin-bottom: 8px !important;
         }
         #filter-popup-body table {
             width: 100% !important;
@@ -3700,31 +3712,125 @@ function showFilterPopup() {
     o.onclick = function(e) { if (e.target === o) closeFilterPopup(); };
     var p = document.createElement('div');
     p.id = 'filter-popup';
-    p.innerHTML = '<div class="popup-header"><span>Chat Filters Setup (Admin)</span><button class="popup-close" onclick="closeFilterPopup()">×</button></div>' +
-        '<div id="filter-popup-body"><p>Admin must add these Chat Filters in <strong>Channel Settings → Edit → Chat Filters</strong>:</p>' +
-        '<p style="background:#422;padding:10px;border-radius:6px;margin-bottom:10px;"><strong>⚠️ REQUIRED for username styling:</strong></p>' +
+
+    // Build comprehensive filter documentation
+    var html = '<div class="popup-header"><span>Chat Filters Setup (Admin)</span><button class="popup-close" onclick="closeFilterPopup()">×</button></div>' +
+        '<div id="filter-popup-body">' +
+        '<p>Admin must add these Chat Filters in <strong>Channel Settings → Edit → Chat Filters</strong>.</p>' +
+        '<p style="background:#422;padding:10px;border-radius:6px;margin-bottom:15px;">⚠️ <strong>Without these filters, tags display as raw text!</strong></p>' +
+
+        // REQUIRED - Username wrapper
+        '<details open><summary style="cursor:pointer;font-weight:bold;color:#fc0;margin-bottom:8px;">🔴 REQUIRED - Username Styling</summary>' +
         '<table><tr><th>Name</th><th>Regex</th><th>Flags</th><th>Replacement</th></tr>' +
-        '<tr style="background:#332"><td><strong>uname</strong></td><td>\\[uname\\](.+?)\\[/uname\\]</td><td>g</td><td>&lt;span class="styled-username" data-ignore-nnd="true"&gt;$1&lt;/span&gt;</td></tr>' +
-        '</table>' +
-        '<p style="margin-top:15px;"><strong>Color filters:</strong></p>' +
+        '<tr style="background:#332"><td>uname</td><td>\\[uname\\](.+?)\\[/uname\\]</td><td>g</td><td>&lt;span class="styled-username" data-ignore-nnd="true"&gt;$1&lt;/span&gt;</td></tr>' +
+        '</table></details>' +
+
+        // CUSTOM HEX COLORS - Dynamic
+        '<details open><summary style="cursor:pointer;font-weight:bold;color:#f80;margin:15px 0 8px;">🎨 Custom Hex Colors (Color Picker)</summary>' +
+        '<p style="font-size:12px;color:#aaa;margin-bottom:8px;">Enables the custom color picker feature. Uses $1 for hex, $2 for text.</p>' +
         '<table><tr><th>Name</th><th>Regex</th><th>Flags</th><th>Replacement</th></tr>' +
-        '<tr><td>red</td><td>\\[red\\]([^\\[]+)\\[/\\]</td><td>g</td><td>&lt;span style="color:red"&gt;$1&lt;/span&gt;</td></tr>' +
+        '<tr style="background:#332"><td>hexcolor</td><td>\\[#([0-9a-fA-F]{6})\\]([^\\[]+)\\[/\\]</td><td>g</td><td>&lt;span style="color:#$1"&gt;$2&lt;/span&gt;</td></tr>' +
+        '</table></details>' +
+
+        // CUSTOM HEX GLOWS - Dynamic
+        '<details open><summary style="cursor:pointer;font-weight:bold;color:#f80;margin:15px 0 8px;">✨ Custom Hex Glows (Glow Picker)</summary>' +
+        '<p style="font-size:12px;color:#aaa;margin-bottom:8px;">Enables the custom glow picker feature. Uses $1 for hex, $2 for text.</p>' +
+        '<table><tr><th>Name</th><th>Regex</th><th>Flags</th><th>Replacement</th></tr>' +
+        '<tr style="background:#332"><td>hexglow</td><td>\\[glow-#([0-9a-fA-F]{6})\\]([^\\[]+)\\[/\\]</td><td>g</td><td>&lt;span style="text-shadow:0 0 10px #$1,0 0 20px #$1,0 0 30px #$1"&gt;$2&lt;/span&gt;</td></tr>' +
+        '</table></details>' +
+
+        // NAMED COLORS
+        '<details><summary style="cursor:pointer;font-weight:bold;margin:15px 0 8px;">🎨 Named Colors (12)</summary>' +
+        '<table><tr><th>Name</th><th>Regex</th><th>Flags</th><th>Replacement</th></tr>' +
+        '<tr><td>white</td><td>\\[white\\]([^\\[]+)\\[/\\]</td><td>g</td><td>&lt;span style="color:#fff"&gt;$1&lt;/span&gt;</td></tr>' +
+        '<tr><td>yellow</td><td>\\[yellow\\]([^\\[]+)\\[/\\]</td><td>g</td><td>&lt;span style="color:#ff0"&gt;$1&lt;/span&gt;</td></tr>' +
+        '<tr><td>orange</td><td>\\[orange\\]([^\\[]+)\\[/\\]</td><td>g</td><td>&lt;span style="color:#ffa500"&gt;$1&lt;/span&gt;</td></tr>' +
+        '<tr><td>pink</td><td>\\[pink\\]([^\\[]+)\\[/\\]</td><td>g</td><td>&lt;span style="color:#ff69b4"&gt;$1&lt;/span&gt;</td></tr>' +
+        '<tr><td>red</td><td>\\[red\\]([^\\[]+)\\[/\\]</td><td>g</td><td>&lt;span style="color:#f00"&gt;$1&lt;/span&gt;</td></tr>' +
+        '<tr><td>lime</td><td>\\[lime\\]([^\\[]+)\\[/\\]</td><td>g</td><td>&lt;span style="color:#0f0"&gt;$1&lt;/span&gt;</td></tr>' +
+        '<tr><td>green</td><td>\\[green\\]([^\\[]+)\\[/\\]</td><td>g</td><td>&lt;span style="color:#008000"&gt;$1&lt;/span&gt;</td></tr>' +
+        '<tr><td>aqua</td><td>\\[aqua\\]([^\\[]+)\\[/\\]</td><td>g</td><td>&lt;span style="color:#0ff"&gt;$1&lt;/span&gt;</td></tr>' +
         '<tr><td>blue</td><td>\\[blue\\]([^\\[]+)\\[/\\]</td><td>g</td><td>&lt;span style="color:#55f"&gt;$1&lt;/span&gt;</td></tr>' +
-        '<tr><td>green</td><td>\\[green\\]([^\\[]+)\\[/\\]</td><td>g</td><td>&lt;span style="color:green"&gt;$1&lt;/span&gt;</td></tr>' +
-        '<tr><td>yellow</td><td>\\[yellow\\]([^\\[]+)\\[/\\]</td><td>g</td><td>&lt;span style="color:yellow"&gt;$1&lt;/span&gt;</td></tr>' +
-        '<tr><td>orange</td><td>\\[orange\\]([^\\[]+)\\[/\\]</td><td>g</td><td>&lt;span style="color:orange"&gt;$1&lt;/span&gt;</td></tr>' +
-        '<tr><td>pink</td><td>\\[pink\\]([^\\[]+)\\[/\\]</td><td>g</td><td>&lt;span style="color:pink"&gt;$1&lt;/span&gt;</td></tr>' +
-        '<tr><td>lime</td><td>\\[lime\\]([^\\[]+)\\[/\\]</td><td>g</td><td>&lt;span style="color:lime"&gt;$1&lt;/span&gt;</td></tr>' +
-        '<tr><td>aqua</td><td>\\[aqua\\]([^\\[]+)\\[/\\]</td><td>g</td><td>&lt;span style="color:aqua"&gt;$1&lt;/span&gt;</td></tr>' +
-        '<tr><td>violet</td><td>\\[violet\\]([^\\[]+)\\[/\\]</td><td>g</td><td>&lt;span style="color:violet"&gt;$1&lt;/span&gt;</td></tr>' +
-        '<tr><td>white</td><td>\\[white\\]([^\\[]+)\\[/\\]</td><td>g</td><td>&lt;span style="color:white"&gt;$1&lt;/span&gt;</td></tr>' +
-        '<tr><td>silver</td><td>\\[silver\\]([^\\[]+)\\[/\\]</td><td>g</td><td>&lt;span style="color:silver"&gt;$1&lt;/span&gt;</td></tr>' +
-        '<tr><td>brown</td><td>\\[brown\\]([^\\[]+)\\[/\\]</td><td>g</td><td>&lt;span style="color:brown"&gt;$1&lt;/span&gt;</td></tr>' +
+        '<tr><td>violet</td><td>\\[violet\\]([^\\[]+)\\[/\\]</td><td>g</td><td>&lt;span style="color:#ee82ee"&gt;$1&lt;/span&gt;</td></tr>' +
+        '<tr><td>brown</td><td>\\[brown\\]([^\\[]+)\\[/\\]</td><td>g</td><td>&lt;span style="color:#8b4513"&gt;$1&lt;/span&gt;</td></tr>' +
+        '<tr><td>silver</td><td>\\[silver\\]([^\\[]+)\\[/\\]</td><td>g</td><td>&lt;span style="color:#c0c0c0"&gt;$1&lt;/span&gt;</td></tr>' +
+        '</table></details>' +
+
+        // GRADIENTS
+        '<details><summary style="cursor:pointer;font-weight:bold;margin:15px 0 8px;">🌈 Gradients (8)</summary>' +
+        '<table><tr><th>Name</th><th>Regex</th><th>Flags</th><th>Replacement</th></tr>' +
+        '<tr><td>rainbow</td><td>\\[rainbow\\]([^\\[]+)\\[/\\]</td><td>g</td><td>&lt;span style="background:linear-gradient(90deg,#f00,#ff0,#0f0,#0ff,#00f,#f0f);-webkit-background-clip:text;-webkit-text-fill-color:transparent"&gt;$1&lt;/span&gt;</td></tr>' +
+        '<tr><td>fire</td><td>\\[fire\\]([^\\[]+)\\[/\\]</td><td>g</td><td>&lt;span style="background:linear-gradient(90deg,#f00,#f80,#ff0);-webkit-background-clip:text;-webkit-text-fill-color:transparent"&gt;$1&lt;/span&gt;</td></tr>' +
+        '<tr><td>ocean</td><td>\\[ocean\\]([^\\[]+)\\[/\\]</td><td>g</td><td>&lt;span style="background:linear-gradient(90deg,#006,#08f,#0ff);-webkit-background-clip:text;-webkit-text-fill-color:transparent"&gt;$1&lt;/span&gt;</td></tr>' +
+        '<tr><td>sunset</td><td>\\[sunset\\]([^\\[]+)\\[/\\]</td><td>g</td><td>&lt;span style="background:linear-gradient(90deg,#f60,#f0f,#60f);-webkit-background-clip:text;-webkit-text-fill-color:transparent"&gt;$1&lt;/span&gt;</td></tr>' +
+        '<tr><td>neon</td><td>\\[neon\\]([^\\[]+)\\[/\\]</td><td>g</td><td>&lt;span style="background:linear-gradient(90deg,#f0f,#0ff,#f0f);-webkit-background-clip:text;-webkit-text-fill-color:transparent"&gt;$1&lt;/span&gt;</td></tr>' +
+        '<tr><td>forest</td><td>\\[forest\\]([^\\[]+)\\[/\\]</td><td>g</td><td>&lt;span style="background:linear-gradient(90deg,#040,#0a0,#8f0);-webkit-background-clip:text;-webkit-text-fill-color:transparent"&gt;$1&lt;/span&gt;</td></tr>' +
+        '<tr><td>gold</td><td>\\[gold\\]([^\\[]+)\\[/\\]</td><td>g</td><td>&lt;span style="background:linear-gradient(90deg,#b8860b,#ffd700,#b8860b);-webkit-background-clip:text;-webkit-text-fill-color:transparent"&gt;$1&lt;/span&gt;</td></tr>' +
+        '<tr><td>ice</td><td>\\[ice\\]([^\\[]+)\\[/\\]</td><td>g</td><td>&lt;span style="background:linear-gradient(90deg,#aef,#fff,#aef);-webkit-background-clip:text;-webkit-text-fill-color:transparent"&gt;$1&lt;/span&gt;</td></tr>' +
+        '</table></details>' +
+
+        // NAMED GLOWS
+        '<details><summary style="cursor:pointer;font-weight:bold;margin:15px 0 8px;">✨ Named Glows (7)</summary>' +
+        '<table><tr><th>Name</th><th>Regex</th><th>Flags</th><th>Replacement</th></tr>' +
+        '<tr><td>glow-white</td><td>\\[glow-white\\]([^\\[]+)\\[/\\]</td><td>g</td><td>&lt;span style="text-shadow:0 0 10px #fff,0 0 20px #fff,0 0 30px #fff"&gt;$1&lt;/span&gt;</td></tr>' +
+        '<tr><td>glow-red</td><td>\\[glow-red\\]([^\\[]+)\\[/\\]</td><td>g</td><td>&lt;span style="text-shadow:0 0 10px #f00,0 0 20px #f00,0 0 30px #f00"&gt;$1&lt;/span&gt;</td></tr>' +
+        '<tr><td>glow-blue</td><td>\\[glow-blue\\]([^\\[]+)\\[/\\]</td><td>g</td><td>&lt;span style="text-shadow:0 0 10px #00f,0 0 20px #00f,0 0 30px #00f"&gt;$1&lt;/span&gt;</td></tr>' +
+        '<tr><td>glow-green</td><td>\\[glow-green\\]([^\\[]+)\\[/\\]</td><td>g</td><td>&lt;span style="text-shadow:0 0 10px #0f0,0 0 20px #0f0,0 0 30px #0f0"&gt;$1&lt;/span&gt;</td></tr>' +
+        '<tr><td>glow-gold</td><td>\\[glow-gold\\]([^\\[]+)\\[/\\]</td><td>g</td><td>&lt;span style="text-shadow:0 0 10px #ffd700,0 0 20px #ffd700,0 0 30px #ffd700"&gt;$1&lt;/span&gt;</td></tr>' +
+        '<tr><td>glow-pink</td><td>\\[glow-pink\\]([^\\[]+)\\[/\\]</td><td>g</td><td>&lt;span style="text-shadow:0 0 10px #ff69b4,0 0 20px #ff69b4,0 0 30px #ff69b4"&gt;$1&lt;/span&gt;</td></tr>' +
+        '<tr><td>glow-rainbow</td><td>\\[glow-rainbow\\]([^\\[]+)\\[/\\]</td><td>g</td><td>&lt;span style="text-shadow:0 0 5px #f00,0 0 10px #ff0,0 0 15px #0f0,0 0 20px #0ff,0 0 25px #00f,0 0 30px #f0f"&gt;$1&lt;/span&gt;</td></tr>' +
+        '</table></details>' +
+
+        // ANIMATIONS
+        '<details><summary style="cursor:pointer;font-weight:bold;margin:15px 0 8px;">🎬 Animations (6)</summary>' +
+        '<p style="font-size:12px;color:#aaa;margin-bottom:8px;">Note: @keyframes must be defined in Channel CSS for animations to work.</p>' +
+        '<table><tr><th>Name</th><th>Regex</th><th>Flags</th><th>Replacement</th></tr>' +
+        '<tr><td>shake</td><td>\\[shake\\]([^\\[]+)\\[/\\]</td><td>g</td><td>&lt;span style="display:inline-block;animation:shake 0.5s ease infinite"&gt;$1&lt;/span&gt;</td></tr>' +
+        '<tr><td>pulse</td><td>\\[pulse\\]([^\\[]+)\\[/\\]</td><td>g</td><td>&lt;span style="display:inline-block;animation:pulse 1s ease infinite"&gt;$1&lt;/span&gt;</td></tr>' +
+        '<tr><td>bounce</td><td>\\[bounce\\]([^\\[]+)\\[/\\]</td><td>g</td><td>&lt;span style="display:inline-block;animation:bounce 0.6s ease infinite"&gt;$1&lt;/span&gt;</td></tr>' +
+        '<tr><td>wave</td><td>\\[wave\\]([^\\[]+)\\[/\\]</td><td>g</td><td>&lt;span style="display:inline-block;animation:wave 2s ease infinite"&gt;$1&lt;/span&gt;</td></tr>' +
+        '<tr><td>flicker</td><td>\\[flicker\\]([^\\[]+)\\[/\\]</td><td>g</td><td>&lt;span style="display:inline-block;animation:flicker 0.3s ease infinite"&gt;$1&lt;/span&gt;</td></tr>' +
+        '<tr><td>spin</td><td>\\[spin\\]([^\\[]+)\\[/\\]</td><td>g</td><td>&lt;span style="display:inline-block;animation:spin 2s linear infinite"&gt;$1&lt;/span&gt;</td></tr>' +
+        '</table></details>' +
+
+        // FONTS
+        '<details><summary style="cursor:pointer;font-weight:bold;margin:15px 0 8px;">🔤 Fonts (20)</summary>' +
+        '<table><tr><th>Name</th><th>Regex</th><th>Flags</th><th>Replacement</th></tr>' +
+        '<tr><td>comic</td><td>\\[comic\\]([^\\[]+)\\[/\\]</td><td>g</td><td>&lt;span style="font-family:Comic Sans MS,cursive"&gt;$1&lt;/span&gt;</td></tr>' +
+        '<tr><td>impact</td><td>\\[impact\\]([^\\[]+)\\[/\\]</td><td>g</td><td>&lt;span style="font-family:Impact,sans-serif"&gt;$1&lt;/span&gt;</td></tr>' +
+        '<tr><td>papyrus</td><td>\\[papyrus\\]([^\\[]+)\\[/\\]</td><td>g</td><td>&lt;span style="font-family:Papyrus,fantasy"&gt;$1&lt;/span&gt;</td></tr>' +
+        '<tr><td>copperplate</td><td>\\[copperplate\\]([^\\[]+)\\[/\\]</td><td>g</td><td>&lt;span style="font-family:Copperplate,serif"&gt;$1&lt;/span&gt;</td></tr>' +
+        '<tr><td>brush</td><td>\\[brush\\]([^\\[]+)\\[/\\]</td><td>g</td><td>&lt;span style="font-family:Brush Script MT,cursive"&gt;$1&lt;/span&gt;</td></tr>' +
+        '<tr><td>lucida</td><td>\\[lucida\\]([^\\[]+)\\[/\\]</td><td>g</td><td>&lt;span style="font-family:Lucida Console,monospace"&gt;$1&lt;/span&gt;</td></tr>' +
+        '<tr><td>courier</td><td>\\[courier\\]([^\\[]+)\\[/\\]</td><td>g</td><td>&lt;span style="font-family:Courier New,monospace"&gt;$1&lt;/span&gt;</td></tr>' +
+        '<tr><td>times</td><td>\\[times\\]([^\\[]+)\\[/\\]</td><td>g</td><td>&lt;span style="font-family:Times New Roman,serif"&gt;$1&lt;/span&gt;</td></tr>' +
+        '<tr><td>georgia</td><td>\\[georgia\\]([^\\[]+)\\[/\\]</td><td>g</td><td>&lt;span style="font-family:Georgia,serif"&gt;$1&lt;/span&gt;</td></tr>' +
+        '<tr><td>trebuchet</td><td>\\[trebuchet\\]([^\\[]+)\\[/\\]</td><td>g</td><td>&lt;span style="font-family:Trebuchet MS,sans-serif"&gt;$1&lt;/span&gt;</td></tr>' +
+        '<tr><td>verdana</td><td>\\[verdana\\]([^\\[]+)\\[/\\]</td><td>g</td><td>&lt;span style="font-family:Verdana,sans-serif"&gt;$1&lt;/span&gt;</td></tr>' +
+        '<tr><td>gothic</td><td>\\[gothic\\]([^\\[]+)\\[/\\]</td><td>g</td><td>&lt;span style="font-family:Century Gothic,sans-serif"&gt;$1&lt;/span&gt;</td></tr>' +
+        '<tr><td>garamond</td><td>\\[garamond\\]([^\\[]+)\\[/\\]</td><td>g</td><td>&lt;span style="font-family:Garamond,serif"&gt;$1&lt;/span&gt;</td></tr>' +
+        '<tr><td>palatino</td><td>\\[palatino\\]([^\\[]+)\\[/\\]</td><td>g</td><td>&lt;span style="font-family:Palatino,serif"&gt;$1&lt;/span&gt;</td></tr>' +
+        '<tr><td>bookman</td><td>\\[bookman\\]([^\\[]+)\\[/\\]</td><td>g</td><td>&lt;span style="font-family:Bookman,serif"&gt;$1&lt;/span&gt;</td></tr>' +
+        '<tr><td>mono</td><td>\\[mono\\]([^\\[]+)\\[/\\]</td><td>g</td><td>&lt;span style="font-family:monospace"&gt;$1&lt;/span&gt;</td></tr>' +
+        '<tr><td>cursive</td><td>\\[cursive\\]([^\\[]+)\\[/\\]</td><td>g</td><td>&lt;span style="font-family:cursive"&gt;$1&lt;/span&gt;</td></tr>' +
+        '<tr><td>fantasy</td><td>\\[fantasy\\]([^\\[]+)\\[/\\]</td><td>g</td><td>&lt;span style="font-family:fantasy"&gt;$1&lt;/span&gt;</td></tr>' +
+        '<tr><td>system</td><td>\\[system\\]([^\\[]+)\\[/\\]</td><td>g</td><td>&lt;span style="font-family:system-ui,sans-serif"&gt;$1&lt;/span&gt;</td></tr>' +
+        '<tr><td>serif</td><td>\\[serif\\]([^\\[]+)\\[/\\]</td><td>g</td><td>&lt;span style="font-family:serif"&gt;$1&lt;/span&gt;</td></tr>' +
+        '</table></details>' +
+
+        // TEXT FORMATTING
+        '<details><summary style="cursor:pointer;font-weight:bold;margin:15px 0 8px;">✏️ Text Formatting (4)</summary>' +
+        '<table><tr><th>Name</th><th>Regex</th><th>Flags</th><th>Replacement</th></tr>' +
         '<tr><td>bold</td><td>\\[b\\]([^\\[]+)\\[/\\]</td><td>g</td><td>&lt;strong&gt;$1&lt;/strong&gt;</td></tr>' +
         '<tr><td>italic</td><td>\\[i\\]([^\\[]+)\\[/\\]</td><td>g</td><td>&lt;em&gt;$1&lt;/em&gt;</td></tr>' +
         '<tr><td>underline</td><td>\\[u\\]([^\\[]+)\\[/\\]</td><td>g</td><td>&lt;u&gt;$1&lt;/u&gt;</td></tr>' +
         '<tr><td>strike</td><td>\\[s\\]([^\\[]+)\\[/\\]</td><td>g</td><td>&lt;s&gt;$1&lt;/s&gt;</td></tr>' +
-        '</table><p style="background:#234;padding:12px;border-radius:6px;margin-top:15px;">After adding filters, text styling works for everyone!</p></div>';
+        '</table></details>' +
+
+        '<p style="background:#234;padding:12px;border-radius:6px;margin-top:15px;">After adding filters, text styling works for everyone! <br><small style="color:#aaa;">Note: Custom hex color/glow filters require Cytube to support multi-group regex ($1, $2).</small></p>' +
+        '</div>';
+
+    p.innerHTML = html;
     o.appendChild(p);
     document.body.appendChild(o);
     setTimeout(function() { o.classList.add('visible'); }, 10);
