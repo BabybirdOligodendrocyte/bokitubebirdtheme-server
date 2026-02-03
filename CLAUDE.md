@@ -861,16 +861,16 @@ Allows users to draw on the video player with strokes synced in real-time to all
 ### User Flow
 1. **Settings**: Click 🖌️ (paintbrush) button to open settings popup
 2. **Configure**: Select brush size (small/medium/large) and color (MSPaint palette)
-3. **Draw**: Hold `Alt` and draw on the video with mouse
-4. **Session**: First stroke starts invisible 10-second timer
-5. **Continue**: Can release Alt, timer keeps running; re-hold to continue drawing
-6. **Clear**: After 10 seconds, all strokes clear; must release Alt before new session
+3. **Draw**: Hold `Alt` and draw on the video with mouse - no time limit while Alt is held
+4. **Release Alt**: 8-second countdown begins
+5. **Continue**: Press Alt again before 8s to cancel countdown and continue drawing
+6. **Clear**: After 8 seconds with Alt released, all strokes clear automatically
 
 ### Drawing Controls
-- **Alt + Mouse**: Hold Alt, then click and drag on video to draw
-- **Release Alt**: Pauses drawing but timer continues
-- **Re-hold Alt**: Continue drawing on same canvas
-- **After 10s clear**: Must release Alt before starting new session
+- **Alt + Mouse**: Hold Alt, then click and drag on video to draw (unlimited time)
+- **Release Alt**: Starts 8-second countdown to clear all drawings
+- **Re-hold Alt**: Cancels countdown, continue drawing on same canvas
+- **After 8s clear**: Drawings removed, ready for new session
 
 ### Technical: Interaction Overlay
 When Alt is held, a transparent overlay appears over the video player. This is necessary because:
@@ -905,7 +905,7 @@ MSPaint-style 8x3 grid:
 
 ### Multi-User Support
 - Multiple users can draw simultaneously
-- Each user has independent 10-second session
+- Each user has independent session with 8-second clear timer on Alt release
 - All strokes broadcast in real-time to all viewers
 
 ### Pusher Events
@@ -921,10 +921,12 @@ MSPaint-style 8x3 grid:
 |----------|---------|
 | `toggleDrawingOverlay()` | Opens/closes the settings popup |
 | `createDrawingSettingsPopup()` | Creates the brush/color settings popup |
-| `onDrawingKeyDown/Up()` | Handles Ctrl+Shift detection |
+| `onDrawingKeyDown/Up()` | Handles Alt key detection |
 | `onDrawingMouseDown/Move/Up()` | Handles drawing on video |
-| `startDrawingSession()` | Begins invisible 10-second timer |
-| `endDrawingSession()` | Clears strokes and broadcasts clear |
+| `startDrawingSession()` | Initializes new drawing session |
+| `scheduleClearDrawing()` | Starts 8-second clear countdown on Alt release |
+| `clearDrawingSession()` | Clears strokes and broadcasts clear |
+| `cancelClearTimer()` | Cancels pending clear when Alt pressed again |
 | `broadcastStroke(strokeData)` | Sends stroke via Pusher |
 | `handleReceivedStroke(data)` | Renders stroke from another user |
 

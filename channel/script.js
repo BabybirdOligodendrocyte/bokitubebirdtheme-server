@@ -11332,13 +11332,12 @@ function endCrazyInteraction(n1, n2) {
 // ========== VIDEO DRAWING TOOL ==========
 
 var drawingState = {
-    sessionActive: false,       // Is a drawing session in progress (timer running)
-    isDrawing: false,           // Currently drawing a stroke (mouse down + ctrl+shift)
+    sessionActive: false,       // Is a drawing session in progress
+    isDrawing: false,           // Currently drawing a stroke (mouse down + Alt held)
     currentStroke: [],          // Points in current stroke
     sessionId: null,            // Unique session ID for this drawing
-    timerTimeout: null,         // Timer timeout reference
-    keysHeld: false,            // Are Ctrl+Shift currently held
-    sessionEnded: false,        // Flag to require key release after session ends
+    clearTimeout: null,         // Timer for clearing after Alt release
+    keysHeld: false,            // Is Alt currently held
     brushSize: 'medium',        // small, medium, large
     brushColor: '#ffffff'       // Current color
 };
@@ -11364,7 +11363,7 @@ var DRAW_COLOR_PALETTE = [
     '#ff8080', '#80ff80', '#8080ff', '#ff80ff', '#80ffff', '#ffff80', '#ff8000', '#ff0080'
 ];
 
-var DRAW_DURATION = 10000; // 10 seconds in ms
+var DRAW_CLEAR_DELAY = 8000; // 8 seconds after Alt release
 
 // Load drawing settings from localStorage
 function loadDrawingSettings() {
@@ -11638,7 +11637,7 @@ function createDrawingSettingsPopup() {
                 '</div>' +
             '</div>' +
             '<div class="drawing-instructions">' +
-                '<p>Hold <kbd>Alt</kbd> and draw on the video.<br>Drawing lasts 10 seconds then clears.</p>' +
+                '<p>Hold <kbd>Alt</kbd> and draw on the video.<br>Drawing clears 8 seconds after releasing Alt.</p>' +
             '</div>' +
         '</div>';
 
@@ -11838,31 +11837,43 @@ function getDrawingRelativeCoords(e) {
     };
 }
 
-// Start a drawing session (first stroke with Alt held)
+// Start a drawing session (when Alt pressed and drawing begins)
 function startDrawingSession() {
     if (drawingState.sessionActive) return;
 
+    // Cancel any pending clear timer
+    if (drawingState.clearTimeout) {
+        clearTimeout(drawingState.clearTimeout);
+        drawingState.clearTimeout = null;
+        console.log('[Drawing] Clear timer cancelled - continuing session');
+    }
+
     drawingState.sessionActive = true;
     drawingState.sessionId = getMyUsername() + '_' + Date.now();
-    drawingState.sessionEnded = false;
-
-    // Start 10-second timer
-    drawingState.timerTimeout = setTimeout(function() {
-        endDrawingSession();
-    }, DRAW_DURATION);
 
     console.log('[Drawing] Session started:', drawingState.sessionId);
 }
 
-// End drawing session
-function endDrawingSession() {
+// Schedule drawing clear (called when Alt is released)
+function scheduleClearDrawing() {
+    // Only schedule if there's an active session
     if (!drawingState.sessionActive) return;
 
-    // Clear timer
-    if (drawingState.timerTimeout) {
-        clearTimeout(drawingState.timerTimeout);
-        drawingState.timerTimeout = null;
+    // Cancel any existing timer
+    if (drawingState.clearTimeout) {
+        clearTimeout(drawingState.clearTimeout);
     }
+
+    console.log('[Drawing] Alt released - clearing in 8 seconds...');
+
+    drawingState.clearTimeout = setTimeout(function() {
+        clearDrawingSession();
+    }, DRAW_CLEAR_DELAY);
+}
+
+// Clear the drawing session (called after 8 second delay)
+function clearDrawingSession() {
+    drawingState.clearTimeout = null;
 
     // Broadcast clear
     broadcastDrawingClear();
@@ -11877,19 +11888,28 @@ function endDrawingSession() {
     drawingState.sessionActive = false;
     drawingState.isDrawing = false;
     drawingState.currentStroke = [];
-    drawingState.sessionEnded = true; // Require Alt release before new session
 
-    console.log('[Drawing] Session ended:', drawingState.sessionId);
+    console.log('[Drawing] Session cleared:', drawingState.sessionId);
+}
+
+// Cancel clear timer (called when Alt is pressed again)
+function cancelClearTimer() {
+    if (drawingState.clearTimeout) {
+        clearTimeout(drawingState.clearTimeout);
+        drawingState.clearTimeout = null;
+        console.log('[Drawing] Clear timer cancelled - can continue drawing');
+        return true;
+    }
+    return false;
 }
 
 // Handle mouse down for drawing (on the overlay)
 function onDrawingMouseDown(e) {
     if (!drawingState.keysHeld) return;
-    if (drawingState.sessionEnded) return; // Must release Alt first
 
     e.preventDefault(); // Prevent text selection, etc.
 
-    // Start session on first stroke
+    // Start session on first stroke (or continue existing)
     if (!drawingState.sessionActive) {
         startDrawingSession();
     }
@@ -11972,15 +11992,13 @@ function onDrawingKeyDown(e) {
         // Prevent default Alt behavior (menu focus in some browsers)
         e.preventDefault();
 
-        // Check if session ended and key needs to be released first
-        if (drawingState.sessionEnded) {
-            console.log('[Drawing] Session ended - release Alt and press again');
-            return;
-        }
-
         if (!drawingState.keysHeld) {
             drawingState.keysHeld = true;
             showDrawingOverlay();
+
+            // Cancel any pending clear timer (user can continue drawing)
+            cancelClearTimer();
+
             console.log('[Drawing] Alt held - drawing mode active');
         }
     }
@@ -11989,12 +12007,6 @@ function onDrawingKeyDown(e) {
 // Handle key up - Alt release deactivates drawing mode
 function onDrawingKeyUp(e) {
     if (e.key === 'Alt' || e.keyCode === 18) {
-        // Always reset sessionEnded when Alt is released (must be outside keysHeld check)
-        if (drawingState.sessionEnded) {
-            drawingState.sessionEnded = false;
-            console.log('[Drawing] Session reset - ready for new session');
-        }
-
         if (drawingState.keysHeld) {
             drawingState.keysHeld = false;
             hideDrawingOverlay();
@@ -12003,6 +12015,9 @@ function onDrawingKeyUp(e) {
             if (drawingState.isDrawing) {
                 onDrawingMouseUp(e);
             }
+
+            // Schedule clear after 8 seconds (if there's an active session)
+            scheduleClearDrawing();
 
             console.log('[Drawing] Alt released - drawing mode inactive');
         }
