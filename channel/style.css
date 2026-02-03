@@ -259,6 +259,13 @@ div.embed-responsive * { max-height: calc(100vh - 50px); }
 .label { display: flex; }
 .username { display: flex; }
 
+/* Hide original username when styled-username exists (fixes duplicate username issue) */
+/* Using :has() for instant CSS-only detection without waiting for JS */
+#messagebuffer > div:has(.styled-username) > .username,
+#messagebuffer > div:has(.styled-username) .username {
+    display: none !important;
+}
+
 .timestamp {
     position: absolute;
     top: 0.15rem;

@@ -1835,7 +1835,9 @@ function hexToRgba(hex, opacity) {
 
         /* Pure CSS detection using :has() - hides original username instantly without waiting for JS */
         /* This fixes the race condition where JS runs before Cytube filters process [uname] tags */
-        #messagebuffer > div:has(.styled-username) > .username {
+        /* Using both > (direct child) and descendant selector to handle all DOM structures */
+        #messagebuffer > div:has(.styled-username) > .username,
+        #messagebuffer > div:has(.styled-username) .username {
             display: none !important;
         }
 
