@@ -1840,7 +1840,8 @@ function hexToRgba(hex, opacity) {
         }
 
         /* Ensure regular usernames (without styled-username) are always visible */
-        #messagebuffer > div:not(.chat-msg-with-styled-name) > .username {
+        /* Added :not(:has(.styled-username)) to prevent this rule from overriding the hide rule above */
+        #messagebuffer > div:not(.chat-msg-with-styled-name):not(:has(.styled-username)) > .username {
             display: flex !important;
         }
 
