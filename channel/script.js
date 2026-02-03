@@ -11973,7 +11973,10 @@ function onDrawingKeyDown(e) {
         e.preventDefault();
 
         // Check if session ended and key needs to be released first
-        if (drawingState.sessionEnded) return;
+        if (drawingState.sessionEnded) {
+            console.log('[Drawing] Session ended - release Alt and press again');
+            return;
+        }
 
         if (!drawingState.keysHeld) {
             drawingState.keysHeld = true;
@@ -11986,6 +11989,12 @@ function onDrawingKeyDown(e) {
 // Handle key up - Alt release deactivates drawing mode
 function onDrawingKeyUp(e) {
     if (e.key === 'Alt' || e.keyCode === 18) {
+        // Always reset sessionEnded when Alt is released (must be outside keysHeld check)
+        if (drawingState.sessionEnded) {
+            drawingState.sessionEnded = false;
+            console.log('[Drawing] Session reset - ready for new session');
+        }
+
         if (drawingState.keysHeld) {
             drawingState.keysHeld = false;
             hideDrawingOverlay();
@@ -11993,11 +12002,6 @@ function onDrawingKeyUp(e) {
             // If we were drawing, end the stroke
             if (drawingState.isDrawing) {
                 onDrawingMouseUp(e);
-            }
-
-            // Reset sessionEnded flag when Alt is released
-            if (drawingState.sessionEnded) {
-                drawingState.sessionEnded = false;
             }
 
             console.log('[Drawing] Alt released - drawing mode inactive');
