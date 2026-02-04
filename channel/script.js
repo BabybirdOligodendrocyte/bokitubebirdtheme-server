@@ -8206,6 +8206,12 @@ function initScreenspamReceiver() {
     BokiChatDispatcher.register('screenspam', function(data) {
         if (!data.msg) return false;
 
+        // Skip old messages from chat history (prevents echo bug on reconnect/refresh)
+        // Messages older than 5 seconds are from history, not live
+        if (data.time && (Date.now() - data.time > 5000)) {
+            return false;
+        }
+
         // Check for screenspam2 marker FIRST (multi-effect, 3-6 at once)
         var marker2Pattern = screenspamMarker + 'SCREENSPAM2:';
         var endMarker2 = ':SCREENSPAM2' + screenspamMarker;
