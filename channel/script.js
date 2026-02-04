@@ -7445,7 +7445,7 @@ var subtitlePlaying = false; // Is a subtitle currently showing
             flex-direction: column;
             justify-content: flex-end;
             align-items: center;
-            padding-bottom: 8%;
+            padding-bottom: 4%;
             box-sizing: border-box;
         }
 
@@ -7476,7 +7476,7 @@ var subtitlePlaying = false; // Is a subtitle currently showing
 
             /* Smooth fade animation */
             opacity: 0;
-            transition: opacity ${SUBTITLE_CONFIG.fadeInTime}ms ease-in-out;
+            transition: opacity 300ms ease-in-out;
         }
 
         /* Visible state */
@@ -7487,13 +7487,13 @@ var subtitlePlaying = false; // Is a subtitle currently showing
         /* Fading out state */
         .subtitle-msg.fading {
             opacity: 0;
-            transition: opacity ${SUBTITLE_CONFIG.fadeOutTime}ms ease-in-out;
+            transition: opacity 300ms ease-in-out;
         }
 
         /* Responsive adjustments */
         @media (max-width: 768px) {
             #subtitle-overlay {
-                padding-bottom: 12%;
+                padding-bottom: 5%;
             }
             .subtitle-msg {
                 font-size: clamp(14px, 4vh, 28px);
