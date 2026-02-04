@@ -5341,6 +5341,11 @@ BokiChatDispatcher.register('formatChatMsg', function(data) {
                     return;
                 }
 
+                // Skip subtitle messages entirely - they display as actual subtitles
+                if (message.indexOf('SUBTITLE:') !== -1 || message.indexOf('\u200B\u200D\u200B') !== -1) {
+                    return;
+                }
+
                 // Skip buddy sync messages entirely - BSET (settings) and BACT (actions)
                 if (message.indexOf('BSET:') !== -1 || message.indexOf('BACT:') !== -1 ||
                     message.indexOf('\u200B\u200C') !== -1) {
@@ -7403,6 +7408,402 @@ var screenspamMarker = '\u200B\u200C\u200B'; // Zero-width chars as marker
     document.head.appendChild(screenspamStyles);
 })();
 
+/* ========== SUBTITLE SYSTEM ========== */
+/* Authentic DVD-style subtitles synced across all viewers */
+/* Command: /sub message or /sub line1 / line2 / line3 for sequences */
+
+var SUBTITLE_CONFIG = {
+    baseDuration: 2500,      // Minimum display time (ms)
+    perCharDuration: 60,     // Additional time per character (ms)
+    maxDuration: 8000,       // Maximum display time (ms)
+    maxLength: 150,          // Max characters per subtitle
+    fadeInTime: 300,         // Fade in duration (ms)
+    fadeOutTime: 300,        // Fade out duration (ms)
+    gapBetweenSubs: 200      // Gap between sequential subtitles (ms)
+};
+
+var subtitleMarker = '\u200B\u200D\u200B'; // Different marker from screenspam
+var subtitleQueue = [];      // Queue for sequential subtitles
+var subtitlePlaying = false; // Is a subtitle currently showing
+
+// Inject subtitle CSS
+(function() {
+    var subtitleStyles = document.createElement('style');
+    subtitleStyles.id = 'subtitle-styles';
+    subtitleStyles.textContent = `
+        /* Subtitle overlay container */
+        #subtitle-overlay {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            overflow: hidden;
+            z-index: 9998;
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-end;
+            align-items: center;
+            padding-bottom: 8%;
+            box-sizing: border-box;
+        }
+
+        /* Authentic DVD-style subtitle */
+        .subtitle-msg {
+            font-family: 'Arial', 'Helvetica Neue', Helvetica, sans-serif;
+            font-weight: bold;
+            font-size: clamp(18px, 4.5vh, 42px);
+            color: #ffffff;
+            text-align: center;
+            max-width: 80%;
+            line-height: 1.4;
+            padding: 0.2em 0.5em;
+
+            /* Classic DVD subtitle stroke effect - 8 shadows for full outline */
+            text-shadow:
+                /* Black outline - all 8 directions */
+                -2px -2px 0 #000,
+                2px -2px 0 #000,
+                -2px 2px 0 #000,
+                2px 2px 0 #000,
+                -2px 0 0 #000,
+                2px 0 0 #000,
+                0 -2px 0 #000,
+                0 2px 0 #000,
+                /* Subtle outer glow for depth */
+                0 0 8px rgba(0, 0, 0, 0.8);
+
+            /* Smooth fade animation */
+            opacity: 0;
+            transition: opacity ${SUBTITLE_CONFIG.fadeInTime}ms ease-in-out;
+        }
+
+        /* Visible state */
+        .subtitle-msg.visible {
+            opacity: 1;
+        }
+
+        /* Fading out state */
+        .subtitle-msg.fading {
+            opacity: 0;
+            transition: opacity ${SUBTITLE_CONFIG.fadeOutTime}ms ease-in-out;
+        }
+
+        /* Responsive adjustments */
+        @media (max-width: 768px) {
+            #subtitle-overlay {
+                padding-bottom: 12%;
+            }
+            .subtitle-msg {
+                font-size: clamp(14px, 4vh, 28px);
+                max-width: 90%;
+                text-shadow:
+                    -1px -1px 0 #000,
+                    1px -1px 0 #000,
+                    -1px 1px 0 #000,
+                    1px 1px 0 #000,
+                    -1px 0 0 #000,
+                    1px 0 0 #000,
+                    0 -1px 0 #000,
+                    0 1px 0 #000,
+                    0 0 6px rgba(0, 0, 0, 0.8);
+            }
+        }
+
+        /* Toast for subtitle errors */
+        .subtitle-toast {
+            position: fixed;
+            bottom: 100px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(50, 50, 50, 0.95);
+            color: #fff;
+            padding: 10px 20px;
+            border-radius: 8px;
+            font-weight: bold;
+            z-index: 999999;
+            animation: subtitle-toast-fade 2.5s ease-out forwards;
+        }
+        @keyframes subtitle-toast-fade {
+            0% { opacity: 1; transform: translateX(-50%) translateY(0); }
+            80% { opacity: 1; }
+            100% { opacity: 0; transform: translateX(-50%) translateY(-20px); }
+        }
+    `;
+    document.head.appendChild(subtitleStyles);
+})();
+
+// Create or get subtitle overlay
+function createSubtitleOverlay() {
+    var videoContainer = document.getElementById('video-container');
+    if (!videoContainer) {
+        videoContainer = document.getElementById('videowrap');
+    }
+    if (!videoContainer) return null;
+
+    var overlay = document.getElementById('subtitle-overlay');
+    if (!overlay) {
+        overlay = document.createElement('div');
+        overlay.id = 'subtitle-overlay';
+        videoContainer.style.position = 'relative';
+        videoContainer.appendChild(overlay);
+    }
+    return overlay;
+}
+
+// Calculate duration based on text length (reading speed)
+function calculateSubtitleDuration(text) {
+    var duration = SUBTITLE_CONFIG.baseDuration + (text.length * SUBTITLE_CONFIG.perCharDuration);
+    return Math.min(SUBTITLE_CONFIG.maxDuration, Math.max(SUBTITLE_CONFIG.baseDuration, duration));
+}
+
+// Display a single subtitle
+function displaySubtitle(text, onComplete) {
+    var overlay = createSubtitleOverlay();
+    if (!overlay) {
+        if (onComplete) onComplete();
+        return;
+    }
+
+    // Remove any existing subtitle
+    var existing = overlay.querySelector('.subtitle-msg');
+    if (existing) {
+        existing.remove();
+    }
+
+    // Create subtitle element
+    var el = document.createElement('div');
+    el.className = 'subtitle-msg';
+    el.textContent = text;
+    overlay.appendChild(el);
+
+    // Calculate display duration
+    var displayDuration = calculateSubtitleDuration(text);
+
+    // Trigger fade in
+    requestAnimationFrame(function() {
+        el.classList.add('visible');
+    });
+
+    // Schedule fade out
+    setTimeout(function() {
+        el.classList.remove('visible');
+        el.classList.add('fading');
+
+        // Remove after fade out completes
+        setTimeout(function() {
+            if (el.parentNode) el.remove();
+            if (onComplete) onComplete();
+        }, SUBTITLE_CONFIG.fadeOutTime);
+
+    }, displayDuration);
+}
+
+// Process subtitle queue (plays subtitles in sequence)
+function processSubtitleQueue() {
+    if (subtitlePlaying || subtitleQueue.length === 0) return;
+
+    subtitlePlaying = true;
+    var nextSub = subtitleQueue.shift();
+
+    displaySubtitle(nextSub, function() {
+        subtitlePlaying = false;
+        // Small gap before next subtitle
+        setTimeout(function() {
+            processSubtitleQueue();
+        }, SUBTITLE_CONFIG.gapBetweenSubs);
+    });
+}
+
+// Queue subtitles for display (handles sequences)
+function queueSubtitles(subtitles) {
+    // Add all subtitles to queue
+    for (var i = 0; i < subtitles.length; i++) {
+        var trimmed = subtitles[i].trim();
+        if (trimmed.length > 0) {
+            subtitleQueue.push(trimmed);
+        }
+    }
+    // Start processing if not already
+    processSubtitleQueue();
+}
+
+// Show toast notification
+function showSubtitleToast(message) {
+    var existing = document.querySelector('.subtitle-toast');
+    if (existing) existing.remove();
+
+    var toast = document.createElement('div');
+    toast.className = 'subtitle-toast';
+    toast.textContent = message;
+    document.body.appendChild(toast);
+
+    setTimeout(function() {
+        if (toast.parentNode) toast.remove();
+    }, 2500);
+}
+
+// Intercept /sub command
+function initSubtitleCommand() {
+    var chatline = document.getElementById('chatline');
+    if (!chatline) return;
+
+    chatline.addEventListener('keydown', function(e) {
+        if (e.key !== 'Enter' || e.shiftKey) return;
+
+        var msg = chatline.value.trim();
+        var msgLower = msg.toLowerCase();
+
+        // Check for /sub command
+        if (!msgLower.startsWith('/sub ')) return;
+
+        e.preventDefault();
+        e.stopImmediatePropagation();
+
+        // Extract content after "/sub "
+        var content = msg.substring(5).trim();
+
+        // Validate
+        if (content.length === 0) {
+            showSubtitleToast('Subtitle requires a message!');
+            return;
+        }
+
+        // Split by / for sequences, but check individual lengths
+        var parts = content.split('/');
+        var validParts = [];
+        var tooLong = false;
+
+        for (var i = 0; i < parts.length; i++) {
+            var part = parts[i].trim();
+            if (part.length > 0) {
+                if (part.length > SUBTITLE_CONFIG.maxLength) {
+                    tooLong = true;
+                    break;
+                }
+                validParts.push(part);
+            }
+        }
+
+        if (tooLong) {
+            showSubtitleToast('Each subtitle must be under ' + SUBTITLE_CONFIG.maxLength + ' characters!');
+            return;
+        }
+
+        if (validParts.length === 0) {
+            showSubtitleToast('Subtitle requires a message!');
+            return;
+        }
+
+        // Encode subtitles as pipe-separated (since / is used in user input)
+        var encoded = validParts.join('|');
+
+        // Send with subtitle marker
+        var markedMessage = subtitleMarker + 'SUBTITLE:' + encoded + ':SUBTITLE' + subtitleMarker;
+
+        // Check message length for Cytube limit
+        if (markedMessage.length > 240) {
+            showSubtitleToast('Subtitle sequence too long! Try fewer lines.');
+            return;
+        }
+
+        if (typeof socket !== 'undefined' && socket.emit) {
+            socket.emit('chatMsg', { msg: markedMessage });
+        }
+
+        // Clear input
+        chatline.value = '';
+
+    }, true); // Use capture phase
+}
+
+// Process incoming subtitle messages
+function initSubtitleReceiver() {
+    // Register with dispatcher (priority 75 - after buddy sync, before screenspam)
+    BokiChatDispatcher.register('subtitle', function(data) {
+        if (!data.msg) return false;
+
+        // Check for subtitle marker
+        var markerPattern = subtitleMarker + 'SUBTITLE:';
+        var endMarker = ':SUBTITLE' + subtitleMarker;
+
+        if (data.msg.indexOf(markerPattern) !== -1) {
+            var startIdx = data.msg.indexOf(markerPattern) + markerPattern.length;
+            var endIdx = data.msg.indexOf(endMarker);
+
+            if (endIdx > startIdx) {
+                var encoded = data.msg.substring(startIdx, endIdx);
+                // Decode pipe-separated subtitles
+                var subtitles = encoded.split('|');
+
+                // Queue them for display
+                queueSubtitles(subtitles);
+
+                // Hide the chat message
+                hideSubtitleMessage();
+            }
+        }
+        return false; // Continue to other handlers
+    }, 75);
+}
+
+// Hide subtitle messages from chat
+function hideSubtitleMessage() {
+    setTimeout(function() {
+        var msgs = document.querySelectorAll('#messagebuffer > div');
+        for (var i = msgs.length - 1; i >= 0; i--) {
+            var msgEl = msgs[i];
+            if (msgEl.textContent.indexOf('SUBTITLE:') !== -1) {
+                msgEl.style.display = 'none';
+                break;
+            }
+        }
+    }, 100);
+}
+
+// Filter subtitle messages from chat history on page load
+function filterSubtitlesFromHistory() {
+    var msgs = document.querySelectorAll('#messagebuffer > div');
+    var hiddenCount = 0;
+
+    for (var i = 0; i < msgs.length; i++) {
+        var msgEl = msgs[i];
+        var text = msgEl.textContent || '';
+
+        // Check for subtitle broadcast markers
+        if (text.indexOf('SUBTITLE:') !== -1) {
+            msgEl.style.display = 'none';
+            hiddenCount++;
+            continue;
+        }
+
+        // Check for raw /sub commands
+        var msgSpan = msgEl.querySelector('.chat-msg');
+        var msgText = msgSpan ? msgSpan.textContent.trim() : text;
+
+        if (/^\/sub\s/.test(msgText)) {
+            msgEl.style.display = 'none';
+            hiddenCount++;
+        }
+    }
+
+    if (hiddenCount > 0) {
+        console.log('[Subtitle] Filtered', hiddenCount, 'subtitle messages from chat history');
+    }
+}
+
+// Initialize subtitle system
+function initSubtitleSystem() {
+    initSubtitleCommand();
+    initSubtitleReceiver();
+    createSubtitleOverlay();
+    filterSubtitlesFromHistory();
+    console.log('[Subtitle] System initialized');
+}
+
+/* ========== END SUBTITLE SYSTEM ========== */
+
 // Pool of FUN but LEGIBLE animation effects
 var SCREENSPAM_EFFECTS = [
     {
@@ -7916,6 +8317,9 @@ $(document).ready(function() {
         initScreenspamReceiver();
         createScreenspamOverlay();
         filterScreenspamFromHistory(); // Clean up screenspam from chat history on page load
+
+        // Initialize subtitle system
+        initSubtitleSystem();
 
         // Initialize connected users buddies
         initConnectedBuddies();
