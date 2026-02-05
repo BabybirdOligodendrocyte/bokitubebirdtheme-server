@@ -4991,7 +4991,16 @@ function applyUsernameTagsToMessage() {
 
     // Always add [uname] wrapper when enabled, even without specific styles
     // This ensures the styled-username CSS is applied
-    c.value = '[uname]' + openTags + myName + closeTags + '[/uname] ' + msg;
+    var styled = '[uname]' + openTags + myName + closeTags + '[/uname] ' + msg;
+
+    // Cytube truncates messages >240 chars without warning, which breaks closing tags
+    // and causes raw BBCode to appear in chat. Skip styling if too long.
+    if (styled.length > 240) {
+        console.log('[UsernameStyle] Message too long for styling:', styled.length, '(limit 240). Sending unstyled.');
+        return;
+    }
+
+    c.value = styled;
     console.log('[UsernameStyle] Modified message:', c.value);
 }
 
@@ -8616,9 +8625,13 @@ function connectPusher() {
 }
 
 function handlePusherBuddySettings(data) {
+    // Coerce spriteIndex to number to prevent strict type check failures downstream
+    var parsedSi = data.si !== undefined ? parseInt(data.si, 10) : -1;
+    if (isNaN(parsedSi)) parsedSi = -1;
+
     var settings = {
         // Appearance
-        spriteIndex: data.si !== undefined ? data.si : -1,
+        spriteIndex: parsedSi,
         size: data.sz || 'medium',
         hueRotate: data.hr || 0,
         saturation: data.st || 100,
@@ -8848,9 +8861,14 @@ function parseBuddySyncMessage(msgText) {
         if (minimalSettings) {
             // Convert minimal format (si, sz, hr, etc.) to full format (spriteIndex, size, hueRotate, etc.)
             // Pusher sends all fields, chat fallback sends minimal - handle both
+            // Coerce spriteIndex to number to prevent strict type check failures downstream
+            var rawSi = minimalSettings.si !== undefined ? minimalSettings.si : (minimalSettings.spriteIndex !== undefined ? minimalSettings.spriteIndex : -1);
+            var parsedSi = parseInt(rawSi, 10);
+            if (isNaN(parsedSi)) parsedSi = -1;
+
             var settings = {
                 // Appearance
-                spriteIndex: minimalSettings.si !== undefined ? minimalSettings.si : (minimalSettings.spriteIndex !== undefined ? minimalSettings.spriteIndex : -1),
+                spriteIndex: parsedSi,
                 size: minimalSettings.sz || minimalSettings.size || 'medium',
                 hueRotate: minimalSettings.hr !== undefined ? minimalSettings.hr : (minimalSettings.hueRotate || 0),
                 saturation: minimalSettings.st !== undefined ? minimalSettings.st : (minimalSettings.saturation || 100),
@@ -8961,9 +8979,24 @@ function applyCustomSettingsToBuddy(username) {
 
     // Apply sprite - handle all cases
     if (settings.customSpriteUrl) {
-        // Custom image URL
-        buddy.element.innerHTML = '<img src="' + escapeHtml(settings.customSpriteUrl) + '" style="width:100%;height:100%;object-fit:contain;">' +
-            '<span class="buddy-nametag">' + escapeHtml(displayName) + '</span>';
+        // Custom image URL with fallback to hash-based emoji if image fails to load
+        var fallbackHash = hashUsername(username);
+        var fallbackSprite = BUDDY_SPRITES[fallbackHash % BUDDY_SPRITES.length];
+        var img = document.createElement('img');
+        img.src = settings.customSpriteUrl;
+        img.style.cssText = 'width:100%;height:100%;object-fit:contain;';
+        img.onerror = function() {
+            console.log('[BuddySync] Custom sprite failed to load for', username, '- falling back to emoji');
+            buddy.element.innerHTML = fallbackSprite.body + '<span class="buddy-nametag">' + escapeHtml(displayName) + '</span>';
+            buddy.sprite = fallbackSprite;
+            buddy.isCustomSprite = false;
+        };
+        buddy.element.innerHTML = '';
+        buddy.element.appendChild(img);
+        var nametag = document.createElement('span');
+        nametag.className = 'buddy-nametag';
+        nametag.textContent = displayName;
+        buddy.element.appendChild(nametag);
         buddy.isCustomSprite = true;
         console.log('[BuddySync] Applied custom URL sprite to', username);
     } else if (typeof settings.spriteIndex === 'number' && settings.spriteIndex >= 0 && settings.spriteIndex < BUDDY_SPRITES.length) {
@@ -8985,13 +9018,17 @@ function applyCustomSettingsToBuddy(username) {
     var size = BUDDY_SIZES[settings.size] || BUDDY_SIZES.medium;
     buddy.element.style.fontSize = size + 'px';
 
-    // Apply color filters
+    // Apply color filters (clamp values to safe ranges to prevent invisible/unrecognizable buddies)
     var filters = [];
-    if (settings.hueRotate) filters.push('hue-rotate(' + settings.hueRotate + 'deg)');
-    if (settings.saturation && settings.saturation !== 100) filters.push('saturate(' + settings.saturation + '%)');
-    if (settings.brightness && settings.brightness !== 100) filters.push('brightness(' + settings.brightness + '%)');
+    var hr = Math.max(0, Math.min(360, Number(settings.hueRotate) || 0));
+    var sat = Math.max(50, Math.min(200, Number(settings.saturation) || 100));
+    var br = Math.max(50, Math.min(150, Number(settings.brightness) || 100));
+    if (hr) filters.push('hue-rotate(' + hr + 'deg)');
+    if (sat !== 100) filters.push('saturate(' + sat + '%)');
+    if (br !== 100) filters.push('brightness(' + br + '%)');
     if (settings.glowColor && settings.glowIntensity > 0) {
-        filters.push('drop-shadow(0 0 ' + settings.glowIntensity + 'px ' + settings.glowColor + ')');
+        var gi = Math.max(0, Math.min(20, Number(settings.glowIntensity) || 0));
+        filters.push('drop-shadow(0 0 ' + gi + 'px ' + settings.glowColor + ')');
     }
     buddy.element.style.filter = filters.length > 0 ? filters.join(' ') : '';
 
@@ -10153,8 +10190,19 @@ function addBuddy(username) {
 
     // Custom sprite URL or emoji
     if (customSettings && customSettings.customSpriteUrl) {
-        el.innerHTML = '<img src="' + escapeHtml(customSettings.customSpriteUrl) + '" style="width:100%;height:100%;object-fit:contain;">' +
-            '<span class="buddy-nametag">' + escapeHtml(displayName) + '</span>';
+        // Custom image with fallback to emoji if image fails to load
+        var customImg = document.createElement('img');
+        customImg.src = customSettings.customSpriteUrl;
+        customImg.style.cssText = 'width:100%;height:100%;object-fit:contain;';
+        customImg.onerror = function() {
+            console.log('[BuddyCreate] Custom sprite failed to load for', username, '- falling back to emoji');
+            el.innerHTML = sprite.body + '<span class="buddy-nametag">' + escapeHtml(displayName) + '</span>';
+        };
+        el.appendChild(customImg);
+        var customNametag = document.createElement('span');
+        customNametag.className = 'buddy-nametag';
+        customNametag.textContent = displayName;
+        el.appendChild(customNametag);
     } else {
         el.innerHTML = sprite.body + '<span class="buddy-nametag">' + escapeHtml(displayName) + '</span>';
     }
@@ -10166,14 +10214,18 @@ function addBuddy(username) {
     }
     el.style.fontSize = size + 'px';
 
-    // Apply color filters
+    // Apply color filters (clamp values to safe ranges to prevent invisible/unrecognizable buddies)
     if (customSettings) {
         var filters = [];
-        if (customSettings.hueRotate) filters.push('hue-rotate(' + customSettings.hueRotate + 'deg)');
-        if (customSettings.saturation && customSettings.saturation !== 100) filters.push('saturate(' + customSettings.saturation + '%)');
-        if (customSettings.brightness && customSettings.brightness !== 100) filters.push('brightness(' + customSettings.brightness + '%)');
+        var hr = Math.max(0, Math.min(360, Number(customSettings.hueRotate) || 0));
+        var sat = Math.max(50, Math.min(200, Number(customSettings.saturation) || 100));
+        var br = Math.max(50, Math.min(150, Number(customSettings.brightness) || 100));
+        if (hr) filters.push('hue-rotate(' + hr + 'deg)');
+        if (sat !== 100) filters.push('saturate(' + sat + '%)');
+        if (br !== 100) filters.push('brightness(' + br + '%)');
         if (customSettings.glowColor && customSettings.glowIntensity > 0) {
-            filters.push('drop-shadow(0 0 ' + customSettings.glowIntensity + 'px ' + customSettings.glowColor + ')');
+            var gi = Math.max(0, Math.min(20, Number(customSettings.glowIntensity) || 0));
+            filters.push('drop-shadow(0 0 ' + gi + 'px ' + customSettings.glowColor + ')');
         }
         if (filters.length > 0) {
             el.style.filter = filters.join(' ');
