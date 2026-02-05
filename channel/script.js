@@ -8352,11 +8352,11 @@ $(document).ready(function() {
 /* Deterministic assignment - same user = same character across all browsers */
 
 var BUDDY_CONFIG = {
-    characterSize: 28,
+    characterSize: 24,
     updateInterval: 50,
     moveSpeed: 2,
     hopSpeed: 1.5,
-    interactDistance: 45,
+    interactDistance: 38,
     fightDuration: 1800,
     perchDuration: 4000,
     gravity: 1.5,
@@ -8441,11 +8441,11 @@ var DEFAULT_BUDDY_SETTINGS = {
     loveLine: null             // said in romantic moments
 };
 
-// Size configurations
+// Size configurations (reduced ~15% to minimize chat obstruction)
 var BUDDY_SIZES = {
-    small: 20,
-    medium: 28,
-    large: 38
+    small: 17,
+    medium: 24,
+    large: 32
 };
 
 // Idle style animations
@@ -9062,7 +9062,7 @@ function handleSyncedInteraction(user1, user2, actionType, seed, pos1, pos2) {
     // Check if buddy 1 needs to move
     if (pos1 && pos1.length === 2 && !isNaN(pos1[0])) {
         var targetX1 = Math.max(zone.left, Math.min(zone.right, pos1[0]));
-        var targetY1 = Math.max(zone.top, Math.min(zone.bottom, pos1[1]));
+        var targetY1 = Math.max(zone.top, Math.min(zone.absoluteBottom, pos1[1]));
         var dist1 = Math.sqrt(Math.pow(b1.x - targetX1, 2) + Math.pow(b1.y - targetY1, 2));
 
         if (dist1 > SYNC_DISTANCE_THRESHOLD) {
@@ -9081,7 +9081,7 @@ function handleSyncedInteraction(user1, user2, actionType, seed, pos1, pos2) {
     // Check if buddy 2 needs to move
     if (pos2 && pos2.length === 2 && !isNaN(pos2[0])) {
         var targetX2 = Math.max(zone.left, Math.min(zone.right, pos2[0]));
-        var targetY2 = Math.max(zone.top, Math.min(zone.bottom, pos2[1]));
+        var targetY2 = Math.max(zone.top, Math.min(zone.absoluteBottom, pos2[1]));
         var dist2 = Math.sqrt(Math.pow(b2.x - targetX2, 2) + Math.pow(b2.y - targetY2, 2));
 
         if (dist2 > SYNC_DISTANCE_THRESHOLD) {
@@ -9618,6 +9618,7 @@ var CRAZY_INTERACTIONS = [
 ];
 
 // Get the safe zone - everywhere EXCEPT the video player and chat input area
+// Returns preferred zone (upper ~70%) and absolute limit (above chatline)
 function getBuddyZone() {
     var navHeight = 50;
     var sidePadding = 20;
@@ -9626,20 +9627,26 @@ function getBuddyZone() {
     // This ensures buddies never cover the typing area
     var chatline = document.getElementById('chatline');
     var chatwrap = document.getElementById('chatwrap');
-    var bottomPadding = 120; // Default fallback
+    var absoluteBottomPadding = 120; // Default fallback
 
     if (chatline) {
         var chatlineRect = chatline.getBoundingClientRect();
         // Add 20px buffer above the chat input
-        bottomPadding = window.innerHeight - chatlineRect.top + 20;
+        absoluteBottomPadding = window.innerHeight - chatlineRect.top + 20;
     } else if (chatwrap) {
         // Fallback: use chatwrap bottom area
         var chatwrapRect = chatwrap.getBoundingClientRect();
-        bottomPadding = window.innerHeight - chatwrapRect.bottom + 80;
+        absoluteBottomPadding = window.innerHeight - chatwrapRect.bottom + 80;
     }
 
     // Ensure minimum padding
-    bottomPadding = Math.max(bottomPadding, 100);
+    absoluteBottomPadding = Math.max(absoluteBottomPadding, 100);
+
+    // Preferred zone: upper 70% of the available area
+    // This keeps buddies away from recent messages most of the time
+    var absoluteBottom = window.innerHeight - absoluteBottomPadding;
+    var availableHeight = absoluteBottom - navHeight;
+    var preferredBottom = navHeight + availableHeight * 0.65;
 
     // Get video player bounds to exclude it
     var videoWrap = document.getElementById('videowrap');
@@ -9655,7 +9662,8 @@ function getBuddyZone() {
         left: leftBound,
         right: window.innerWidth - BUDDY_CONFIG.characterSize - sidePadding,
         top: navHeight,
-        bottom: window.innerHeight - bottomPadding
+        bottom: preferredBottom,          // Normal roaming stops here (upper ~65%)
+        absoluteBottom: absoluteBottom     // Hard limit - never go below this
     };
 }
 
@@ -9672,6 +9680,7 @@ function scanChatForWords() {
     for (var i = startIdx; i < messages.length; i++) {
         var msg = messages[i];
         var msgRect = msg.getBoundingClientRect();
+        // Only pick targets within the preferred zone (not the lower area)
         if (msgRect.top < zone.top - 20 || msgRect.bottom > zone.bottom + 20) continue;
 
         // Get text spans
@@ -10232,7 +10241,7 @@ function addBuddy(username) {
         }
     }
 
-    // Starting position uses hash for some consistency
+    // Starting position uses hash for some consistency (within preferred upper zone)
     var startX = zone.left + ((hash % 100) / 100) * (zone.right - zone.left);
     var startY = zone.top + (((hash >> 4) % 100) / 100) * (zone.bottom - zone.top);
     el.style.left = startX + 'px';
@@ -10335,17 +10344,23 @@ function startBuddyAnimation() {
     }
 
     // Generate a random target anywhere in the zone based on position preference
+    // 95% of the time targets stay in the preferred upper zone (zone.bottom)
+    // 5% of the time allows venturing into the lower area (zone.absoluteBottom)
     function getRandomTarget(zone, posPref) {
         var x = zone.left + Math.random() * (zone.right - zone.left);
         var y;
 
+        // 5% chance to use extended lower area
+        var useExtended = Math.random() < 0.05;
+        var effectiveBottom = useExtended ? zone.absoluteBottom : zone.bottom;
+
         switch (posPref) {
             case 'ground':
-                // Stay in bottom third of zone
-                y = zone.bottom - Math.random() * ((zone.bottom - zone.top) * 0.3);
+                // Stay in bottom third of effective zone
+                y = effectiveBottom - Math.random() * ((effectiveBottom - zone.top) * 0.3);
                 break;
             case 'high':
-                // Stay in top third of zone
+                // Stay in top third of zone (unaffected by extended)
                 y = zone.top + Math.random() * ((zone.bottom - zone.top) * 0.3);
                 break;
             case 'chatFollow':
@@ -10354,12 +10369,12 @@ function startBuddyAnimation() {
                     return chatWordTargets[Math.floor(Math.random() * chatWordTargets.length)];
                 }
                 // Fallback to random if no chat targets
-                y = zone.top + Math.random() * (zone.bottom - zone.top);
+                y = zone.top + Math.random() * (effectiveBottom - zone.top);
                 break;
             case 'roam':
             default:
-                // Full freedom - anywhere in the zone
-                y = zone.top + Math.random() * (zone.bottom - zone.top);
+                // Roam within effective zone
+                y = zone.top + Math.random() * (effectiveBottom - zone.top);
                 break;
         }
 
@@ -10464,8 +10479,8 @@ function startBuddyAnimation() {
                     b.state = 'perched';
                     b.stateTime = 0;
                     setAnim(b, 'perched');
-                } else if (b.y > zone.bottom) {
-                    b.y = zone.bottom;
+                } else if (b.y > zone.absoluteBottom) {
+                    b.y = zone.absoluteBottom;
                     b.state = 'idle';
                     b.stateTime = 0;
                     setAnim(b, 'idle');
@@ -10505,7 +10520,7 @@ function startBuddyAnimation() {
                 if (posPref === 'roam' && b.vy) {
                     b.y += b.vy;
                     if (b.y <= zone.top) { b.y = zone.top; b.vy = Math.abs(b.vy); }
-                    else if (b.y >= zone.bottom) { b.y = zone.bottom; b.vy = -Math.abs(b.vy); }
+                    else if (b.y >= zone.absoluteBottom) { b.y = zone.absoluteBottom; b.vy = -Math.abs(b.vy); }
                 }
 
                 if (b.x <= zone.left) { b.x = zone.left; b.vx = Math.abs(b.vx); updateFace(b); }
