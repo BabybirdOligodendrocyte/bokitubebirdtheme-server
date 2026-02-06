@@ -8679,6 +8679,13 @@ function connectPusher() {
             }
         });
 
+        // Listen for position correction snapshots from master
+        pusherChannel.bind('client-buddy-positions', function(data) {
+            if (data.from && data.from !== getMyUsername()) {
+                handlePositionCorrection(data.positions);
+            }
+        });
+
         console.log('[Pusher] Initialized');
     } catch (e) {
         console.log('[Pusher] Init error:', e);
@@ -9050,6 +9057,98 @@ function handleSyncedHuntEnd(extra) {
     var caught = extra.caught;
     if (!predator || !prey || caught === undefined) return;
     endHunt(predator, prey, caught, true);
+}
+
+// ===== POSITION CORRECTION SYSTEM =====
+var lastPositionBroadcast = 0;
+var POSITION_BROADCAST_INTERVAL = 5000; // Master broadcasts every 5 seconds
+var POSITION_LERP_DURATION = 500; // Smooth correction over 500ms
+
+// Master broadcasts all buddy positions as a compact snapshot
+function broadcastPositionCorrection() {
+    if (!isInteractionMaster()) return;
+    if (!pusherEnabled || !pusherChannel) return; // Positions only via Pusher (too large for chat)
+
+    var now = Date.now();
+    if (now - lastPositionBroadcast < POSITION_BROADCAST_INTERVAL) return;
+    lastPositionBroadcast = now;
+
+    var positions = {};
+    var names = Object.keys(buddyCharacters);
+    for (var i = 0; i < names.length; i++) {
+        var b = buddyCharacters[names[i]];
+        if (!b) continue;
+        // Compact format: "x,y,state" - round to integers to save space
+        positions[names[i]] = Math.round(b.x) + ',' + Math.round(b.y) + ',' + b.state;
+    }
+
+    try {
+        pusherChannel.trigger('client-buddy-positions', {
+            from: getMyUsername(),
+            positions: positions
+        });
+    } catch (e) {
+        // Pusher rate limit or error - skip this cycle
+    }
+}
+
+// Receive position correction from master and set lerp targets
+function handlePositionCorrection(positions) {
+    if (!positions) return;
+    var myName = getMyUsername();
+
+    Object.keys(positions).forEach(function(name) {
+        var b = buddyCharacters[name];
+        if (!b) return;
+
+        // Don't correct buddies that are interacting, wall-running, sleeping, or eggs
+        if (b.interacting || b.wallRunning || b.sleeping || b.isEgg) return;
+
+        var parts = positions[name].split(',');
+        var targetX = parseInt(parts[0], 10);
+        var targetY = parseInt(parts[1], 10);
+        var masterState = parts[2] || 'idle';
+
+        if (isNaN(targetX) || isNaN(targetY)) return;
+
+        // Only correct if the difference is significant (>5px avoids jitter)
+        var dx = targetX - b.x;
+        var dy = targetY - b.y;
+        var dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist < 5) return;
+
+        // If very far off (>100px), snap to a closer position to avoid obvious teleporting
+        if (dist > 100) {
+            // Snap partway immediately, then lerp the rest
+            b.x += dx * 0.5;
+            b.y += dy * 0.5;
+        }
+
+        // Set lerp target for smooth correction
+        b.posLerpTarget = { x: targetX, y: targetY };
+        b.posLerpProgress = 0;
+    });
+}
+
+// Apply position lerp smoothing in update loop
+function applyPositionLerp(b) {
+    if (!b.posLerpTarget) return;
+
+    b.posLerpProgress += BUDDY_CONFIG.updateInterval / POSITION_LERP_DURATION;
+    if (b.posLerpProgress >= 1) {
+        // Lerp complete
+        b.x = b.posLerpTarget.x;
+        b.y = b.posLerpTarget.y;
+        b.posLerpTarget = null;
+        b.posLerpProgress = 0;
+    } else {
+        // Smooth interpolation toward target
+        var t = b.posLerpProgress;
+        // Ease-out curve for natural deceleration
+        t = 1 - (1 - t) * (1 - t);
+        b.x += (b.posLerpTarget.x - b.x) * t * 0.3;
+        b.y += (b.posLerpTarget.y - b.y) * t * 0.3;
+    }
 }
 
 // Check if a message is a buddy sync message
@@ -10938,7 +11037,10 @@ function addBuddy(username) {
         evolutionTier: 0,         // Visual evolution level (0-3)
         huntTarget: null,         // For predator/prey system
         isEgg: false,             // Respawning as egg
-        eggTimer: 0              // Time left as egg
+        eggTimer: 0,              // Time left as egg
+        moveRng: createSeededRandom(hashUsername(username)),  // Deterministic movement RNG
+        posLerpTarget: null,      // Target position for smooth correction lerp
+        posLerpProgress: 0        // 0-1 lerp progress
     };
 
     // Delayed re-sync: if custom settings arrive after buddy creation, apply them
@@ -11016,35 +11118,36 @@ function startBuddyAnimation() {
     // Generate a random target anywhere in the zone based on position preference
     // 95% of the time targets stay in the preferred upper zone (zone.bottom)
     // 5% of the time allows venturing into the lower area (zone.absoluteBottom)
-    function getRandomTarget(zone, posPref) {
-        var x = zone.left + Math.random() * (zone.right - zone.left);
+    function getRandomTarget(zone, posPref, rng) {
+        var r = rng || Math.random;
+        var x = zone.left + r() * (zone.right - zone.left);
         var y;
 
         // 5% chance to use extended lower area
-        var useExtended = Math.random() < 0.05;
+        var useExtended = r() < 0.05;
         var effectiveBottom = useExtended ? zone.absoluteBottom : zone.bottom;
 
         switch (posPref) {
             case 'ground':
                 // Stay in bottom third of effective zone
-                y = effectiveBottom - Math.random() * ((effectiveBottom - zone.top) * 0.3);
+                y = effectiveBottom - r() * ((effectiveBottom - zone.top) * 0.3);
                 break;
             case 'high':
                 // Stay in top third of zone (unaffected by extended)
-                y = zone.top + Math.random() * ((zone.bottom - zone.top) * 0.3);
+                y = zone.top + r() * ((zone.bottom - zone.top) * 0.3);
                 break;
             case 'chatFollow':
                 // Only go where chat messages are (use chatWordTargets)
                 if (chatWordTargets.length > 0) {
-                    return chatWordTargets[Math.floor(Math.random() * chatWordTargets.length)];
+                    return chatWordTargets[Math.floor(r() * chatWordTargets.length)];
                 }
                 // Fallback to random if no chat targets
-                y = zone.top + Math.random() * (effectiveBottom - zone.top);
+                y = zone.top + r() * (effectiveBottom - zone.top);
                 break;
             case 'roam':
             default:
                 // Roam within effective zone
-                y = zone.top + Math.random() * (effectiveBottom - zone.top);
+                y = zone.top + r() * (effectiveBottom - zone.top);
                 break;
         }
 
@@ -11055,6 +11158,7 @@ function startBuddyAnimation() {
     function applyMovementStyle(b, settings, baseVx, baseVy) {
         var style = settings.movementStyle;
         var speed = settings.movementSpeed;
+        var r = b.moveRng || Math.random;
 
         switch (style) {
             case 'smooth':
@@ -11065,7 +11169,7 @@ function startBuddyAnimation() {
             case 'bouncy':
                 // Bouncy: more vertical action
                 b.vx = baseVx * speed;
-                b.vy = (baseVy || 0) * speed * 1.5 + (Math.random() - 0.5) * 2;
+                b.vy = (baseVy || 0) * speed * 1.5 + (r() - 0.5) * 2;
                 break;
             case 'floaty':
                 // Floaty: slow, drifting movement
@@ -11074,9 +11178,9 @@ function startBuddyAnimation() {
                 break;
             case 'erratic':
                 // Erratic: unpredictable direction changes
-                b.vx = baseVx * speed * (0.5 + Math.random());
-                b.vy = (baseVy || 0) * speed * (0.5 + Math.random());
-                if (Math.random() < 0.3) b.vx *= -1;
+                b.vx = baseVx * speed * (0.5 + r());
+                b.vy = (baseVy || 0) * speed * (0.5 + r());
+                if (r() < 0.3) b.vx *= -1;
                 break;
             case 'teleporty':
                 // Teleporty: occasional instant position shifts
@@ -11124,30 +11228,32 @@ function startBuddyAnimation() {
             var moodSpeed = getMoodSpeedMultiplier(b);
             var evoBonus = getEvolutionSpeedBonus(name);
 
+            var r = b.moveRng || Math.random;
+
             if (b.state === 'idle') {
                 // Higher energy = less idle time (divide by energy)
-                var idleTime = (2000 + Math.random() * 2000) / energy;
+                var idleTime = (2000 + r() * 2000) / energy;
                 if (b.stateTime > idleTime) {
-                    var action = Math.random();
+                    var action = r();
                     var useChatTargets = (posPref === 'chatFollow') && chatWordTargets.length > 0;
 
                     // Teleporty style: chance to teleport instead of jump
-                    if (settings.movementStyle === 'teleporty' && Math.random() < 0.3) {
+                    if (settings.movementStyle === 'teleporty' && r() < 0.3) {
                         var teleportTarget = useChatTargets
-                            ? chatWordTargets[Math.floor(Math.random() * chatWordTargets.length)]
-                            : getRandomTarget(zone, posPref);
+                            ? chatWordTargets[Math.floor(r() * chatWordTargets.length)]
+                            : getRandomTarget(zone, posPref, r);
                         b.x = teleportTarget.x;
                         b.y = teleportTarget.y;
                         showExpression(b, '✨');
                         b.stateTime = 0;
                     } else if (action < 0.15 && uiSurfaces.length > 0) {
                         // Perch on a UI element (15% chance)
-                        var surfaceTarget = getRandomSurface(zone);
+                        var surfaceTarget = getRandomSurface(zone, r);
                         if (surfaceTarget) {
                             b.perchedSurface = surfaceTarget.surface;
                             startJumpTo(b, surfaceTarget, speed * moodSpeed * evoBonus);
                         } else {
-                            var fallbackTarget = getRandomTarget(zone, posPref);
+                            var fallbackTarget = getRandomTarget(zone, posPref, r);
                             startJumpTo(b, fallbackTarget, speed * moodSpeed * evoBonus);
                         }
                     } else if (action < 0.25 && buddyTerritories[name]) {
@@ -11158,15 +11264,15 @@ function startBuddyAnimation() {
                         startJumpTo(b, patrolTarget, speed * moodSpeed * evoBonus);
                     } else if (action < 0.65) {
                         var target = useChatTargets
-                            ? chatWordTargets[Math.floor(Math.random() * chatWordTargets.length)]
-                            : getRandomTarget(zone, posPref);
+                            ? chatWordTargets[Math.floor(r() * chatWordTargets.length)]
+                            : getRandomTarget(zone, posPref, r);
                         startJumpTo(b, target, speed * moodSpeed * evoBonus);
                     } else {
                         b.state = 'hopping';
                         b.stateTime = 0;
-                        var moodMod = getMoodHopModifier(b);
-                        var baseVx = (Math.random() - 0.5) * BUDDY_CONFIG.hopSpeed * 2 + moodMod.vxMod;
-                        var baseVy = (posPref === 'roam') ? (Math.random() - 0.5) * BUDDY_CONFIG.hopSpeed + moodMod.vyMod : moodMod.vyMod;
+                        var moodMod = getMoodHopModifier(b, r);
+                        var baseVx = (r() - 0.5) * BUDDY_CONFIG.hopSpeed * 2 + moodMod.vxMod;
+                        var baseVy = (posPref === 'roam') ? (r() - 0.5) * BUDDY_CONFIG.hopSpeed + moodMod.vyMod : moodMod.vyMod;
                         applyMovementStyle(b, settings, baseVx * moodSpeed * evoBonus, baseVy * moodSpeed * evoBonus);
                         setAnim(b, 'hopping');
                         updateFace(b);
@@ -11198,16 +11304,16 @@ function startBuddyAnimation() {
                 if (b.stateTime > perchTime) {
                     var useChatTargets = (posPref === 'chatFollow') && chatWordTargets.length > 1;
 
-                    if (Math.random() < 0.6) {
+                    if (r() < 0.6) {
                         var newTarget = useChatTargets
-                            ? chatWordTargets[Math.floor(Math.random() * chatWordTargets.length)]
-                            : getRandomTarget(zone, posPref);
+                            ? chatWordTargets[Math.floor(r() * chatWordTargets.length)]
+                            : getRandomTarget(zone, posPref, r);
                         startJumpTo(b, newTarget, speed);
                     } else {
                         b.state = 'hopping';
                         b.stateTime = 0;
-                        var baseVx = (Math.random() - 0.5) * BUDDY_CONFIG.hopSpeed * 2;
-                        var baseVy = (posPref === 'roam') ? (Math.random() - 0.5) * BUDDY_CONFIG.hopSpeed : 0;
+                        var baseVx = (r() - 0.5) * BUDDY_CONFIG.hopSpeed * 2;
+                        var baseVy = (posPref === 'roam') ? (r() - 0.5) * BUDDY_CONFIG.hopSpeed : 0;
                         applyMovementStyle(b, settings, baseVx, baseVy);
                         setAnim(b, 'hopping');
                         updateFace(b);
@@ -11215,9 +11321,9 @@ function startBuddyAnimation() {
                 }
             } else if (b.state === 'hopping') {
                 // Erratic style: random direction changes while hopping
-                if (settings.movementStyle === 'erratic' && Math.random() < 0.1) {
-                    b.vx += (Math.random() - 0.5) * 2;
-                    if (b.vy) b.vy += (Math.random() - 0.5) * 2;
+                if (settings.movementStyle === 'erratic' && r() < 0.1) {
+                    b.vx += (r() - 0.5) * 2;
+                    if (b.vy) b.vy += (r() - 0.5) * 2;
                 }
 
                 b.x += b.vx;
@@ -11229,27 +11335,27 @@ function startBuddyAnimation() {
 
                 if (b.x <= zone.left) {
                     // Wall-run chance when hitting left wall
-                    if (Math.random() < BUDDY_CONFIG.wallRunChance && !b.wallRunning) {
+                    if (r() < BUDDY_CONFIG.wallRunChance && !b.wallRunning) {
                         startWallRun(b, 'left', zone);
                         return;
                     }
                     b.x = zone.left; b.vx = Math.abs(b.vx); updateFace(b);
                 } else if (b.x >= zone.right) {
-                    if (Math.random() < BUDDY_CONFIG.wallRunChance && !b.wallRunning) {
+                    if (r() < BUDDY_CONFIG.wallRunChance && !b.wallRunning) {
                         startWallRun(b, 'right', zone);
                         return;
                     }
                     b.x = zone.right; b.vx = -Math.abs(b.vx); updateFace(b);
                 }
 
-                var hopTime = (2500 + Math.random() * 2000) / energy;
+                var hopTime = (2500 + r() * 2000) / energy;
                 if (b.stateTime > hopTime) {
                     var useChatTargets = (posPref === 'chatFollow') && chatWordTargets.length > 0;
 
-                    if (Math.random() < 0.6) {
+                    if (r() < 0.6) {
                         var t = useChatTargets
-                            ? chatWordTargets[Math.floor(Math.random() * chatWordTargets.length)]
-                            : getRandomTarget(zone, posPref);
+                            ? chatWordTargets[Math.floor(r() * chatWordTargets.length)]
+                            : getRandomTarget(zone, posPref, r);
                         startJumpTo(b, t, speed);
                     } else {
                         b.state = 'idle';
@@ -11258,6 +11364,9 @@ function startBuddyAnimation() {
                     }
                 }
             }
+
+            // Apply position correction lerp from master
+            applyPositionLerp(b);
 
             b.element.style.left = b.x + 'px';
             b.element.style.top = b.y + 'px';
@@ -13462,14 +13571,15 @@ function getMoodSpeedMultiplier(b) {
     }
 }
 
-function getMoodHopModifier(b) {
+function getMoodHopModifier(b, rng) {
     if (!b || !b.mood) return { vxMod: 0, vyMod: 0 };
+    var r = rng || b.moveRng || Math.random;
     var i = b.mood.intensity;
     switch(b.mood.type) {
         case 'happy': return { vxMod: 0, vyMod: -i * 2 }; // Higher jumps
-        case 'angry': return { vxMod: (Math.random()-0.5) * i * 2, vyMod: 0 }; // Stompy lateral
+        case 'angry': return { vxMod: (r()-0.5) * i * 2, vyMod: 0 }; // Stompy lateral
         case 'sad': return { vxMod: 0, vyMod: i * 0.5 }; // Droopy, lower hops
-        case 'scared': return { vxMod: (Math.random()-0.5) * i * 3, vyMod: -i }; // Jittery
+        case 'scared': return { vxMod: (r()-0.5) * i * 3, vyMod: -i }; // Jittery
         case 'lovestruck': return { vxMod: Math.sin(Date.now()/500) * i, vyMod: -i * 0.5 }; // Floaty drift
         default: return { vxMod: 0, vyMod: 0 };
     }
@@ -13508,7 +13618,8 @@ function scanUISurfaces() {
     lastSurfaceScan = Date.now();
 }
 
-function getRandomSurface(zone) {
+function getRandomSurface(zone, rng) {
+    var r = rng || Math.random;
     if (uiSurfaces.length === 0) return null;
     // Filter surfaces within buddy zone
     var valid = uiSurfaces.filter(function(s) {
@@ -13516,9 +13627,9 @@ function getRandomSurface(zone) {
                s.y >= zone.top && s.y <= zone.absoluteBottom;
     });
     if (valid.length === 0) return null;
-    var surface = valid[Math.floor(Math.random() * valid.length)];
+    var surface = valid[Math.floor(r() * valid.length)];
     return {
-        x: surface.x + Math.random() * Math.max(0, surface.width - BUDDY_CONFIG.characterSize),
+        x: surface.x + r() * Math.max(0, surface.width - BUDDY_CONFIG.characterSize),
         y: surface.y - BUDDY_CONFIG.characterSize + 2, // Sit on top edge
         surface: surface
     };
@@ -14624,6 +14735,9 @@ function updateAdvancedBuddySystems(names, zone) {
 
     // Save relationships periodically (every ~30s)
     if (Math.random() < 0.001) saveRelationships();
+
+    // Position correction broadcast (master only, every 5s via Pusher)
+    broadcastPositionCorrection();
 }
 
 // ===== INTERACTION HOOKS =====
