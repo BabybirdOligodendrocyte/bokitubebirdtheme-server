@@ -8733,7 +8733,8 @@ function handlePusherBuddySettings(data) {
 function handlePusherBuddyAction(data) {
     // Extended actions carry extra fields beyond user1/user2/action/seed
     if (data.action === 'group' || data.action === 'hunt' || data.action === 'job' ||
-        data.action === 'evolve' || data.action === 'physics' || data.action === 'rel') {
+        data.action === 'evolve' || data.action === 'physics' || data.action === 'rel' ||
+        data.action === 'artifact' || data.action === 'wallrun' || data.action === 'huntend') {
         handleSyncedAdvancedAction(data);
         return;
     }
@@ -8941,6 +8942,15 @@ function handleSyncedAdvancedAction(data) {
         case 'rel':
             handleSyncedRelationship(extra);
             break;
+        case 'artifact':
+            handleSyncedArtifact(extra);
+            break;
+        case 'wallrun':
+            handleSyncedWallRun(extra);
+            break;
+        case 'huntend':
+            handleSyncedHuntEnd(extra);
+            break;
     }
 }
 
@@ -9011,6 +9021,35 @@ function handleSyncedRelationship(extra) {
     var delta = extra.delta;
     if (!n1 || !n2 || delta === undefined) return;
     updateRelationship(n1, n2, delta, true);
+}
+
+// --- Synced Artifact ---
+function handleSyncedArtifact(extra) {
+    var username = extra.username;
+    var artifactIdx = extra.artifactIdx;
+    if (!username || artifactIdx === undefined) return;
+    if (!buddyCharacters[username]) return;
+    spawnArtifactNear(username, artifactIdx);
+}
+
+// --- Synced Wall-Run ---
+function handleSyncedWallRun(extra) {
+    var username = extra.username;
+    var side = extra.side;
+    if (!username || !side) return;
+    var b = buddyCharacters[username];
+    if (!b || b.wallRunning) return;
+    var zone = getBuddyZone();
+    startWallRun(b, side, zone, true); // fromSync=true to prevent re-broadcast
+}
+
+// --- Synced Hunt End (master determines outcome) ---
+function handleSyncedHuntEnd(extra) {
+    var predator = extra.predator;
+    var prey = extra.prey;
+    var caught = extra.caught;
+    if (!predator || !prey || caught === undefined) return;
+    endHunt(predator, prey, caught, true);
 }
 
 // Check if a message is a buddy sync message
@@ -9130,7 +9169,7 @@ function parseBuddySyncMessage(msgText) {
         var myName = getMyUsername();
         if (user1 !== myName) {
             // Check if this is an advanced action (extra data is base64 JSON, not coordinates)
-            var ADVANCED_ACTIONS = ['group', 'hunt', 'job', 'evolve', 'physics', 'rel'];
+            var ADVANCED_ACTIONS = ['group', 'hunt', 'job', 'evolve', 'physics', 'rel', 'artifact', 'wallrun', 'huntend'];
             if (ADVANCED_ACTIONS.indexOf(actionType) !== -1) {
                 try {
                     var extraJson = atob(actionMatch[5]);
@@ -12116,8 +12155,9 @@ var buddyArtifacts = {};  // { username: { type, expiresAt, element } }
 var artifactSpawnTimer = null;
 
 function initArtifactSystem() {
-    // Check for artifact spawns every 30 seconds
+    // Check for artifact spawns every 30 seconds (master-only to sync across clients)
     artifactSpawnTimer = setInterval(function() {
+        if (!isInteractionMaster()) return; // Only master decides artifact spawns
         var names = Object.keys(buddyCharacters);
         if (names.length === 0) return;
 
@@ -12130,7 +12170,29 @@ function initArtifactSystem() {
 
             // 8% chance per buddy per check (roughly every 3-5 minutes per buddy)
             if (Math.random() < 0.08) {
-                spawnArtifactNear(name);
+                // Pick artifact deterministically and broadcast
+                var roll = Math.random();
+                var pool;
+                if (roll < 0.1) {
+                    pool = BUDDY_ARTIFACTS.filter(function(a) { return a.rarity === 'rare'; });
+                } else if (roll < 0.35) {
+                    pool = BUDDY_ARTIFACTS.filter(function(a) { return a.rarity === 'uncommon'; });
+                } else {
+                    pool = BUDDY_ARTIFACTS.filter(function(a) { return a.rarity === 'common'; });
+                }
+                if (pool.length === 0) pool = BUDDY_ARTIFACTS;
+                var artifact = pool[Math.floor(Math.random() * pool.length)];
+                var artifactIdx = BUDDY_ARTIFACTS.indexOf(artifact);
+
+                // Broadcast artifact spawn to all clients
+                broadcastAdvancedAction('artifact', {
+                    username: name,
+                    artifactIdx: artifactIdx,
+                    speechIdx: Math.floor(Math.random() * artifact.speechOnFind.length)
+                });
+
+                // Apply locally
+                spawnArtifactNear(name, artifactIdx);
             }
         });
     }, 30000);
@@ -12149,23 +12211,27 @@ function initArtifactSystem() {
     console.log('[Artifacts] System initialized');
 }
 
-function spawnArtifactNear(username) {
+function spawnArtifactNear(username, artifactIdx) {
     var b = buddyCharacters[username];
     if (!b) return;
 
-    // Pick a random artifact weighted by rarity
-    var roll = Math.random();
-    var pool;
-    if (roll < 0.1) {
-        pool = BUDDY_ARTIFACTS.filter(function(a) { return a.rarity === 'rare'; });
-    } else if (roll < 0.35) {
-        pool = BUDDY_ARTIFACTS.filter(function(a) { return a.rarity === 'uncommon'; });
+    // Use provided artifact index (synced from master) or pick randomly (legacy fallback)
+    var artifact;
+    if (artifactIdx !== undefined && artifactIdx >= 0 && artifactIdx < BUDDY_ARTIFACTS.length) {
+        artifact = BUDDY_ARTIFACTS[artifactIdx];
     } else {
-        pool = BUDDY_ARTIFACTS.filter(function(a) { return a.rarity === 'common'; });
+        var roll = Math.random();
+        var pool;
+        if (roll < 0.1) {
+            pool = BUDDY_ARTIFACTS.filter(function(a) { return a.rarity === 'rare'; });
+        } else if (roll < 0.35) {
+            pool = BUDDY_ARTIFACTS.filter(function(a) { return a.rarity === 'uncommon'; });
+        } else {
+            pool = BUDDY_ARTIFACTS.filter(function(a) { return a.rarity === 'common'; });
+        }
+        if (pool.length === 0) pool = BUDDY_ARTIFACTS;
+        artifact = pool[Math.floor(Math.random() * pool.length)];
     }
-    if (pool.length === 0) pool = BUDDY_ARTIFACTS;
-
-    var artifact = pool[Math.floor(Math.random() * pool.length)];
 
     // Spawn artifact element near buddy
     var offsetX = (Math.random() - 0.5) * 60;
@@ -13459,13 +13525,18 @@ function getRandomSurface(zone) {
 }
 
 // ===== WALL-RUNNING (#5) =====
-function startWallRun(b, side, zone) {
+function startWallRun(b, side, zone, fromSync) {
     b.wallRunning = true;
     b.wallRunSide = side;
     b.wallRunProgress = 0;
     b.state = 'wall-running';
     b.stateTime = 0;
     b.element.classList.add('wall-running', 'wall-' + side);
+
+    // Broadcast wall-run to other clients
+    if (!fromSync && b.username) {
+        broadcastAdvancedAction('wallrun', { username: b.username, side: side });
+    }
 }
 
 function updateWallRun(b, zone) {
@@ -13861,7 +13932,7 @@ function startGroupInteraction(participants, fromSync, syncedType) {
             startGroupRiot(participants, center);
             break;
         case 'summoning':
-            startGroupSummoning(participants, center);
+            startGroupSummoning(participants, center, fromSync);
             break;
     }
 
@@ -13971,7 +14042,7 @@ function startGroupRiot(participants, center) {
     participants.forEach(function(name) { setBuddyMood(buddyCharacters[name], 'angry', 0.7); });
 }
 
-function startGroupSummoning(participants, center) {
+function startGroupSummoning(participants, center, fromSync) {
     // Form a circle and chant
     participants.forEach(function(name, idx) {
         var b = buddyCharacters[name];
@@ -14005,9 +14076,11 @@ function startGroupSummoning(participants, center) {
     setTimeout(function() {
         ritual.textContent = '💫';
         ritual.classList.add('buddy-ritual-burst');
-        // Spawn a physics object as the summoned entity
-        var zone = getBuddyZone();
-        spawnPhysicsObject(zone);
+        // Spawn a physics object as the summoned entity (master-only to prevent double-spawn)
+        if (!fromSync) {
+            var zone = getBuddyZone();
+            spawnPhysicsObject(zone);
+        }
         participants.forEach(function(name) {
             showExpression(buddyCharacters[name], '✨');
         });
@@ -14308,10 +14381,11 @@ function startHunt(predatorName, preyName, fromSync) {
 
     var zone = getBuddyZone();
     var huntStart = Date.now();
-    var caught = false;
+    var isMaster = isInteractionMaster();
+    var huntEnded = false;
 
     var huntInterval = setInterval(function() {
-        if (!buddyCharacters[predatorName] || !buddyCharacters[preyName]) {
+        if (!buddyCharacters[predatorName] || !buddyCharacters[preyName] || huntEnded) {
             clearInterval(huntInterval);
             return;
         }
@@ -14335,27 +14409,49 @@ function startHunt(predatorName, preyName, fromSync) {
         prey.element.style.left = prey.x + 'px';
         hunter.element.style.left = hunter.x + 'px';
 
-        var dist = Math.abs(hunter.x - prey.x);
+        // Only master determines outcome and broadcasts it
+        if (isMaster) {
+            var dist = Math.abs(hunter.x - prey.x);
 
-        // Catch check - 30% chance to catch if close enough, guaranteed after 3s
-        if (dist < 15 || (elapsed > 3000 && dist < 40)) {
-            caught = true;
-            clearInterval(huntInterval);
-            endHunt(predatorName, preyName, true);
-            return;
-        }
+            // Catch check - close enough or guaranteed after 3s
+            if (dist < 15 || (elapsed > 3000 && dist < 40)) {
+                huntEnded = true;
+                clearInterval(huntInterval);
+                // Broadcast outcome to all clients
+                broadcastAdvancedAction('huntend', { predator: predatorName, prey: preyName, caught: true });
+                endHunt(predatorName, preyName, true);
+                return;
+            }
 
-        // Prey escapes after 4s
-        if (elapsed > 4000) {
-            clearInterval(huntInterval);
-            endHunt(predatorName, preyName, false);
+            // Prey escapes after 4s
+            if (elapsed > 4000) {
+                huntEnded = true;
+                clearInterval(huntInterval);
+                broadcastAdvancedAction('huntend', { predator: predatorName, prey: preyName, caught: false });
+                endHunt(predatorName, preyName, false);
+            }
+        } else {
+            // Non-master: safety timeout after 5s in case master broadcast missed
+            if (elapsed > 5000) {
+                huntEnded = true;
+                clearInterval(huntInterval);
+                endHunt(predatorName, preyName, false);
+            }
         }
     }, 50);
+
+    // Store huntEnded flag so synced huntend can stop the chase
+    hunter._huntEnded = function() { huntEnded = true; clearInterval(huntInterval); };
+    prey._huntEnded = function() { huntEnded = true; clearInterval(huntInterval); };
 }
 
-function endHunt(predatorName, preyName, caught) {
+function endHunt(predatorName, preyName, caught, fromSync) {
     var hunter = buddyCharacters[predatorName];
     var prey = buddyCharacters[preyName];
+
+    // Stop any running chase interval on this client
+    if (hunter && hunter._huntEnded) { hunter._huntEnded(); hunter._huntEnded = null; }
+    if (prey && prey._huntEnded) { prey._huntEnded(); prey._huntEnded = null; }
 
     if (hunter) {
         hunter.interacting = false;
