@@ -917,18 +917,23 @@ function hexToRgba(hex, opacity) {
         /* Animation preview classes */
         .text-shake {
             animation: shake 0.5s ease-in-out infinite !important;
+            display: inline-block !important;
         }
         .text-pulse {
             animation: pulse 1s ease-in-out infinite !important;
+            display: inline-block !important;
         }
         .text-bounce {
             animation: bounce 0.6s ease infinite !important;
+            display: inline-block !important;
         }
         .text-wave {
             animation: wave 2s ease-in-out infinite !important;
+            display: inline-block !important;
         }
         .text-flicker {
             animation: flicker 0.3s ease-in-out infinite !important;
+            display: inline-block !important;
         }
         .text-spin {
             animation: spin 2s linear infinite !important;
