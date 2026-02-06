@@ -8384,7 +8384,33 @@ var BUDDY_CONFIG = {
     speechDuration: 3500,
     speechChance: 0.006,
     conversationChance: 0.003,
-    crazyInteractionChance: 0.4
+    crazyInteractionChance: 0.4,
+    // Advanced movement & behavior config
+    moodDecayRate: 0.002,         // Mood intensity lost per tick (neutral in ~25s)
+    flockingStrength: 0.08,       // Attraction/repulsion force multiplier
+    flockingRange: 200,           // Max distance for social gravity effect
+    surfaceScanInterval: 5000,    // How often to rescan UI surfaces (ms)
+    wallRunChance: 0.15,          // Chance to wall-run when hitting boundary
+    wallRunSpeed: 1.2,            // Speed multiplier while wall-running
+    territorySize: 120,           // Territory radius in pixels
+    territoryShiftRate: 10,       // Pixels territory shifts per fight outcome
+    chatEnergyDecay: 0.97,        // Chat energy multiplier per tick (decays ~3%/tick)
+    chatEnergyPerMsg: 0.15,       // Energy added per chat message
+    chatFlinchRadius: 100,        // Radius for ALL CAPS flinch reaction
+    sleepThreshold: 60000,        // ms of silence before buddies sleep
+    physicsObjSpawnInterval: 45000, // How often physics objects may spawn
+    physicsObjChance: 0.3,        // Chance to actually spawn per interval
+    physicsObjMaxCount: 3,        // Max physics objects at once
+    physicsObjGravity: 0.8,       // Gravity for physics objects
+    jobDuration: 45000,           // How long buddy jobs last (ms)
+    jobAssignInterval: 60000,     // How often to try assigning jobs
+    multiInteractDistance: 60,    // Proximity for multi-buddy detection
+    chainReactionRadius: 120,     // How far chain reactions spread
+    evolutionThreshold: 15,       // Interactions needed per evolution tier
+    predatorChaseSpeed: 2.5,      // How fast predators chase
+    preyFleeSpeed: 3.0,           // How fast prey flee
+    predatorHuntRadius: 100,      // Detection range for predator/prey
+    respawnEggDuration: 8000      // How long egg sits before hatching
 };
 
 var buddyCharacters = {};
@@ -8397,6 +8423,20 @@ var myBuddySettings = null;    // Current user's custom settings
 var lastSettingsBroadcast = 0; // Debounce settings broadcast
 var lastChatRejoinBroadcast = 0; // Rate-limit chat-based re-broadcasts on user join
 var visualBroadcastTimer = null; // Debounce timer for visual slider changes
+
+// ===== Advanced Buddy Systems State =====
+var buddyRelationships = {};    // Keyed by "name1|name2" (sorted), value = score (-100 to 100)
+var buddyEventBus = { handlers: {} };  // Simple pub/sub event bus
+var chatEnergyLevel = 0;        // 0-1, decays over time, spikes on messages
+var lastChatTimestamp = Date.now(); // For sleep detection
+var uiSurfaces = [];             // Cached DOM element surfaces for perching
+var lastSurfaceScan = 0;         // When surfaces were last scanned
+var physicsObjects = [];         // Active physics objects in the world
+var lastPhysicsSpawn = 0;        // Last time a physics object spawned
+var lastJobAssign = 0;           // Last time jobs were assigned
+var buddyEvolutionData = {};     // Keyed by username, tracks interaction counts
+var buddyTerritories = {};       // Keyed by username, {cx, cy, radius}
+var activePredatorHunts = {};    // Track active hunt interactions
 
 // Schedule a visual settings broadcast with debouncing (for sliders that fire many events)
 function scheduleVisualBroadcast() {
@@ -9740,6 +9780,7 @@ function initConnectedBuddies() {
         syncBuddiesWithUserlist();
         startBuddyAnimation();
         initArtifactSystem();
+        initAdvancedBuddySystems();
     }, 1500);
 
     // Re-apply custom settings after enough time for responses to arrive
@@ -10327,11 +10368,164 @@ function injectBuddyStyles() {
             50% { transform: scale(1.3); }
         }
 
+        /* ===== ADVANCED BUDDY SYSTEMS CSS ===== */
+
+        /* Mood visual effects */
+        .mood-happy { filter: brightness(1.2) saturate(1.3); }
+        .mood-angry { filter: saturate(1.5) hue-rotate(-10deg); }
+        .mood-sad { filter: brightness(0.7) saturate(0.5); }
+        .mood-scared { animation: buddy-tremble 0.15s ease-in-out infinite !important; }
+        .mood-lovestruck { animation: buddy-float 2s ease-in-out infinite !important; }
+        .mood-sleepy { filter: brightness(0.6) saturate(0.3); opacity: 0.7; }
+
+        @keyframes buddy-tremble {
+            0%, 100% { transform: translateX(0); }
+            25% { transform: translateX(-1px) rotate(-1deg); }
+            75% { transform: translateX(1px) rotate(1deg); }
+        }
+        @keyframes buddy-float {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-4px); }
+        }
+
+        /* Sleeping state */
+        .buddy-sleeping {
+            animation: buddy-snooze 3s ease-in-out infinite !important;
+        }
+        .buddy-sleeping::after {
+            content: '💤';
+            position: absolute;
+            top: -15px;
+            right: -8px;
+            font-size: 10px;
+            animation: buddy-zzz 2s ease-in-out infinite;
+        }
+        @keyframes buddy-snooze {
+            0%, 100% { transform: rotate(0deg); }
+            50% { transform: rotate(5deg); }
+        }
+        @keyframes buddy-zzz {
+            0% { opacity: 0; transform: translateY(0) scale(0.5); }
+            50% { opacity: 1; transform: translateY(-8px) scale(1); }
+            100% { opacity: 0; transform: translateY(-16px) scale(0.8); }
+        }
+
+        /* Wall-running */
+        .wall-running {
+            transition: transform 0.3s ease !important;
+        }
+        .wall-left { transform: rotate(90deg) !important; }
+        .wall-right { transform: rotate(-90deg) !important; }
+        .wall-top { transform: rotate(180deg) !important; }
+
+        /* Physics objects */
+        .buddy-physics-obj {
+            transition: none;
+            filter: drop-shadow(1px 1px 2px rgba(0,0,0,0.3));
+        }
+
+        /* Group dance animation */
+        .buddy-group-dance {
+            animation: buddy-boogie 0.4s ease-in-out infinite !important;
+        }
+        @keyframes buddy-boogie {
+            0%, 100% { transform: scaleX(1) rotate(0deg); }
+            25% { transform: scaleX(0.9) rotate(-5deg); }
+            50% { transform: scaleX(1.1) rotate(0deg) translateY(-3px); }
+            75% { transform: scaleX(0.9) rotate(5deg); }
+        }
+
+        /* Ritual circle for summoning */
+        .buddy-ritual-circle {
+            font-size: 30px;
+            text-align: center;
+            animation: ritual-spin 2s linear infinite;
+            filter: drop-shadow(0 0 8px gold) drop-shadow(0 0 15px #ff8c00);
+        }
+        .buddy-ritual-burst {
+            animation: ritual-burst 0.5s ease-out forwards !important;
+        }
+        @keyframes ritual-spin {
+            0% { transform: rotate(0deg) scale(1); }
+            50% { transform: rotate(180deg) scale(1.2); }
+            100% { transform: rotate(360deg) scale(1); }
+        }
+        @keyframes ritual-burst {
+            0% { transform: scale(1); opacity: 1; }
+            100% { transform: scale(3); opacity: 0; }
+        }
+
+        /* Buddy jobs visual indicators */
+        .buddy-job-guard::before { content: '🛡️'; position: absolute; top: -12px; left: 50%; font-size: 8px; transform: translateX(-50%); }
+        .buddy-job-messenger::before { content: '📩'; position: absolute; top: -12px; left: 50%; font-size: 8px; transform: translateX(-50%); }
+        .buddy-job-dj::before { content: '🎧'; position: absolute; top: -12px; left: 50%; font-size: 8px; transform: translateX(-50%); }
+        .buddy-job-janitor::before { content: '🧹'; position: absolute; top: -12px; left: 50%; font-size: 8px; transform: translateX(-50%); }
+
+        /* Egg respawn */
+        .buddy-egg {
+            animation: buddy-egg-wobble 0.8s ease-in-out infinite !important;
+        }
+        .buddy-hatching {
+            animation: buddy-hatch 1s ease-out !important;
+        }
+        @keyframes buddy-egg-wobble {
+            0%, 100% { transform: rotate(0deg); }
+            25% { transform: rotate(-8deg); }
+            75% { transform: rotate(8deg); }
+        }
+        @keyframes buddy-hatch {
+            0% { transform: scale(0.5); opacity: 0.5; }
+            50% { transform: scale(1.3); opacity: 1; }
+            100% { transform: scale(1); }
+        }
+
+        /* Evolution tiers */
+        .buddy-evo-1 {
+            font-size: 26px !important;
+            filter: drop-shadow(0 0 3px rgba(255,215,0,0.5));
+        }
+        .buddy-evo-2 {
+            font-size: 28px !important;
+            filter: drop-shadow(0 0 5px rgba(255,165,0,0.7));
+        }
+        .buddy-evo-2::after {
+            content: '👑';
+            position: absolute;
+            top: -10px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 8px;
+        }
+        .buddy-evo-3 {
+            font-size: 30px !important;
+            filter: drop-shadow(0 0 8px rgba(255,69,0,0.8)) drop-shadow(0 0 15px rgba(255,215,0,0.4));
+            animation: buddy-evo-glow 2s ease-in-out infinite !important;
+        }
+        .buddy-evo-3::after {
+            content: '🌟';
+            position: absolute;
+            top: -12px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 10px;
+            animation: buddy-evo-crown 1.5s ease-in-out infinite;
+        }
+        @keyframes buddy-evo-glow {
+            0%, 100% { filter: drop-shadow(0 0 8px rgba(255,69,0,0.8)) drop-shadow(0 0 15px rgba(255,215,0,0.4)); }
+            50% { filter: drop-shadow(0 0 12px rgba(255,69,0,1)) drop-shadow(0 0 20px rgba(255,215,0,0.7)); }
+        }
+        @keyframes buddy-evo-crown {
+            0%, 100% { transform: translateX(-50%) translateY(0) rotate(0deg); }
+            50% { transform: translateX(-50%) translateY(-3px) rotate(5deg); }
+        }
+
         @media (max-width: 768px) {
             .buddy-character { display: none; }
             .buddy-speech { display: none; }
             .buddy-artifact { display: none; }
             .buddy-artifact-toast { display: none; }
+            .buddy-physics-obj { display: none; }
+            .buddy-ritual-circle { display: none; }
         }
     `;
     document.head.appendChild(styles);
@@ -10537,7 +10731,22 @@ function addBuddy(username) {
         speechCooldown: 0,
         conversationCooldown: 0,
         currentTarget: null,
-        inConversation: false
+        inConversation: false,
+        // Advanced systems
+        mood: { type: 'neutral', intensity: 0, decayTimer: 0 },
+        perchedSurface: null,     // DOM surface buddy is perched on
+        wallRunning: false,       // Currently wall-running
+        wallRunSide: null,        // 'left', 'right', 'top'
+        wallRunProgress: 0,       // 0-1 along the wall
+        job: null,                // Current job assignment
+        jobTimer: 0,              // Time left on job
+        jobData: null,            // Job-specific state
+        sleeping: false,          // Asleep from chat silence
+        totalInteractions: 0,     // Lifetime interaction count
+        evolutionTier: 0,         // Visual evolution level (0-3)
+        huntTarget: null,         // For predator/prey system
+        isEgg: false,             // Respawning as egg
+        eggTimer: 0              // Time left as egg
     };
 
     // Delayed re-sync: if custom settings arrive after buddy creation, apply them
@@ -10706,6 +10915,23 @@ function startBuddyAnimation() {
             if (b.interactCooldown > 0) b.interactCooldown -= BUDDY_CONFIG.updateInterval;
             b.stateTime += BUDDY_CONFIG.updateInterval * energy; // Energy affects time progression
 
+            // Skip normal movement for buddies with jobs, sleeping, or eggs
+            if (b.job || b.sleeping || b.isEgg) return;
+
+            // Wall-running state (handled separately)
+            if (b.wallRunning) {
+                if (!updateWallRun(b, zone)) {
+                    // Wall run ended, resume normal
+                }
+                b.element.style.left = b.x + 'px';
+                b.element.style.top = b.y + 'px';
+                return;
+            }
+
+            // Mood speed modifier
+            var moodSpeed = getMoodSpeedMultiplier(b);
+            var evoBonus = getEvolutionSpeedBonus(name);
+
             if (b.state === 'idle') {
                 // Higher energy = less idle time (divide by energy)
                 var idleTime = (2000 + Math.random() * 2000) / energy;
@@ -10722,17 +10948,34 @@ function startBuddyAnimation() {
                         b.y = teleportTarget.y;
                         showExpression(b, '✨');
                         b.stateTime = 0;
-                    } else if (action < 0.6) {
+                    } else if (action < 0.15 && uiSurfaces.length > 0) {
+                        // Perch on a UI element (15% chance)
+                        var surfaceTarget = getRandomSurface(zone);
+                        if (surfaceTarget) {
+                            b.perchedSurface = surfaceTarget.surface;
+                            startJumpTo(b, surfaceTarget, speed * moodSpeed * evoBonus);
+                        } else {
+                            var fallbackTarget = getRandomTarget(zone, posPref);
+                            startJumpTo(b, fallbackTarget, speed * moodSpeed * evoBonus);
+                        }
+                    } else if (action < 0.25 && buddyTerritories[name]) {
+                        // Patrol territory (10% chance if territory assigned)
+                        var patrolTarget = getPatrolTarget(b);
+                        patrolTarget.x = Math.max(zone.left, Math.min(zone.right, patrolTarget.x));
+                        patrolTarget.y = Math.max(zone.top, Math.min(zone.absoluteBottom, patrolTarget.y));
+                        startJumpTo(b, patrolTarget, speed * moodSpeed * evoBonus);
+                    } else if (action < 0.65) {
                         var target = useChatTargets
                             ? chatWordTargets[Math.floor(Math.random() * chatWordTargets.length)]
                             : getRandomTarget(zone, posPref);
-                        startJumpTo(b, target, speed);
+                        startJumpTo(b, target, speed * moodSpeed * evoBonus);
                     } else {
                         b.state = 'hopping';
                         b.stateTime = 0;
-                        var baseVx = (Math.random() - 0.5) * BUDDY_CONFIG.hopSpeed * 2;
-                        var baseVy = (posPref === 'roam') ? (Math.random() - 0.5) * BUDDY_CONFIG.hopSpeed : 0;
-                        applyMovementStyle(b, settings, baseVx, baseVy);
+                        var moodMod = getMoodHopModifier(b);
+                        var baseVx = (Math.random() - 0.5) * BUDDY_CONFIG.hopSpeed * 2 + moodMod.vxMod;
+                        var baseVy = (posPref === 'roam') ? (Math.random() - 0.5) * BUDDY_CONFIG.hopSpeed + moodMod.vyMod : moodMod.vyMod;
+                        applyMovementStyle(b, settings, baseVx * moodSpeed * evoBonus, baseVy * moodSpeed * evoBonus);
                         setAnim(b, 'hopping');
                         updateFace(b);
                     }
@@ -10792,8 +11035,20 @@ function startBuddyAnimation() {
                     else if (b.y >= zone.absoluteBottom) { b.y = zone.absoluteBottom; b.vy = -Math.abs(b.vy); }
                 }
 
-                if (b.x <= zone.left) { b.x = zone.left; b.vx = Math.abs(b.vx); updateFace(b); }
-                else if (b.x >= zone.right) { b.x = zone.right; b.vx = -Math.abs(b.vx); updateFace(b); }
+                if (b.x <= zone.left) {
+                    // Wall-run chance when hitting left wall
+                    if (Math.random() < BUDDY_CONFIG.wallRunChance && !b.wallRunning) {
+                        startWallRun(b, 'left', zone);
+                        return;
+                    }
+                    b.x = zone.left; b.vx = Math.abs(b.vx); updateFace(b);
+                } else if (b.x >= zone.right) {
+                    if (Math.random() < BUDDY_CONFIG.wallRunChance && !b.wallRunning) {
+                        startWallRun(b, 'right', zone);
+                        return;
+                    }
+                    b.x = zone.right; b.vx = -Math.abs(b.vx); updateFace(b);
+                }
 
                 var hopTime = (2500 + Math.random() * 2000) / energy;
                 if (b.stateTime > hopTime) {
@@ -10817,6 +11072,7 @@ function startBuddyAnimation() {
         });
 
         checkInteractions(names);
+        updateAdvancedBuddySystems(names, zone);
         buddyAnimationId = setTimeout(update, BUDDY_CONFIG.updateInterval);
     }
     update();
@@ -11032,10 +11288,12 @@ function startInteraction(n1, n2, b1, b2, fromSync, syncedType, syncedSeed) {
             interactionType = 'conversation';
         } else {
             // Calculate combined probabilities (now includes crazy)
-            var kissChance = (p1.kiss + p2.kiss) / 2;
+            // Modify based on relationship history
+            var relMod = getRelationshipInteractionModifier(n1, n2);
+            var kissChance = Math.max(0, (p1.kiss + p2.kiss) / 2 + relMod.kissBonus);
             var chaseChance = (p1.chase + p2.chase) / 2;
-            var fightChance = (p1.fight + p2.fight) / 2;
-            var confessChance = (p1.confess + p2.confess) / 2;
+            var fightChance = Math.max(0, (p1.fight + p2.fight) / 2 + relMod.fightPenalty);
+            var confessChance = Math.max(0, (p1.confess + p2.confess) / 2 + relMod.kissBonus * 0.5);
             var fleeChance = (p1.flee + p2.flee) / 2;
             var crazyChance = (p1.crazy + p2.crazy) / 2;
 
@@ -11161,6 +11419,7 @@ function endKiss(n1, n2, rng) {
         showExpression(b2, e2);
         setTimeout(function() { if (b2) setAnim(b2, 'idle'); }, 2000);
     }
+    onInteractionEnd('kiss', n1, n2);
 }
 
 function createKissEffect(x, y, emoji) {
@@ -11219,6 +11478,7 @@ function endConfess(n1, n2) {
     var b1 = buddyCharacters[n1], b2 = buddyCharacters[n2];
     if (b1) { b1.interacting = false; b1.interactCooldown = 8000; b1.state = 'idle'; setAnim(b1, 'idle'); }
     if (b2) { b2.interacting = false; b2.interactCooldown = 8000; b2.state = 'idle'; setAnim(b2, 'idle'); }
+    onInteractionEnd('confess', n1, n2);
 }
 
 // Chase interaction
@@ -11296,6 +11556,7 @@ function endChase(n1, n2) {
         setAnim(b2, 'idle');
         showExpression(b2, ['😮‍💨', '😊', '✨'][Math.floor(Math.random() * 3)]);
     }
+    onInteractionEnd('chase', n1, n2);
 }
 
 // Flee interaction (both run away from each other)
@@ -11344,6 +11605,7 @@ function endFlee(n1, n2) {
     var b1 = buddyCharacters[n1], b2 = buddyCharacters[n2];
     if (b1) { b1.interacting = false; b1.interactCooldown = 4000; b1.state = 'idle'; setAnim(b1, 'idle'); }
     if (b2) { b2.interacting = false; b2.interactCooldown = 4000; b2.state = 'idle'; setAnim(b2, 'idle'); }
+    onInteractionEnd('flee', n1, n2);
 }
 
 // Fighting interaction
@@ -11411,6 +11673,7 @@ function endFight(n1, n2, rng) {
         setAnim(b2, 'idle');
         showExpression(b2, e2);
     }
+    onInteractionEnd('fight', n1, n2);
 }
 
 function createFightEffect(x, y, move) {
@@ -12885,6 +13148,1275 @@ function endCrazyInteraction(n1, n2) {
         b2.interactCooldown = 6000;
         b2.state = 'idle';
         setAnim(b2, 'idle');
+    }
+    onInteractionEnd('conversation', n1, n2);
+}
+
+// ========== ADVANCED BUDDY SYSTEMS ==========
+// Foundation: Event Bus, Relationship Memory, Mood, Chat Energy
+// Movement: UI Perching, Wall-Running, Flocking, Territories
+// Environmental: Chat Reactivity, Music Sync, Physics Objects
+// Interactions: Multi-Buddy, Chain Reactions, Jobs, Predator/Prey, Evolution
+
+// ===== EVENT BUS =====
+buddyEventBus.emit = function(event, data) {
+    var list = this.handlers[event];
+    if (list) list.forEach(function(fn) { fn(data); });
+};
+buddyEventBus.on = function(event, fn) {
+    if (!this.handlers[event]) this.handlers[event] = [];
+    this.handlers[event].push(fn);
+};
+
+// ===== RELATIONSHIP MEMORY (#9) =====
+function getRelationshipKey(n1, n2) {
+    return n1 < n2 ? (n1 + '|' + n2) : (n2 + '|' + n1);
+}
+
+function getRelationship(n1, n2) {
+    return buddyRelationships[getRelationshipKey(n1, n2)] || 0;
+}
+
+function updateRelationship(n1, n2, delta) {
+    var key = getRelationshipKey(n1, n2);
+    var val = (buddyRelationships[key] || 0) + delta;
+    buddyRelationships[key] = Math.max(-100, Math.min(100, val));
+    buddyEventBus.emit('relationshipChanged', { n1: n1, n2: n2, value: buddyRelationships[key], delta: delta });
+}
+
+function getRelationshipTier(n1, n2) {
+    var r = getRelationship(n1, n2);
+    if (r >= 60) return 'soulmates';
+    if (r >= 30) return 'friends';
+    if (r >= 0) return 'acquaintances';
+    if (r >= -30) return 'rivals';
+    return 'enemies';
+}
+
+// Load relationships from localStorage on init
+function loadRelationships() {
+    try {
+        var saved = localStorage.getItem('buddyRelationships');
+        if (saved) buddyRelationships = JSON.parse(saved);
+    } catch(e) {}
+}
+
+function saveRelationships() {
+    try { localStorage.setItem('buddyRelationships', JSON.stringify(buddyRelationships)); } catch(e) {}
+}
+
+// ===== MOOD SYSTEM (#2) =====
+function setBuddyMood(b, type, intensity) {
+    if (!b) return;
+    b.mood = { type: type, intensity: Math.min(1, intensity || 0.8), decayTimer: 0 };
+    // Apply mood CSS class
+    var el = b.element;
+    el.classList.remove('mood-happy', 'mood-angry', 'mood-sad', 'mood-scared', 'mood-lovestruck', 'mood-sleepy');
+    if (type !== 'neutral') el.classList.add('mood-' + type);
+    buddyEventBus.emit('moodChanged', { username: b.username, mood: type, intensity: intensity });
+}
+
+function decayBuddyMood(b) {
+    if (!b || !b.mood || b.mood.type === 'neutral') return;
+    b.mood.intensity -= BUDDY_CONFIG.moodDecayRate;
+    if (b.mood.intensity <= 0) {
+        b.mood = { type: 'neutral', intensity: 0, decayTimer: 0 };
+        b.element.classList.remove('mood-happy', 'mood-angry', 'mood-sad', 'mood-scared', 'mood-lovestruck', 'mood-sleepy');
+    }
+}
+
+function getMoodSpeedMultiplier(b) {
+    if (!b || !b.mood) return 1;
+    switch(b.mood.type) {
+        case 'happy': return 1 + (b.mood.intensity * 0.3);
+        case 'angry': return 1 + (b.mood.intensity * 0.2);
+        case 'sad': return 1 - (b.mood.intensity * 0.5);
+        case 'scared': return 1 + (b.mood.intensity * 0.6);
+        case 'lovestruck': return 1 - (b.mood.intensity * 0.2);
+        case 'sleepy': return 0.3;
+        default: return 1;
+    }
+}
+
+function getMoodHopModifier(b) {
+    if (!b || !b.mood) return { vxMod: 0, vyMod: 0 };
+    var i = b.mood.intensity;
+    switch(b.mood.type) {
+        case 'happy': return { vxMod: 0, vyMod: -i * 2 }; // Higher jumps
+        case 'angry': return { vxMod: (Math.random()-0.5) * i * 2, vyMod: 0 }; // Stompy lateral
+        case 'sad': return { vxMod: 0, vyMod: i * 0.5 }; // Droopy, lower hops
+        case 'scared': return { vxMod: (Math.random()-0.5) * i * 3, vyMod: -i }; // Jittery
+        case 'lovestruck': return { vxMod: Math.sin(Date.now()/500) * i, vyMod: -i * 0.5 }; // Floaty drift
+        default: return { vxMod: 0, vyMod: 0 };
+    }
+}
+
+// ===== UI SURFACE PERCHING (#1) =====
+function scanUISurfaces() {
+    uiSurfaces = [];
+    var selectors = [
+        '#chatheader', '#currenttitlewrap', '#videowrap-header',
+        '#leftcontrols', '#rightcontrols', '#userlist',
+        '.navbar', '#navbar-outer', '#queuewrap > .queue_entry',
+        '#messagebuffer > div'
+    ];
+    selectors.forEach(function(sel) {
+        try {
+            var els = document.querySelectorAll(sel);
+            els.forEach(function(el) {
+                var rect = el.getBoundingClientRect();
+                if (rect.width > 20 && rect.height > 5) {
+                    uiSurfaces.push({
+                        el: el,
+                        x: rect.left,
+                        y: rect.top,
+                        width: rect.width,
+                        height: rect.height,
+                        type: sel.indexOf('message') !== -1 ? 'message' : 'ui'
+                    });
+                }
+            });
+        } catch(e) {}
+    });
+    // Sort by y position (top surfaces first) and limit to prevent performance issues
+    uiSurfaces.sort(function(a, b) { return a.y - b.y; });
+    if (uiSurfaces.length > 30) uiSurfaces = uiSurfaces.slice(0, 30);
+    lastSurfaceScan = Date.now();
+}
+
+function getRandomSurface(zone) {
+    if (uiSurfaces.length === 0) return null;
+    // Filter surfaces within buddy zone
+    var valid = uiSurfaces.filter(function(s) {
+        return s.x >= zone.left - 20 && s.x + s.width <= zone.right + 40 &&
+               s.y >= zone.top && s.y <= zone.absoluteBottom;
+    });
+    if (valid.length === 0) return null;
+    var surface = valid[Math.floor(Math.random() * valid.length)];
+    return {
+        x: surface.x + Math.random() * Math.max(0, surface.width - BUDDY_CONFIG.characterSize),
+        y: surface.y - BUDDY_CONFIG.characterSize + 2, // Sit on top edge
+        surface: surface
+    };
+}
+
+// ===== WALL-RUNNING (#5) =====
+function startWallRun(b, side, zone) {
+    b.wallRunning = true;
+    b.wallRunSide = side;
+    b.wallRunProgress = 0;
+    b.state = 'wall-running';
+    b.stateTime = 0;
+    b.element.classList.add('wall-running', 'wall-' + side);
+}
+
+function updateWallRun(b, zone) {
+    if (!b.wallRunning) return false;
+    var speed = BUDDY_CONFIG.wallRunSpeed * getMoodSpeedMultiplier(b);
+    b.wallRunProgress += speed * 0.01;
+
+    if (b.wallRunProgress >= 1) {
+        // Finished wall run, detach
+        endWallRun(b);
+        return false;
+    }
+
+    switch(b.wallRunSide) {
+        case 'right':
+            b.x = zone.right;
+            b.y = zone.absoluteBottom - b.wallRunProgress * (zone.absoluteBottom - zone.top);
+            b.element.style.transform = 'rotate(-90deg)';
+            break;
+        case 'left':
+            b.x = zone.left;
+            b.y = zone.top + b.wallRunProgress * (zone.absoluteBottom - zone.top);
+            b.element.style.transform = 'rotate(90deg)';
+            break;
+        case 'top':
+            b.y = zone.top;
+            b.x = zone.left + b.wallRunProgress * (zone.right - zone.left);
+            b.element.style.transform = 'rotate(180deg)';
+            break;
+    }
+    return true;
+}
+
+function endWallRun(b) {
+    b.wallRunning = false;
+    b.wallRunSide = null;
+    b.wallRunProgress = 0;
+    b.state = 'idle';
+    b.stateTime = 0;
+    b.element.style.transform = '';
+    b.element.classList.remove('wall-running', 'wall-left', 'wall-right', 'wall-top');
+    setAnim(b, 'idle');
+}
+
+// ===== FLOCKING / SOCIAL GRAVITY (#3) =====
+function applyFlockingForces(names) {
+    var cfg = BUDDY_CONFIG;
+    for (var i = 0; i < names.length; i++) {
+        var b = buddyCharacters[names[i]];
+        if (!b || b.interacting || b.wallRunning || b.sleeping || b.isEgg) continue;
+
+        var fx = 0, fy = 0;
+        for (var j = 0; j < names.length; j++) {
+            if (i === j) continue;
+            var other = buddyCharacters[names[j]];
+            if (!other) continue;
+
+            var dx = other.x - b.x;
+            var dy = other.y - b.y;
+            var dist = Math.sqrt(dx * dx + dy * dy);
+            if (dist < 1 || dist > cfg.flockingRange) continue;
+
+            var rel = getRelationship(names[i], names[j]);
+            // Positive relationship = attraction, negative = repulsion
+            var force = (rel / 100) * cfg.flockingStrength / Math.max(dist, 30);
+            fx += dx * force;
+            fy += dy * force;
+        }
+
+        // Clamp forces to prevent teleportation
+        fx = Math.max(-1.5, Math.min(1.5, fx));
+        fy = Math.max(-1.5, Math.min(1.5, fy));
+        b.x += fx;
+        b.y += fy;
+    }
+}
+
+// ===== PATROL ROUTES & TERRITORIES (#6) =====
+function assignTerritory(username) {
+    var b = buddyCharacters[username];
+    if (!b) return;
+    var zone = getBuddyZone();
+    buddyTerritories[username] = {
+        cx: b.x,
+        cy: b.y,
+        radius: BUDDY_CONFIG.territorySize
+    };
+}
+
+function shiftTerritory(winner, loser) {
+    var wt = buddyTerritories[winner];
+    var lt = buddyTerritories[loser];
+    if (wt) wt.radius = Math.min(250, wt.radius + BUDDY_CONFIG.territoryShiftRate);
+    if (lt) lt.radius = Math.max(40, lt.radius - BUDDY_CONFIG.territoryShiftRate);
+}
+
+function getPatrolTarget(b) {
+    var t = buddyTerritories[b.username];
+    if (!t) {
+        assignTerritory(b.username);
+        t = buddyTerritories[b.username];
+    }
+    // Figure-8 patrol pattern
+    var phase = (Date.now() / 3000) % (Math.PI * 2);
+    return {
+        x: t.cx + Math.sin(phase) * t.radius * 0.6,
+        y: t.cy + Math.sin(phase * 2) * t.radius * 0.3
+    };
+}
+
+function isInTerritory(b, otherName) {
+    var t = buddyTerritories[b.username];
+    if (!t) return false;
+    var other = buddyCharacters[otherName];
+    if (!other) return false;
+    var dist = Math.sqrt(Math.pow(other.x - t.cx, 2) + Math.pow(other.y - t.cy, 2));
+    return dist < t.radius;
+}
+
+// ===== CHAT ENERGY & REACTIVITY (#4) =====
+function updateChatEnergy() {
+    chatEnergyLevel *= BUDDY_CONFIG.chatEnergyDecay;
+    if (chatEnergyLevel < 0.01) chatEnergyLevel = 0;
+}
+
+function onChatMessage(msg, username) {
+    chatEnergyLevel = Math.min(1, chatEnergyLevel + BUDDY_CONFIG.chatEnergyPerMsg);
+    lastChatTimestamp = Date.now();
+
+    // Wake up sleeping buddies
+    var names = Object.keys(buddyCharacters);
+    names.forEach(function(name) {
+        var b = buddyCharacters[name];
+        if (b && b.sleeping) {
+            b.sleeping = false;
+            b.element.classList.remove('buddy-sleeping');
+            setBuddyMood(b, 'neutral', 0);
+            showExpression(b, '😳');
+        }
+    });
+
+    // ALL CAPS detection - buddies flinch
+    if (msg && msg === msg.toUpperCase() && msg.length > 3 && /[A-Z]/.test(msg)) {
+        names.forEach(function(name) {
+            var b = buddyCharacters[name];
+            if (!b || b.interacting) return;
+            // Flinch: quick scatter
+            b.vx += (Math.random() - 0.5) * 6;
+            b.vy -= Math.random() * 3;
+            showExpression(b, ['😰', '😱', '🫨', '😵'][Math.floor(Math.random() * 4)]);
+            setBuddyMood(b, 'scared', 0.4);
+        });
+    }
+
+    // Emote reaction - nearest buddy mimics
+    if (msg && /^:[a-zA-Z0-9_]+:$/.test(msg.trim())) {
+        var nearestDist = Infinity, nearest = null;
+        names.forEach(function(name) {
+            var b = buddyCharacters[name];
+            if (!b || b.interacting) return;
+            // Use position relative to chat area
+            var dist = Math.abs(b.y - (window.innerHeight * 0.6));
+            if (dist < nearestDist) { nearestDist = dist; nearest = b; }
+        });
+        if (nearest) {
+            showExpression(nearest, ['🤔', '😄', '😮', '🤩'][Math.floor(Math.random() * 4)]);
+        }
+    }
+
+    buddyEventBus.emit('chatMessage', { msg: msg, username: username });
+}
+
+function checkSleepState() {
+    var silenceDuration = Date.now() - lastChatTimestamp;
+    if (silenceDuration > BUDDY_CONFIG.sleepThreshold) {
+        Object.keys(buddyCharacters).forEach(function(name) {
+            var b = buddyCharacters[name];
+            if (b && !b.sleeping && !b.interacting && !b.isEgg) {
+                b.sleeping = true;
+                b.element.classList.add('buddy-sleeping');
+                setBuddyMood(b, 'sleepy', 0.9);
+                b.vx = 0;
+                b.vy = 0;
+                showSpeechBubble(b, 'zzz...', 'shy');
+            }
+        });
+    }
+}
+
+// ===== MUSIC/VIDEO SYNC (#7) =====
+var lastVideoTitle = '';
+function checkVideoSync() {
+    // Subtle beat-like movement modifier based on time
+    var beatPhase = Math.sin(Date.now() / 400) * 0.3;
+
+    // Detect video change
+    var titleEl = document.getElementById('currenttitle');
+    var currentTitle = titleEl ? titleEl.textContent : '';
+    if (currentTitle && currentTitle !== lastVideoTitle) {
+        lastVideoTitle = currentTitle;
+        // All buddies look toward video briefly
+        Object.keys(buddyCharacters).forEach(function(name) {
+            var b = buddyCharacters[name];
+            if (b && !b.interacting) {
+                // Face toward the left (video side)
+                if (!b.element.classList.contains('face-left')) {
+                    b.element.classList.add('face-left');
+                }
+                showExpression(b, ['👀', '🎵', '🎬', '🍿'][Math.floor(Math.random() * 4)]);
+                // Resume normal facing after 2s
+                setTimeout(function() {
+                    if (b.vx > 0) b.element.classList.remove('face-left');
+                }, 2000);
+            }
+        });
+    }
+
+    return beatPhase;
+}
+
+// ===== PHYSICS OBJECTS (#13) =====
+var PHYSICS_OBJ_TYPES = [
+    { emoji: '⚽', name: 'ball', bounce: 0.8, mass: 1 },
+    { emoji: '🏀', name: 'basketball', bounce: 0.7, mass: 1.2 },
+    { emoji: '🎾', name: 'tennis', bounce: 0.9, mass: 0.6 },
+    { emoji: '🎈', name: 'balloon', bounce: 0.3, mass: 0.1 },
+    { emoji: '💎', name: 'gem', bounce: 0.5, mass: 2 },
+    { emoji: '🍎', name: 'apple', bounce: 0.4, mass: 0.8 }
+];
+
+function spawnPhysicsObject(zone) {
+    if (physicsObjects.length >= BUDDY_CONFIG.physicsObjMaxCount) return;
+    var type = PHYSICS_OBJ_TYPES[Math.floor(Math.random() * PHYSICS_OBJ_TYPES.length)];
+
+    var obj = {
+        type: type,
+        x: zone.left + Math.random() * (zone.right - zone.left),
+        y: zone.top,
+        vx: (Math.random() - 0.5) * 3,
+        vy: 0,
+        age: 0,
+        maxAge: 30000, // Despawn after 30s
+        el: null
+    };
+
+    var el = document.createElement('div');
+    el.className = 'buddy-physics-obj';
+    el.textContent = type.emoji;
+    el.style.cssText = 'position:fixed;left:' + obj.x + 'px;top:' + obj.y + 'px;font-size:18px;z-index:9990;pointer-events:none;transition:none;';
+    document.body.appendChild(el);
+    obj.el = el;
+    physicsObjects.push(obj);
+}
+
+function updatePhysicsObjects(zone, names) {
+    for (var i = physicsObjects.length - 1; i >= 0; i--) {
+        var obj = physicsObjects[i];
+        obj.age += BUDDY_CONFIG.updateInterval;
+
+        // Remove expired objects
+        if (obj.age > obj.maxAge) {
+            if (obj.el) obj.el.remove();
+            physicsObjects.splice(i, 1);
+            continue;
+        }
+
+        // Apply gravity
+        obj.vy += BUDDY_CONFIG.physicsObjGravity * obj.type.mass;
+        obj.x += obj.vx;
+        obj.y += obj.vy;
+
+        // Bounce off boundaries
+        if (obj.x <= zone.left) { obj.x = zone.left; obj.vx = Math.abs(obj.vx) * obj.type.bounce; }
+        if (obj.x >= zone.right) { obj.x = zone.right; obj.vx = -Math.abs(obj.vx) * obj.type.bounce; }
+        if (obj.y >= zone.absoluteBottom) {
+            obj.y = zone.absoluteBottom;
+            obj.vy = -Math.abs(obj.vy) * obj.type.bounce;
+            obj.vx *= 0.95; // Friction
+            if (Math.abs(obj.vy) < 0.5) obj.vy = 0; // Stop bouncing
+        }
+        if (obj.y <= zone.top) { obj.y = zone.top; obj.vy = Math.abs(obj.vy) * obj.type.bounce; }
+
+        // Check buddy collisions - buddies kick objects
+        for (var j = 0; j < names.length; j++) {
+            var b = buddyCharacters[names[j]];
+            if (!b || b.sleeping || b.isEgg) continue;
+            var dx = obj.x - b.x;
+            var dy = obj.y - b.y;
+            var dist = Math.sqrt(dx * dx + dy * dy);
+            if (dist < 30) {
+                // Buddy kicks the object
+                var kickForce = 3 + Math.random() * 2;
+                obj.vx += (dx / Math.max(dist, 1)) * kickForce;
+                obj.vy -= 2 + Math.random() * 3; // Kick upward
+                showExpression(b, ['⚡', '🦶', '💨'][Math.floor(Math.random() * 3)]);
+                // If multiple buddies near a ball, it's soccer time!
+                var nearbyCount = 0;
+                names.forEach(function(n) {
+                    var other = buddyCharacters[n];
+                    if (other && Math.sqrt(Math.pow(obj.x - other.x, 2) + Math.pow(obj.y - other.y, 2)) < 80) {
+                        nearbyCount++;
+                    }
+                });
+                if (nearbyCount >= 3 && !obj.soccerMode) {
+                    obj.soccerMode = true;
+                    obj.maxAge += 15000; // Extend lifetime during soccer
+                    showExpression(b, '⚽');
+                }
+                break; // Only one buddy kicks per frame
+            }
+        }
+
+        // Update position
+        obj.el.style.left = obj.x + 'px';
+        obj.el.style.top = obj.y + 'px';
+    }
+}
+
+// ===== MULTI-BUDDY INTERACTIONS (#8) =====
+function checkMultiBuddyInteraction(names) {
+    if (names.length < 3) return false;
+    if (!isInteractionMaster()) return false;
+
+    // Find clusters of 3+ non-interacting buddies
+    for (var i = 0; i < names.length; i++) {
+        var b = buddyCharacters[names[i]];
+        if (!b || b.interacting || b.interactCooldown > 0) continue;
+
+        var cluster = [names[i]];
+        for (var j = 0; j < names.length; j++) {
+            if (i === j) continue;
+            var other = buddyCharacters[names[j]];
+            if (!other || other.interacting || other.interactCooldown > 0) continue;
+            var dist = Math.sqrt(Math.pow(b.x - other.x, 2) + Math.pow(b.y - other.y, 2));
+            if (dist < BUDDY_CONFIG.multiInteractDistance) {
+                cluster.push(names[j]);
+            }
+        }
+
+        if (cluster.length >= 3 && Math.random() < 0.02) {
+            startGroupInteraction(cluster);
+            return true;
+        }
+    }
+    return false;
+}
+
+var GROUP_INTERACTIONS = ['huddle', 'groupDance', 'riot', 'summoning'];
+
+function startGroupInteraction(participants) {
+    var type = GROUP_INTERACTIONS[Math.floor(Math.random() * GROUP_INTERACTIONS.length)];
+    var center = { x: 0, y: 0 };
+    participants.forEach(function(name) {
+        var b = buddyCharacters[name];
+        if (b) { center.x += b.x; center.y += b.y; b.interacting = true; }
+    });
+    center.x /= participants.length;
+    center.y /= participants.length;
+
+    switch(type) {
+        case 'huddle':
+            startGroupHuddle(participants, center);
+            break;
+        case 'groupDance':
+            startGroupDance(participants, center);
+            break;
+        case 'riot':
+            startGroupRiot(participants, center);
+            break;
+        case 'summoning':
+            startGroupSummoning(participants, center);
+            break;
+    }
+
+    // Track interactions for evolution
+    participants.forEach(function(name) {
+        trackInteraction(name);
+    });
+
+    buddyEventBus.emit('groupInteraction', { type: type, participants: participants, center: center });
+}
+
+function startGroupHuddle(participants, center) {
+    // All buddies move to center and whisper
+    participants.forEach(function(name, idx) {
+        var b = buddyCharacters[name];
+        if (!b) return;
+        var angle = (idx / participants.length) * Math.PI * 2;
+        var targetX = center.x + Math.cos(angle) * 20;
+        var targetY = center.y + Math.sin(angle) * 15;
+        b.x = targetX; b.y = targetY;
+        b.element.style.left = b.x + 'px';
+        b.element.style.top = b.y + 'px';
+        setAnim(b, 'idle');
+    });
+    var whispers = ['*whisper whisper*', 'psst...', 'did you hear?', 'no way!', 'shh!', 'really?!'];
+    var delay = 0;
+    participants.forEach(function(name, idx) {
+        var b = buddyCharacters[name];
+        if (!b) return;
+        setTimeout(function() {
+            showSpeechBubble(b, whispers[idx % whispers.length], 'shy');
+        }, delay);
+        delay += 800;
+    });
+    setTimeout(function() { endGroupInteraction(participants); }, 3000 + participants.length * 500);
+}
+
+function startGroupDance(participants, center) {
+    participants.forEach(function(name) {
+        var b = buddyCharacters[name];
+        if (!b) return;
+        b.element.classList.add('buddy-group-dance');
+        showExpression(b, ['💃', '🕺', '🎵', '🎶'][Math.floor(Math.random() * 4)]);
+    });
+    // Animate circular dance
+    var danceStart = Date.now();
+    var danceInterval = setInterval(function() {
+        var elapsed = Date.now() - danceStart;
+        if (elapsed > 4000) {
+            clearInterval(danceInterval);
+            participants.forEach(function(name) {
+                var b = buddyCharacters[name];
+                if (b) b.element.classList.remove('buddy-group-dance');
+            });
+            endGroupInteraction(participants);
+            return;
+        }
+        participants.forEach(function(name, idx) {
+            var b = buddyCharacters[name];
+            if (!b) return;
+            var angle = (idx / participants.length) * Math.PI * 2 + elapsed / 500;
+            var radius = 30 + Math.sin(elapsed / 300) * 10;
+            b.x = center.x + Math.cos(angle) * radius;
+            b.y = center.y + Math.sin(angle) * radius;
+            b.element.style.left = b.x + 'px';
+            b.element.style.top = b.y + 'px';
+        });
+    }, 50);
+}
+
+function startGroupRiot(participants, center) {
+    participants.forEach(function(name) {
+        var b = buddyCharacters[name];
+        if (b) {
+            setAnim(b, 'fighting');
+            showExpression(b, ['😤', '💢', '🔥', '💥'][Math.floor(Math.random() * 4)]);
+        }
+    });
+    // Chaotic movement with effects flying everywhere
+    var riotStart = Date.now();
+    var riotInterval = setInterval(function() {
+        var elapsed = Date.now() - riotStart;
+        if (elapsed > 3000) {
+            clearInterval(riotInterval);
+            endGroupInteraction(participants);
+            return;
+        }
+        participants.forEach(function(name) {
+            var b = buddyCharacters[name];
+            if (!b) return;
+            b.x += (Math.random() - 0.5) * 8;
+            b.y += (Math.random() - 0.5) * 6;
+            b.element.style.left = b.x + 'px';
+            b.element.style.top = b.y + 'px';
+        });
+        // Random fight effects
+        if (Math.random() < 0.3) {
+            var rIdx = Math.floor(Math.random() * participants.length);
+            var rb = buddyCharacters[participants[rIdx]];
+            if (rb) {
+                var move = FIGHT_MOVES[Math.floor(Math.random() * FIGHT_MOVES.length)];
+                createFightEffect(rb.x, rb.y - 15, move.name, move.emoji, move.color);
+            }
+        }
+    }, 50);
+    // Everyone gets angry mood
+    participants.forEach(function(name) { setBuddyMood(buddyCharacters[name], 'angry', 0.7); });
+}
+
+function startGroupSummoning(participants, center) {
+    // Form a circle and chant
+    participants.forEach(function(name, idx) {
+        var b = buddyCharacters[name];
+        if (!b) return;
+        var angle = (idx / participants.length) * Math.PI * 2;
+        b.x = center.x + Math.cos(angle) * 35;
+        b.y = center.y + Math.sin(angle) * 25;
+        b.element.style.left = b.x + 'px';
+        b.element.style.top = b.y + 'px';
+    });
+    // Create pentagram/circle effect
+    var ritual = document.createElement('div');
+    ritual.className = 'buddy-ritual-circle';
+    ritual.style.cssText = 'position:fixed;left:' + (center.x - 40) + 'px;top:' + (center.y - 30) + 'px;width:80px;height:60px;z-index:9989;';
+    ritual.textContent = '⭐';
+    document.body.appendChild(ritual);
+
+    var chants = ['ooga booga', 'Ph\'nglui!', 'ARISE!', '*chanting*', 'IA! IA!'];
+    var delay = 0;
+    participants.forEach(function(name, idx) {
+        var b = buddyCharacters[name];
+        if (!b) return;
+        setTimeout(function() {
+            showSpeechBubble(b, chants[idx % chants.length], 'shy');
+            showExpression(b, '🔮');
+        }, delay);
+        delay += 600;
+    });
+
+    // Climax - summon a random object or effect
+    setTimeout(function() {
+        ritual.textContent = '💫';
+        ritual.classList.add('buddy-ritual-burst');
+        // Spawn a physics object as the summoned entity
+        var zone = getBuddyZone();
+        spawnPhysicsObject(zone);
+        participants.forEach(function(name) {
+            showExpression(buddyCharacters[name], '✨');
+        });
+    }, participants.length * 600 + 500);
+
+    setTimeout(function() {
+        ritual.remove();
+        endGroupInteraction(participants);
+    }, participants.length * 600 + 2500);
+}
+
+function endGroupInteraction(participants) {
+    participants.forEach(function(name) {
+        var b = buddyCharacters[name];
+        if (b) {
+            b.interacting = false;
+            b.interactCooldown = 8000;
+            b.state = 'idle';
+            setAnim(b, 'idle');
+        }
+    });
+}
+
+// ===== CHAIN REACTIONS / SPECTATORS (#10) =====
+function triggerChainReaction(eventType, center, participants) {
+    var names = Object.keys(buddyCharacters);
+    names.forEach(function(name) {
+        if (participants.indexOf(name) !== -1) return; // Skip participants
+        var b = buddyCharacters[name];
+        if (!b || b.interacting || b.sleeping) return;
+
+        var dist = Math.sqrt(Math.pow(b.x - center.x, 2) + Math.pow(b.y - center.y, 2));
+        if (dist > BUDDY_CONFIG.chainReactionRadius) return;
+
+        var p = PERSONALITIES[b.personality] || PERSONALITIES.playful;
+        switch(eventType) {
+            case 'fight':
+            case 'riot':
+                // Spectators gather and react
+                if (p.fight > 0.2) {
+                    showExpression(b, ['🍿', '👀', '📣'][Math.floor(Math.random() * 3)]);
+                    showSpeechBubble(b, ['Fight! Fight!', 'Get em!', 'Ooooh!'][Math.floor(Math.random() * 3)], 'flirt');
+                } else {
+                    showExpression(b, '😨');
+                    b.vx += (b.x > center.x ? 2 : -2);
+                    setBuddyMood(b, 'scared', 0.3);
+                }
+                break;
+            case 'kiss':
+            case 'confess':
+                if (p.kiss > 0.2) {
+                    showExpression(b, ['😍', '🥹', '💕'][Math.floor(Math.random() * 3)]);
+                } else {
+                    showExpression(b, ['😳', '🙈', '👀'][Math.floor(Math.random() * 3)]);
+                    // Look away embarrassed
+                    b.element.classList.toggle('face-left');
+                }
+                break;
+            case 'groupDance':
+                // Nearby buddies start dancing too
+                if (Math.random() < 0.4) {
+                    showExpression(b, '🎵');
+                    b.element.classList.add('buddy-group-dance');
+                    setTimeout(function() { b.element.classList.remove('buddy-group-dance'); }, 3000);
+                }
+                break;
+            case 'summoning':
+                showExpression(b, ['😱', '🫣', '👁️'][Math.floor(Math.random() * 3)]);
+                setBuddyMood(b, 'scared', 0.5);
+                break;
+            default:
+                showExpression(b, '👀');
+                break;
+        }
+    });
+}
+
+// Wire up chain reactions to events
+buddyEventBus.on('groupInteraction', function(data) {
+    triggerChainReaction(data.type, data.center, data.participants);
+});
+
+// ===== BUDDY JOBS (#11) =====
+var BUDDY_JOBS = [
+    {
+        name: 'guard',
+        emoji: '🛡️',
+        description: 'Patrols the chat input',
+        update: function(b, zone) {
+            // Patrol near bottom of zone (near chat input)
+            var patrolY = zone.absoluteBottom - 30;
+            var patrolPhase = (Date.now() / 2000) % (Math.PI * 2);
+            var targetX = zone.left + (zone.right - zone.left) * (0.3 + Math.sin(patrolPhase) * 0.2);
+            b.x += (targetX - b.x) * 0.05;
+            b.y += (patrolY - b.y) * 0.05;
+            // Chase away buddies that come near
+            Object.keys(buddyCharacters).forEach(function(name) {
+                if (name === b.username) return;
+                var other = buddyCharacters[name];
+                if (!other || other.interacting) return;
+                var dist = Math.sqrt(Math.pow(b.x - other.x, 2) + Math.pow(b.y - other.y, 2));
+                if (dist < 40 && other.y > patrolY - 20) {
+                    other.vx += (other.x > b.x ? 2 : -2);
+                    other.vy -= 1;
+                    if (Math.random() < 0.02) showSpeechBubble(b, 'No entry!', 'flirt');
+                }
+            });
+        }
+    },
+    {
+        name: 'messenger',
+        emoji: '📩',
+        description: 'Runs between two buddies',
+        init: function(b) {
+            var names = Object.keys(buddyCharacters).filter(function(n) { return n !== b.username; });
+            if (names.length < 2) return false;
+            b.jobData = {
+                target1: names[Math.floor(Math.random() * names.length)],
+                target2: names[Math.floor(Math.random() * names.length)],
+                currentTarget: 0,
+                deliveries: 0
+            };
+            if (b.jobData.target1 === b.jobData.target2) return false;
+            return true;
+        },
+        update: function(b) {
+            if (!b.jobData) return;
+            var targetName = b.jobData.currentTarget === 0 ? b.jobData.target1 : b.jobData.target2;
+            var target = buddyCharacters[targetName];
+            if (!target) return;
+            var dx = target.x - b.x;
+            var dy = target.y - b.y;
+            var dist = Math.sqrt(dx * dx + dy * dy);
+            b.x += (dx / Math.max(dist, 1)) * 3;
+            b.y += (dy / Math.max(dist, 1)) * 2;
+            if (dist < 25) {
+                // Delivered!
+                b.jobData.currentTarget = 1 - b.jobData.currentTarget;
+                b.jobData.deliveries++;
+                showExpression(b, '📬');
+                showSpeechBubble(target, 'Thanks!', 'shy');
+                if (b.jobData.deliveries >= 4) b.jobTimer = 0; // Job done
+            }
+        }
+    },
+    {
+        name: 'dj',
+        emoji: '🎧',
+        description: 'Bobs near the video player',
+        update: function(b, zone) {
+            // Sit near top-left (near video) and bob
+            var targetX = zone.left + 10;
+            var targetY = zone.top + 20;
+            b.x += (targetX - b.x) * 0.03;
+            b.y += (targetY - b.y) * 0.03;
+            // Bob to the "beat"
+            b.y += Math.sin(Date.now() / 300) * 0.5;
+            if (Math.random() < 0.005) {
+                showExpression(b, ['🎵', '🎶', '🎧', '🎤'][Math.floor(Math.random() * 4)]);
+            }
+        }
+    },
+    {
+        name: 'janitor',
+        emoji: '🧹',
+        description: 'Sweeps across the bottom',
+        update: function(b, zone) {
+            if (!b.jobData) b.jobData = { dir: 1, sweepY: zone.absoluteBottom - 10 };
+            b.y += (b.jobData.sweepY - b.y) * 0.1;
+            b.x += b.jobData.dir * 1.5;
+            if (b.x >= zone.right) b.jobData.dir = -1;
+            if (b.x <= zone.left) b.jobData.dir = 1;
+            updateFace(b);
+            // Push nearby physics objects
+            physicsObjects.forEach(function(obj) {
+                if (Math.abs(obj.x - b.x) < 20 && Math.abs(obj.y - b.y) < 20) {
+                    obj.vx += b.jobData.dir * 2;
+                    obj.vy -= 1;
+                }
+            });
+        }
+    }
+];
+
+function assignBuddyJobs(names) {
+    if (Date.now() - lastJobAssign < BUDDY_CONFIG.jobAssignInterval) return;
+    lastJobAssign = Date.now();
+
+    // Only assign to idle, non-interacting buddies without jobs
+    var available = names.filter(function(name) {
+        var b = buddyCharacters[name];
+        return b && !b.interacting && !b.job && !b.sleeping && !b.isEgg;
+    });
+    if (available.length === 0) return;
+
+    // 20% chance to assign a job each interval
+    if (Math.random() > 0.2) return;
+
+    var lucky = available[Math.floor(Math.random() * available.length)];
+    var b = buddyCharacters[lucky];
+    var job = BUDDY_JOBS[Math.floor(Math.random() * BUDDY_JOBS.length)];
+
+    // Some jobs need initialization
+    if (job.init && !job.init(b)) return;
+
+    b.job = job;
+    b.jobTimer = BUDDY_CONFIG.jobDuration;
+    showExpression(b, job.emoji);
+    showSpeechBubble(b, 'Time for work!', 'flirt');
+    b.element.classList.add('buddy-job-' + job.name);
+}
+
+function updateBuddyJobs(names, zone) {
+    names.forEach(function(name) {
+        var b = buddyCharacters[name];
+        if (!b || !b.job) return;
+
+        b.jobTimer -= BUDDY_CONFIG.updateInterval;
+        if (b.jobTimer <= 0 || b.interacting) {
+            // Job ended
+            b.element.classList.remove('buddy-job-' + b.job.name);
+            b.job = null;
+            b.jobData = null;
+            b.jobTimer = 0;
+            return;
+        }
+
+        b.job.update(b, zone);
+        b.element.style.left = b.x + 'px';
+        b.element.style.top = b.y + 'px';
+    });
+}
+
+// ===== PREDATOR/PREY ECOSYSTEM (#12) =====
+var PREDATOR_TYPES = ['cat', 'fox', 'owl', 'dragon', 'witch', 'hero'];
+var PREY_TYPES = ['chick', 'hatching', 'babychick', 'bunny', 'koala'];
+
+function isBuddyPredator(b) {
+    if (!b || !b.sprite) return false;
+    return PREDATOR_TYPES.indexOf(b.sprite.name) !== -1;
+}
+
+function isBuddyPrey(b) {
+    if (!b || !b.sprite) return false;
+    return PREY_TYPES.indexOf(b.sprite.name) !== -1;
+}
+
+function checkPredatorPrey(names) {
+    if (!isInteractionMaster()) return;
+
+    for (var i = 0; i < names.length; i++) {
+        var hunter = buddyCharacters[names[i]];
+        if (!hunter || !isBuddyPredator(hunter) || hunter.interacting || hunter.isEgg) continue;
+        if (hunter.interactCooldown > 0 || hunter.huntTarget) continue;
+
+        for (var j = 0; j < names.length; j++) {
+            if (i === j) continue;
+            var prey = buddyCharacters[names[j]];
+            if (!prey || !isBuddyPrey(prey) || prey.interacting || prey.isEgg) continue;
+            if (prey.interactCooldown > 0) continue;
+
+            var dist = Math.sqrt(Math.pow(hunter.x - prey.x, 2) + Math.pow(hunter.y - prey.y, 2));
+            if (dist < BUDDY_CONFIG.predatorHuntRadius && Math.random() < 0.01) {
+                startHunt(names[i], names[j]);
+                return; // One hunt at a time
+            }
+        }
+    }
+}
+
+function startHunt(predatorName, preyName) {
+    var hunter = buddyCharacters[predatorName];
+    var prey = buddyCharacters[preyName];
+    if (!hunter || !prey) return;
+
+    hunter.interacting = true;
+    prey.interacting = true;
+    hunter.huntTarget = preyName;
+    prey.huntTarget = predatorName;
+    setAnim(hunter, 'chasing');
+    setAnim(prey, 'fleeing');
+    showExpression(hunter, '😈');
+    showExpression(prey, '😱');
+    showSpeechBubble(prey, 'AAAH!', 'shy');
+    setBuddyMood(hunter, 'happy', 0.6);
+    setBuddyMood(prey, 'scared', 1.0);
+
+    var zone = getBuddyZone();
+    var huntStart = Date.now();
+    var caught = false;
+
+    var huntInterval = setInterval(function() {
+        if (!buddyCharacters[predatorName] || !buddyCharacters[preyName]) {
+            clearInterval(huntInterval);
+            return;
+        }
+        var elapsed = Date.now() - huntStart;
+
+        // Prey flees
+        var dx = prey.x - hunter.x;
+        var dir = dx > 0 ? 1 : -1;
+        prey.x += dir * BUDDY_CONFIG.preyFleeSpeed;
+        prey.vx = dir * BUDDY_CONFIG.preyFleeSpeed;
+        updateFace(prey);
+
+        // Hunter chases
+        hunter.x += dir * BUDDY_CONFIG.predatorChaseSpeed;
+        hunter.vx = dir * BUDDY_CONFIG.predatorChaseSpeed;
+        updateFace(hunter);
+
+        // Bounds
+        prey.x = Math.max(zone.left, Math.min(zone.right, prey.x));
+        hunter.x = Math.max(zone.left, Math.min(zone.right, hunter.x));
+        prey.element.style.left = prey.x + 'px';
+        hunter.element.style.left = hunter.x + 'px';
+
+        var dist = Math.abs(hunter.x - prey.x);
+
+        // Catch check - 30% chance to catch if close enough, guaranteed after 3s
+        if (dist < 15 || (elapsed > 3000 && dist < 40)) {
+            caught = true;
+            clearInterval(huntInterval);
+            endHunt(predatorName, preyName, true);
+            return;
+        }
+
+        // Prey escapes after 4s
+        if (elapsed > 4000) {
+            clearInterval(huntInterval);
+            endHunt(predatorName, preyName, false);
+        }
+    }, 50);
+}
+
+function endHunt(predatorName, preyName, caught) {
+    var hunter = buddyCharacters[predatorName];
+    var prey = buddyCharacters[preyName];
+
+    if (hunter) {
+        hunter.interacting = false;
+        hunter.interactCooldown = 8000;
+        hunter.huntTarget = null;
+        hunter.state = 'idle';
+        setAnim(hunter, 'idle');
+    }
+
+    if (caught && prey) {
+        // Comedic eating animation
+        showExpression(hunter, '😋');
+        showSpeechBubble(hunter, '*nom nom*', 'flirt');
+        // Prey becomes an egg
+        prey.interacting = false;
+        prey.interactCooldown = 0;
+        prey.huntTarget = null;
+        startEggRespawn(preyName);
+        updateRelationship(predatorName, preyName, -15);
+    } else if (prey) {
+        // Prey escaped
+        prey.interacting = false;
+        prey.interactCooldown = 6000;
+        prey.huntTarget = null;
+        prey.state = 'idle';
+        setAnim(prey, 'idle');
+        showExpression(prey, '😮‍💨');
+        showSpeechBubble(prey, 'Phew!', 'shy');
+        updateRelationship(predatorName, preyName, -5);
+    }
+
+    trackInteraction(predatorName);
+    trackInteraction(preyName);
+}
+
+function startEggRespawn(username) {
+    var b = buddyCharacters[username];
+    if (!b) return;
+
+    b.isEgg = true;
+    b.eggTimer = BUDDY_CONFIG.respawnEggDuration;
+    b.interacting = true;
+    b.vx = 0;
+    b.vy = 0;
+
+    // Drop egg from top
+    var zone = getBuddyZone();
+    b.y = zone.top;
+    b.element.style.top = b.y + 'px';
+
+    // Change sprite to egg
+    var originalSprite = b.element.textContent.charAt(0);
+    b.element.childNodes[0].textContent = '🥚';
+    b.element.classList.add('buddy-egg');
+
+    // Egg falls
+    var eggFall = setInterval(function() {
+        b.y += 2;
+        if (b.y >= zone.absoluteBottom - 10) {
+            b.y = zone.absoluteBottom - 10;
+            clearInterval(eggFall);
+        }
+        b.element.style.top = b.y + 'px';
+    }, 50);
+
+    // Hatch after timer
+    setTimeout(function() {
+        if (!buddyCharacters[username]) return;
+        b.isEgg = false;
+        b.interacting = false;
+        b.eggTimer = 0;
+        b.element.childNodes[0].textContent = b.sprite.body;
+        b.element.classList.remove('buddy-egg');
+        b.element.classList.add('buddy-hatching');
+        showExpression(b, '🐣');
+        b.state = 'idle';
+        b.stateTime = 0;
+        setTimeout(function() { b.element.classList.remove('buddy-hatching'); }, 1000);
+    }, BUDDY_CONFIG.respawnEggDuration);
+}
+
+// ===== EVOLVING ANIMATIONS (#14) =====
+function trackInteraction(username) {
+    if (!buddyEvolutionData[username]) {
+        buddyEvolutionData[username] = { interactions: 0, tier: 0 };
+    }
+    buddyEvolutionData[username].interactions++;
+
+    var data = buddyEvolutionData[username];
+    var newTier = Math.min(3, Math.floor(data.interactions / BUDDY_CONFIG.evolutionThreshold));
+
+    if (newTier > data.tier) {
+        data.tier = newTier;
+        applyEvolutionTier(username, newTier);
+    }
+}
+
+function applyEvolutionTier(username, tier) {
+    var b = buddyCharacters[username];
+    if (!b) return;
+
+    // Remove old tier classes
+    b.element.classList.remove('buddy-evo-1', 'buddy-evo-2', 'buddy-evo-3');
+    b.evolutionTier = tier;
+
+    if (tier > 0) {
+        b.element.classList.add('buddy-evo-' + tier);
+        var effects = [null, '⭐', '👑', '🌟'];
+        showExpression(b, effects[tier]);
+        showSpeechBubble(b, ['', 'Level up!', 'Power grows!', 'ULTIMATE!'][tier], 'flirt');
+    }
+}
+
+function getEvolutionSpeedBonus(username) {
+    var data = buddyEvolutionData[username];
+    if (!data) return 1;
+    return 1 + data.tier * 0.1; // 10% per tier
+}
+
+// ===== MASTER UPDATE HOOK =====
+// Called from the update loop every tick to run all advanced systems
+function updateAdvancedBuddySystems(names, zone) {
+    // Mood decay for all buddies
+    names.forEach(function(name) {
+        var b = buddyCharacters[name];
+        if (b) decayBuddyMood(b);
+    });
+
+    // Chat energy decay
+    updateChatEnergy();
+
+    // Check sleep state
+    checkSleepState();
+
+    // Flocking / social gravity
+    applyFlockingForces(names);
+
+    // Video sync check
+    checkVideoSync();
+
+    // Rescan UI surfaces periodically
+    if (Date.now() - lastSurfaceScan > BUDDY_CONFIG.surfaceScanInterval) {
+        scanUISurfaces();
+    }
+
+    // Physics objects
+    if (Date.now() - lastPhysicsSpawn > BUDDY_CONFIG.physicsObjSpawnInterval) {
+        lastPhysicsSpawn = Date.now();
+        if (Math.random() < BUDDY_CONFIG.physicsObjChance) {
+            spawnPhysicsObject(zone);
+        }
+    }
+    updatePhysicsObjects(zone, names);
+
+    // Buddy jobs
+    assignBuddyJobs(names);
+    updateBuddyJobs(names, zone);
+
+    // Multi-buddy interactions (checked less frequently)
+    if (Math.random() < 0.1) {
+        checkMultiBuddyInteraction(names);
+    }
+
+    // Predator/prey
+    checkPredatorPrey(names);
+
+    // Save relationships periodically (every ~30s)
+    if (Math.random() < 0.001) saveRelationships();
+}
+
+// ===== INTERACTION HOOKS =====
+// These wrap existing end functions to add relationship/mood/chain reaction updates
+
+function onInteractionEnd(type, n1, n2) {
+    // Update relationships
+    switch(type) {
+        case 'kiss':
+            updateRelationship(n1, n2, 10);
+            setBuddyMood(buddyCharacters[n1], 'lovestruck', 0.8);
+            setBuddyMood(buddyCharacters[n2], 'lovestruck', 0.8);
+            break;
+        case 'confess':
+            updateRelationship(n1, n2, 8);
+            setBuddyMood(buddyCharacters[n1], 'happy', 0.7);
+            setBuddyMood(buddyCharacters[n2], 'happy', 0.6);
+            break;
+        case 'fight':
+            updateRelationship(n1, n2, -8);
+            setBuddyMood(buddyCharacters[n1], 'angry', 0.7);
+            setBuddyMood(buddyCharacters[n2], 'angry', 0.7);
+            shiftTerritory(n1, n2); // Winner expands
+            break;
+        case 'chase':
+            updateRelationship(n1, n2, 2);
+            setBuddyMood(buddyCharacters[n1], 'happy', 0.4);
+            setBuddyMood(buddyCharacters[n2], 'scared', 0.3);
+            break;
+        case 'flee':
+            updateRelationship(n1, n2, -3);
+            setBuddyMood(buddyCharacters[n1], 'scared', 0.5);
+            setBuddyMood(buddyCharacters[n2], 'scared', 0.5);
+            break;
+        case 'conversation':
+            updateRelationship(n1, n2, 5);
+            setBuddyMood(buddyCharacters[n1], 'happy', 0.3);
+            setBuddyMood(buddyCharacters[n2], 'happy', 0.3);
+            break;
+    }
+
+    // Track evolution
+    trackInteraction(n1);
+    trackInteraction(n2);
+
+    // Trigger chain reactions for nearby spectators
+    var b1 = buddyCharacters[n1], b2 = buddyCharacters[n2];
+    if (b1 && b2) {
+        var center = { x: (b1.x + b2.x) / 2, y: (b1.y + b2.y) / 2 };
+        triggerChainReaction(type, center, [n1, n2]);
+    }
+}
+
+// ===== RELATIONSHIP-MODIFIED INTERACTIONS =====
+function getRelationshipInteractionModifier(n1, n2) {
+    var tier = getRelationshipTier(n1, n2);
+    switch(tier) {
+        case 'soulmates':
+            return { kissBonus: 0.3, fightPenalty: -0.2, uniqueChance: 0.1 };
+        case 'friends':
+            return { kissBonus: 0.1, fightPenalty: -0.1, uniqueChance: 0.05 };
+        case 'rivals':
+            return { kissBonus: -0.1, fightPenalty: 0.15, uniqueChance: 0.03 };
+        case 'enemies':
+            return { kissBonus: -0.2, fightPenalty: 0.3, uniqueChance: 0.05 };
+        default:
+            return { kissBonus: 0, fightPenalty: 0, uniqueChance: 0 };
+    }
+}
+
+// Initialize advanced systems
+function initAdvancedBuddySystems() {
+    loadRelationships();
+    scanUISurfaces();
+    lastChatTimestamp = Date.now();
+    lastPhysicsSpawn = Date.now();
+    lastJobAssign = Date.now();
+
+    // Hook into chat messages for energy tracking
+    if (typeof socket !== 'undefined') {
+        try {
+            socket.on('chatMsg', function(data) {
+                if (data && data.msg) {
+                    onChatMessage(data.msg, data.username);
+                }
+            });
+        } catch(e) {}
     }
 }
 
