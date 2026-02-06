@@ -47,13 +47,14 @@
 })();
 
 /* Removes the buttons for resizing video and user list size toggle */
-const resizes = document.getElementById("resize-video-smaller");
-const resizel = document.getElementById("resize-video-larger");
-resizes.remove();
-resizel.remove();
+var resizes = document.getElementById("resize-video-smaller");
+var resizel = document.getElementById("resize-video-larger");
+if (resizes) resizes.remove();
+if (resizel) resizel.remove();
 
 /* Display none on container-fluid after accepting permissions */
-document.querySelector('.container-fluid').style.display = "none";
+var containerFluid = document.querySelector('.container-fluid');
+if (containerFluid) containerFluid.style.display = "none";
 
 /* Adds scrolling banner to MOTD wrap */
 if (typeof scrollingBannerEnabled !== 'undefined' && scrollingBannerEnabled)
@@ -84,8 +85,8 @@ $("#leftcontent").prepend($("#pollwrap"));
 $("#chatheader").appendTo($("#rightcontent"));
 $("#userlist").appendTo($("#rightcontent"));
 $("#messagebuffer").appendTo($("#rightcontent"));
-const formLine = document.querySelector("div#chatwrap > form");
-formLine.setAttribute("id", "formline");
+var formLine = document.querySelector("div#chatwrap > form");
+if (formLine) formLine.setAttribute("id", "formline");
 $("#formline").appendTo($("#rightcontent"));
 $("#leftcontrols").appendTo($("#rightcontent"));
 
@@ -93,18 +94,20 @@ $("#leftcontrols").appendTo($("#rightcontent"));
 $("#rightcontent").prepend($("<div id='currenttitlewrap'>"));
 $("#videowrap-header").prependTo($("#currenttitlewrap"));
 
-const nodecurrenttitle = document.getElementById("currenttitle");
-const clonecurrenttitle = nodecurrenttitle.cloneNode(true);
+var nodecurrenttitle = document.getElementById("currenttitle");
+var clonecurrenttitle = nodecurrenttitle ? nodecurrenttitle.cloneNode(true) : null;
 
 /* Remove padding on wrap */
-const pagewrap = document.getElementById("wrap");
-pagewrap.setAttribute("style", "padding-bottom: 0px;")
+var pagewrap = document.getElementById("wrap");
+if (pagewrap) pagewrap.setAttribute("style", "padding-bottom: 0px;");
 
 /* Add hint text for chatline and disables spellcheck */
-const chatline = document.getElementById("chatline");
-chatline.removeAttribute("placeholder");
-chatline.setAttribute("placeholder", "Send a message");
-chatline.setAttribute("spellcheck", "false");
+var chatline = document.getElementById("chatline");
+if (chatline) {
+    chatline.removeAttribute("placeholder");
+    chatline.setAttribute("placeholder", "Send a message");
+    chatline.setAttribute("spellcheck", "false");
+}
 
 /* Sets the variable used for mobile chat sizing - uses resize event instead of polling */
 (function() {
@@ -167,12 +170,12 @@ jumpBtn.onclick = function() {
     }
 };
 var rightControls = document.getElementById("rightcontrols");
-rightControls.insertBefore(jumpBtn, rightControls.children[1]);
+if (rightControls) rightControls.insertBefore(jumpBtn, rightControls.children[1]);
 
 /* AFK on unfocus function */
 var VOL_AFK = false;
 var FOCUS_AFK = false;
-setInterval(function() {
+var _afkIntervalId = setInterval(function() {
     if (!VOL_AFK && !FOCUS_AFK) {
         $("#userlist").find('span[class^=userlist]').each(function() {
             if ($(this).html() == CLIENT.name && $(this).css('font-style') == "italic") {
@@ -616,12 +619,34 @@ var BokiTheme = (function() {
 // Expose globally
 window.BokiTheme = BokiTheme;
 
+// Central registry for cleanup of intervals and observers
+var _bokiCleanup = {
+    intervals: {},
+    observers: {},
+    registerInterval: function(name, id) { this.intervals[name] = id; },
+    registerObserver: function(name, obs) { this.observers[name] = obs; },
+    clearInterval: function(name) {
+        if (this.intervals[name]) { clearInterval(this.intervals[name]); delete this.intervals[name]; }
+    },
+    disconnectObserver: function(name) {
+        if (this.observers[name]) { this.observers[name].disconnect(); delete this.observers[name]; }
+    },
+    disconnectAll: function() {
+        var self = this;
+        Object.keys(self.intervals).forEach(function(k) { clearInterval(self.intervals[k]); });
+        Object.keys(self.observers).forEach(function(k) { self.observers[k].disconnect(); });
+        self.intervals = {};
+        self.observers = {};
+    }
+};
+window._bokiCleanup = _bokiCleanup;
+
 /* ========== POPUP SYSTEM ========== */
-var emoteFavorites = JSON.parse(localStorage.getItem('emoteFavorites')) || [];
-var gifFavorites = JSON.parse(localStorage.getItem('gifFavorites')) || [];
-var recentlyUsed = JSON.parse(localStorage.getItem('recentlyUsed')) || [];
-var gifSearchHistory = JSON.parse(localStorage.getItem('gifSearchHistory')) || [];
-var ignoredUsers = JSON.parse(localStorage.getItem('ignoredUsers')) || [];
+var emoteFavorites = BokiTheme.Safe.getStorage('emoteFavorites', []);
+var gifFavorites = BokiTheme.Safe.getStorage('gifFavorites', []);
+var recentlyUsed = BokiTheme.Safe.getStorage('recentlyUsed', []);
+var gifSearchHistory = BokiTheme.Safe.getStorage('gifSearchHistory', []);
+var ignoredUsers = BokiTheme.Safe.getStorage('ignoredUsers', []);
 var currentEmotePage = 0;
 var emotesPerPage = 50;
 var emoteSize = localStorage.getItem('emoteSize') || 'medium';
@@ -670,9 +695,54 @@ var REPLY_STYLE_DEFAULTS = {
 };
 
 // Merge saved settings with defaults to ensure all fields exist
-var textStyleSettings = Object.assign({}, TEXT_STYLE_DEFAULTS, JSON.parse(localStorage.getItem('textStyleSettings') || '{}'));
-var usernameStyleSettings = Object.assign({}, USERNAME_STYLE_DEFAULTS, JSON.parse(localStorage.getItem('usernameStyleSettings') || '{}'));
-var replyStyleSettings = Object.assign({}, REPLY_STYLE_DEFAULTS, JSON.parse(localStorage.getItem('replyStyleSettings') || '{}'));
+var textStyleSettings = Object.assign({}, TEXT_STYLE_DEFAULTS, BokiTheme.Safe.getStorage('textStyleSettings', {}));
+var usernameStyleSettings = Object.assign({}, USERNAME_STYLE_DEFAULTS, BokiTheme.Safe.getStorage('usernameStyleSettings', {}));
+var replyStyleSettings = Object.assign({}, REPLY_STYLE_DEFAULTS, BokiTheme.Safe.getStorage('replyStyleSettings', {}));
+
+// Shared style lookup objects - used by both message and username preview functions
+var STYLE_FONTS = {
+    'comic': 'font-family:"Comic Sans MS",cursive',
+    'impact': 'font-family:Impact,sans-serif',
+    'papyrus': 'font-family:Papyrus,fantasy',
+    'copperplate': 'font-family:Copperplate,fantasy',
+    'brush': 'font-family:"Brush Script MT",cursive',
+    'lucida': 'font-family:"Lucida Handwriting",cursive',
+    'courier': 'font-family:"Courier New",monospace',
+    'times': 'font-family:"Times New Roman",serif',
+    'georgia': 'font-family:Georgia,serif',
+    'trebuchet': 'font-family:"Trebuchet MS",sans-serif',
+    'verdana': 'font-family:Verdana,sans-serif',
+    'gothic': 'font-family:"Century Gothic",sans-serif',
+    'garamond': 'font-family:Garamond,serif',
+    'palatino': 'font-family:"Palatino Linotype",serif',
+    'bookman': 'font-family:"Bookman Old Style",serif',
+    'mono': 'font-family:monospace',
+    'cursive': 'font-family:cursive',
+    'fantasy': 'font-family:fantasy',
+    'system': 'font-family:system-ui',
+    'serif': 'font-family:serif'
+};
+
+var STYLE_GRADIENTS = {
+    'rainbow': 'background:linear-gradient(90deg,#ff0000,#ff7700,#ffff00,#00ff00,#0077ff,#8b00ff);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text',
+    'fire': 'background:linear-gradient(90deg,#ff0000,#ff5500,#ffaa00,#ffcc00);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text',
+    'ocean': 'background:linear-gradient(90deg,#00ffff,#0088ff,#0044aa,#002255);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text',
+    'sunset': 'background:linear-gradient(90deg,#ff6b6b,#ffa500,#ffdb58,#ff6b9d);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text',
+    'neon': 'background:linear-gradient(90deg,#ff00ff,#00ffff,#ff00ff);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text',
+    'forest': 'background:linear-gradient(90deg,#228b22,#32cd32,#90ee90,#006400);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text',
+    'gold': 'background:linear-gradient(90deg,#ffd700,#ffec8b,#daa520,#b8860b);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text',
+    'ice': 'background:linear-gradient(90deg,#e0ffff,#87ceeb,#add8e6,#b0e0e6);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text'
+};
+
+var STYLE_GLOWS = {
+    'glow-white': 'text-shadow:0 0 10px #fff,0 0 20px #fff,0 0 30px #fff',
+    'glow-red': 'text-shadow:0 0 10px #f00,0 0 20px #f00,0 0 30px #f00',
+    'glow-blue': 'text-shadow:0 0 10px #00f,0 0 20px #00f,0 0 30px #0ff',
+    'glow-green': 'text-shadow:0 0 10px #0f0,0 0 20px #0f0,0 0 30px #0f0',
+    'glow-gold': 'text-shadow:0 0 10px #ffd700,0 0 20px #ffa500,0 0 30px #ff8c00',
+    'glow-pink': 'text-shadow:0 0 10px #ff69b4,0 0 20px #ff1493,0 0 30px #ff69b4',
+    'glow-rainbow': 'text-shadow:0 0 5px #f00,0 0 10px #ff0,0 0 15px #0f0,0 0 20px #0ff,0 0 25px #00f,0 0 30px #f0f'
+};
 
 // Helper function to convert hex to rgba
 function hexToRgba(hex, opacity) {
@@ -2012,9 +2082,14 @@ function switchEmoteTab(tab) {
 function showGifSearchHistory() {
     var historyEl = document.getElementById('gif-search-history');
     if (!historyEl || gifSearchHistory.length === 0) return;
-    historyEl.innerHTML = gifSearchHistory.slice(0, 5).map(function(q) {
-        return '<span class="gif-history-item" onclick="searchTenorGifs(\'' + q.replace(/'/g, "\\'") + '\')">' + q + '</span>';
-    }).join('');
+    historyEl.innerHTML = '';
+    gifSearchHistory.slice(0, 5).forEach(function(q) {
+        var span = document.createElement('span');
+        span.className = 'gif-history-item';
+        span.textContent = q;
+        span.onclick = function() { searchTenorGifs(q); };
+        historyEl.appendChild(span);
+    });
     historyEl.style.display = 'flex';
 }
 
@@ -2031,17 +2106,29 @@ function renderRecentlyUsed() {
     recentlyUsed.forEach(function(item) {
         var d = document.createElement('div');
         d.className = 'emote-item' + (item.type === 'gif' ? ' gif-item' : '');
+        var img = document.createElement('img');
+        var favBtn = document.createElement('button');
         if (item.type === 'gif') {
             d.style.width = '100px';
             d.style.height = '100px';
             var isFav = gifFavorites.some(function(g) { return g.url === item.url; });
-            d.innerHTML = '<img src="' + item.preview + '" title="Click to insert"><button class="emote-fav ' + (isFav ? 'faved' : '') + '" onclick="toggleGifFav(\'' + item.url.replace(/'/g, "\\'") + '\',\'' + item.preview.replace(/'/g, "\\'") + '\',event)">★</button>';
-            d.querySelector('img').onclick = function() { insertGif(item.url); };
+            img.src = item.preview;
+            img.title = 'Click to insert';
+            img.onclick = function() { insertGif(item.url); };
+            favBtn.className = 'emote-fav' + (isFav ? ' faved' : '');
+            favBtn.textContent = '\u2605';
+            favBtn.onclick = function(ev) { toggleGifFav(item.url, item.preview, ev); };
         } else {
             var isFav = emoteFavorites.indexOf(item.name) !== -1;
-            d.innerHTML = '<img src="' + item.image + '" title="' + item.name + '"><button class="emote-fav ' + (isFav ? 'faved' : '') + '" onclick="toggleEmoteFav(\'' + item.name.replace(/'/g, "\\'") + '\',event)">★</button>';
-            d.querySelector('img').onclick = function() { insertEmote(item.name); };
+            img.src = item.image;
+            img.title = item.name;
+            img.onclick = function() { insertEmote(item.name); };
+            favBtn.className = 'emote-fav' + (isFav ? ' faved' : '');
+            favBtn.textContent = '\u2605';
+            favBtn.onclick = function(ev) { toggleEmoteFav(item.name, ev); };
         }
+        d.appendChild(img);
+        d.appendChild(favBtn);
         body.appendChild(d);
     });
 
@@ -2068,8 +2155,16 @@ function renderFavorites() {
     favEmotes.forEach(function(e) {
         var d = document.createElement('div');
         d.className = 'emote-item';
-        d.innerHTML = '<img src="' + e.image + '" title="' + e.name + '"><button class="emote-fav faved" onclick="toggleEmoteFav(\'' + e.name.replace(/'/g, "\\'") + '\',event)">★</button>';
-        d.querySelector('img').onclick = function() { insertEmote(e.name); };
+        var img = document.createElement('img');
+        img.src = e.image;
+        img.title = e.name;
+        img.onclick = function() { insertEmote(e.name); };
+        var favBtn = document.createElement('button');
+        favBtn.className = 'emote-fav faved';
+        favBtn.textContent = '\u2605';
+        favBtn.onclick = function(ev) { toggleEmoteFav(e.name, ev); };
+        d.appendChild(img);
+        d.appendChild(favBtn);
         body.appendChild(d);
     });
 
@@ -2079,8 +2174,16 @@ function renderFavorites() {
         d.className = 'emote-item gif-item';
         d.style.width = '100px';
         d.style.height = '100px';
-        d.innerHTML = '<img src="' + gif.preview + '" title="Click to insert"><button class="emote-fav faved" onclick="toggleGifFav(\'' + gif.url.replace(/'/g, "\\'") + '\',\'' + gif.preview.replace(/'/g, "\\'") + '\',event)">★</button>';
-        d.querySelector('img').onclick = function() { insertGif(gif.url); };
+        var img = document.createElement('img');
+        img.src = gif.preview;
+        img.title = 'Click to insert';
+        img.onclick = function() { insertGif(gif.url); };
+        var favBtn = document.createElement('button');
+        favBtn.className = 'emote-fav faved';
+        favBtn.textContent = '\u2605';
+        favBtn.onclick = function(ev) { toggleGifFav(gif.url, gif.preview, ev); };
+        d.appendChild(img);
+        d.appendChild(favBtn);
         body.appendChild(d);
     });
 
@@ -2127,8 +2230,16 @@ function renderEmotes(tab, search) {
             var fav = emoteFavorites.indexOf(e.name) !== -1;
             var d = document.createElement('div');
             d.className = 'emote-item';
-            d.innerHTML = '<img src="' + e.image + '" title="' + e.name + '"><button class="emote-fav ' + (fav ? 'faved' : '') + '" onclick="toggleEmoteFav(\'' + e.name.replace(/'/g, "\\'") + '\',event)">★</button>';
-            d.querySelector('img').onclick = function() { insertEmote(e.name); };
+            var img = document.createElement('img');
+            img.src = e.image;
+            img.title = e.name;
+            img.onclick = function() { insertEmote(e.name); };
+            var favBtn = document.createElement('button');
+            favBtn.className = 'emote-fav' + (fav ? ' faved' : '');
+            favBtn.textContent = '\u2605';
+            favBtn.onclick = function(ev) { toggleEmoteFav(e.name, ev); };
+            d.appendChild(img);
+            d.appendChild(favBtn);
             body.appendChild(d);
         });
     }
@@ -2341,8 +2452,17 @@ function renderGifResults() {
                             (gif.media_formats.gif ? gif.media_formats.gif.url : '');
             var fullUrl = gif.media_formats.gif ? gif.media_formats.gif.url : previewUrl;
             var isFav = gifFavorites.some(function(g) { return g.url === fullUrl; });
-            d.innerHTML = '<img src="' + previewUrl + '" title="Click to insert" style="max-width:90px;max-height:90px;object-fit:contain;"><button class="emote-fav ' + (isFav ? 'faved' : '') + '" onclick="toggleGifFav(\'' + fullUrl.replace(/'/g, "\\'") + '\',\'' + previewUrl.replace(/'/g, "\\'") + '\',event)">★</button>';
-            d.querySelector('img').onclick = function() { insertGif(fullUrl); };
+            var img = document.createElement('img');
+            img.src = previewUrl;
+            img.title = 'Click to insert';
+            img.style.cssText = 'max-width:90px;max-height:90px;object-fit:contain;';
+            img.onclick = function() { insertGif(fullUrl); };
+            var favBtn = document.createElement('button');
+            favBtn.className = 'emote-fav' + (isFav ? ' faved' : '');
+            favBtn.textContent = '\u2605';
+            favBtn.onclick = function(ev) { toggleGifFav(fullUrl, previewUrl, ev); };
+            d.appendChild(img);
+            d.appendChild(favBtn);
             // GIF preview on hover
             d.onmouseenter = function() { showGifPreview(previewUrl); };
             d.onmouseleave = function() { hideGifPreview(); };
@@ -2409,18 +2529,24 @@ function showFavoritesDropdown() {
         dd.style.bottom = (window.innerHeight - r.top + 8) + 'px';
         dd.style.left = Math.max(10, r.left) + 'px';
     }
-    var html = '<div class="fav-grid">';
     if (emoteFavorites.length === 0) {
-        html = '<div style="color:#888;padding:20px;text-align:center">No favorites yet!<br>Open emotes and click ★</div>';
+        dd.innerHTML = '<div style="color:#888;padding:20px;text-align:center">No favorites yet!<br>Open emotes and click \u2605</div>';
     } else {
+        var grid = document.createElement('div');
+        grid.className = 'fav-grid';
         var emotes = (CHANNEL && CHANNEL.emotes) ? CHANNEL.emotes : [];
         emoteFavorites.forEach(function(name) {
             var em = emotes.find(function(e) { return e.name === name; });
-            if (em) html += '<img src="' + em.image + '" title="' + em.name + '" onclick="insertEmote(\'' + em.name.replace(/'/g, "\\'") + '\');closeFavoritesDropdown();">';
+            if (em) {
+                var img = document.createElement('img');
+                img.src = em.image;
+                img.title = em.name;
+                img.onclick = function() { insertEmote(em.name); closeFavoritesDropdown(); };
+                grid.appendChild(img);
+            }
         });
-        html += '</div>';
+        dd.appendChild(grid);
     }
-    dd.innerHTML = html;
     document.body.appendChild(dd);
     // Small delay to allow DOM to update before adding visible class
     setTimeout(function() { dd.classList.add('visible'); }, 10);
@@ -3248,57 +3374,38 @@ function applyMyBuddySettings() {
 
 // ========== END BUDDY SETTINGS POPUP ==========
 
-function selectStyleColor(c) {
-    // Clear gradient and custom color if selecting solid color
-    if (textStyleSettings.color === c) {
-        textStyleSettings.color = null;
+// Parameterized style property selector - used by both message and username styling
+function _selectStyleProp(settings, prop, value, clearProps, saveFn, tab) {
+    if (settings[prop] === value) {
+        settings[prop] = null;
     } else {
-        textStyleSettings.color = c;
-        textStyleSettings.gradient = null; // Can't have both
-        textStyleSettings.customColor = null; // Clear custom too
+        settings[prop] = value;
+        if (clearProps) {
+            clearProps.forEach(function(p) { settings[p] = null; });
+        }
     }
-    saveStyleSettings();
-    renderStyleTabContent('message');
-    updateStylePreview();
+    saveFn();
+    renderStyleTabContent(tab);
+}
+
+function selectStyleColor(c) {
+    _selectStyleProp(textStyleSettings, 'color', c, ['gradient', 'customColor'], function() { saveStyleSettings(); updateStylePreview(); }, 'message');
 }
 
 function selectStyleGradient(g) {
-    if (textStyleSettings.gradient === g) {
-        textStyleSettings.gradient = null;
-    } else {
-        textStyleSettings.gradient = g;
-        textStyleSettings.color = null; // Can't have both
-        textStyleSettings.customColor = null; // Clear custom too
-    }
-    saveStyleSettings();
-    renderStyleTabContent('message');
-    updateStylePreview();
+    _selectStyleProp(textStyleSettings, 'gradient', g, ['color', 'customColor'], function() { saveStyleSettings(); updateStylePreview(); }, 'message');
 }
 
 function selectStyleGlow(g) {
-    if (textStyleSettings.glow === g) {
-        textStyleSettings.glow = null;
-    } else {
-        textStyleSettings.glow = g;
-        textStyleSettings.customGlow = null; // Clear custom too
-    }
-    saveStyleSettings();
-    renderStyleTabContent('message');
-    updateStylePreview();
+    _selectStyleProp(textStyleSettings, 'glow', g, ['customGlow'], function() { saveStyleSettings(); updateStylePreview(); }, 'message');
 }
 
 function selectStyleFont(f) {
-    textStyleSettings.font = (textStyleSettings.font === f) ? null : f;
-    saveStyleSettings();
-    renderStyleTabContent('message');
-    updateStylePreview();
+    _selectStyleProp(textStyleSettings, 'font', f, null, function() { saveStyleSettings(); updateStylePreview(); }, 'message');
 }
 
 function selectStyleAnimation(a) {
-    textStyleSettings.animation = (textStyleSettings.animation === a) ? null : a;
-    saveStyleSettings();
-    renderStyleTabContent('message');
-    updateStylePreview();
+    _selectStyleProp(textStyleSettings, 'animation', a, null, function() { saveStyleSettings(); updateStylePreview(); }, 'message');
 }
 
 function toggleStyleEffect(eff) {
@@ -3457,68 +3564,27 @@ function refreshStyleBtns() {
 function updateStylePreview() {
     var p = document.getElementById('textstyle-preview');
     if (!p) return;
-    
+
     var s = [];
     var classes = [];
-    
+
     // Font
     if (textStyleSettings.font) {
-        var fontStyles = {
-            'comic': 'font-family:"Comic Sans MS",cursive',
-            'impact': 'font-family:Impact,sans-serif',
-            'papyrus': 'font-family:Papyrus,fantasy',
-            'copperplate': 'font-family:Copperplate,fantasy',
-            'brush': 'font-family:"Brush Script MT",cursive',
-            'lucida': 'font-family:"Lucida Handwriting",cursive',
-            'courier': 'font-family:"Courier New",monospace',
-            'times': 'font-family:"Times New Roman",serif',
-            'georgia': 'font-family:Georgia,serif',
-            'trebuchet': 'font-family:"Trebuchet MS",sans-serif',
-            'verdana': 'font-family:Verdana,sans-serif',
-            'gothic': 'font-family:"Century Gothic",sans-serif',
-            'garamond': 'font-family:Garamond,serif',
-            'palatino': 'font-family:"Palatino Linotype",serif',
-            'bookman': 'font-family:"Bookman Old Style",serif',
-            'mono': 'font-family:monospace',
-            'cursive': 'font-family:cursive',
-            'fantasy': 'font-family:fantasy',
-            'system': 'font-family:system-ui',
-            'serif': 'font-family:serif'
-        };
-        if (fontStyles[textStyleSettings.font]) s.push(fontStyles[textStyleSettings.font]);
+        if (STYLE_FONTS[textStyleSettings.font]) s.push(STYLE_FONTS[textStyleSettings.font]);
     }
-    
+
     // Color or gradient or custom color
     if (textStyleSettings.gradient) {
-        var gradientStyles = {
-            'rainbow': 'background:linear-gradient(90deg,#ff0000,#ff7700,#ffff00,#00ff00,#0077ff,#8b00ff);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text',
-            'fire': 'background:linear-gradient(90deg,#ff0000,#ff5500,#ffaa00,#ffcc00);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text',
-            'ocean': 'background:linear-gradient(90deg,#00ffff,#0088ff,#0044aa,#002255);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text',
-            'sunset': 'background:linear-gradient(90deg,#ff6b6b,#ffa500,#ffdb58,#ff6b9d);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text',
-            'neon': 'background:linear-gradient(90deg,#ff00ff,#00ffff,#ff00ff);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text',
-            'forest': 'background:linear-gradient(90deg,#228b22,#32cd32,#90ee90,#006400);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text',
-            'gold': 'background:linear-gradient(90deg,#ffd700,#ffec8b,#daa520,#b8860b);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text',
-            'ice': 'background:linear-gradient(90deg,#e0ffff,#87ceeb,#add8e6,#b0e0e6);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text'
-        };
-        if (gradientStyles[textStyleSettings.gradient]) s.push(gradientStyles[textStyleSettings.gradient]);
+        if (STYLE_GRADIENTS[textStyleSettings.gradient]) s.push(STYLE_GRADIENTS[textStyleSettings.gradient]);
     } else if (textStyleSettings.color) {
         s.push('color:' + (textStyleSettings.color === 'blue' ? '#55f' : textStyleSettings.color));
     } else if (textStyleSettings.customColor) {
         s.push('color:#' + textStyleSettings.customColor);
     }
-    
+
     // Glow or custom glow
     if (textStyleSettings.glow) {
-        var glowStyles = {
-            'glow-white': 'text-shadow:0 0 10px #fff,0 0 20px #fff,0 0 30px #fff',
-            'glow-red': 'text-shadow:0 0 10px #f00,0 0 20px #f00,0 0 30px #f00',
-            'glow-blue': 'text-shadow:0 0 10px #00f,0 0 20px #00f,0 0 30px #0ff',
-            'glow-green': 'text-shadow:0 0 10px #0f0,0 0 20px #0f0,0 0 30px #0f0',
-            'glow-gold': 'text-shadow:0 0 10px #ffd700,0 0 20px #ffa500,0 0 30px #ff8c00',
-            'glow-pink': 'text-shadow:0 0 10px #ff69b4,0 0 20px #ff1493,0 0 30px #ff69b4',
-            'glow-rainbow': 'text-shadow:0 0 5px #f00,0 0 10px #ff0,0 0 15px #0f0,0 0 20px #0ff,0 0 25px #00f,0 0 30px #f0f'
-        };
-        if (glowStyles[textStyleSettings.glow]) s.push(glowStyles[textStyleSettings.glow]);
+        if (STYLE_GLOWS[textStyleSettings.glow]) s.push(STYLE_GLOWS[textStyleSettings.glow]);
     } else if (textStyleSettings.customGlow) {
         s.push('text-shadow:0 0 10px #' + textStyleSettings.customGlow + ',0 0 20px #' + textStyleSettings.customGlow + ',0 0 30px #' + textStyleSettings.customGlow);
     }
@@ -4130,7 +4196,7 @@ function fixUserlistLayout() {
     updateDropdownContent();
     
     // Update periodically in case users join/leave
-    setInterval(updateDropdownContent, 5000);
+    var _userlistIntervalId = setInterval(updateDropdownContent, 5000);
     
     // Toggle on chatheader click (but not on dropdown or user items)
     $('#chatheader').on('click', function(e) {
@@ -4890,6 +4956,7 @@ function initReplySystem() {
     var msgBuffer = document.getElementById('messagebuffer');
     if (msgBuffer) {
         replyObserver.observe(msgBuffer, { childList: true });
+        _bokiCleanup.registerObserver('replyObserver', replyObserver);
     }
 }
 
@@ -4899,15 +4966,7 @@ $(document).ready(function() {
 });
 
 // USERNAME STYLING SYSTEM
-var usernameStyleSettings = JSON.parse(localStorage.getItem('usernameStyleSettings')) || {
-    enabled: false,
-    color: null,
-    gradient: null,
-    glow: null,
-    animation: null,
-    font: null,
-    bold: false
-};
+// usernameStyleSettings is initialized at the top of the file with BokiTheme.Safe.getStorage
 
 function getMyUsername() {
     return (typeof CLIENT !== 'undefined' && CLIENT.name) ? CLIENT.name : null;
@@ -5064,50 +5123,23 @@ function saveUsernameStyleSettings() {
 }
 
 function selectUsernameColor(c) {
-    if (usernameStyleSettings.color === c) {
-        usernameStyleSettings.color = null;
-    } else {
-        usernameStyleSettings.color = c;
-        usernameStyleSettings.gradient = null;
-        usernameStyleSettings.customColor = null;
-    }
-    saveUsernameStyleSettings();
-    renderStyleTabContent('username');
+    _selectStyleProp(usernameStyleSettings, 'color', c, ['gradient', 'customColor'], saveUsernameStyleSettings, 'username');
 }
 
 function selectUsernameGradient(g) {
-    if (usernameStyleSettings.gradient === g) {
-        usernameStyleSettings.gradient = null;
-    } else {
-        usernameStyleSettings.gradient = g;
-        usernameStyleSettings.color = null;
-        usernameStyleSettings.customColor = null;
-    }
-    saveUsernameStyleSettings();
-    renderStyleTabContent('username');
+    _selectStyleProp(usernameStyleSettings, 'gradient', g, ['color', 'customColor'], saveUsernameStyleSettings, 'username');
 }
 
 function selectUsernameGlow(g) {
-    if (usernameStyleSettings.glow === g) {
-        usernameStyleSettings.glow = null;
-    } else {
-        usernameStyleSettings.glow = g;
-        usernameStyleSettings.customGlow = null;
-    }
-    saveUsernameStyleSettings();
-    renderStyleTabContent('username');
+    _selectStyleProp(usernameStyleSettings, 'glow', g, ['customGlow'], saveUsernameStyleSettings, 'username');
 }
 
 function selectUsernameAnimation(a) {
-    usernameStyleSettings.animation = (usernameStyleSettings.animation === a) ? null : a;
-    saveUsernameStyleSettings();
-    renderStyleTabContent('username');
+    _selectStyleProp(usernameStyleSettings, 'animation', a, null, saveUsernameStyleSettings, 'username');
 }
 
 function selectUsernameFont(f) {
-    usernameStyleSettings.font = (usernameStyleSettings.font === f) ? null : f;
-    saveUsernameStyleSettings();
-    renderStyleTabContent('username');
+    _selectStyleProp(usernameStyleSettings, 'font', f, null, saveUsernameStyleSettings, 'username');
 }
 
 function toggleUsernameBold() {
@@ -5168,66 +5200,25 @@ function refreshUsernameStyleBtns() {
 function updateUsernamePreview() {
     var p = document.getElementById('username-preview');
     if (!p) return;
-    
+
     var myName = getMyUsername() || 'YourName';
     var s = [];
-    
+
     // Font
     if (usernameStyleSettings.font) {
-        var fontStyles = {
-            'comic': 'font-family:"Comic Sans MS",cursive',
-            'impact': 'font-family:Impact,sans-serif',
-            'papyrus': 'font-family:Papyrus,fantasy',
-            'copperplate': 'font-family:Copperplate,fantasy',
-            'brush': 'font-family:"Brush Script MT",cursive',
-            'lucida': 'font-family:"Lucida Handwriting",cursive',
-            'courier': 'font-family:"Courier New",monospace',
-            'times': 'font-family:"Times New Roman",serif',
-            'georgia': 'font-family:Georgia,serif',
-            'trebuchet': 'font-family:"Trebuchet MS",sans-serif',
-            'verdana': 'font-family:Verdana,sans-serif',
-            'gothic': 'font-family:"Century Gothic",sans-serif',
-            'garamond': 'font-family:Garamond,serif',
-            'palatino': 'font-family:"Palatino Linotype",serif',
-            'bookman': 'font-family:"Bookman Old Style",serif',
-            'mono': 'font-family:monospace',
-            'cursive': 'font-family:cursive',
-            'fantasy': 'font-family:fantasy',
-            'system': 'font-family:system-ui',
-            'serif': 'font-family:serif'
-        };
-        if (fontStyles[usernameStyleSettings.font]) s.push(fontStyles[usernameStyleSettings.font]);
+        if (STYLE_FONTS[usernameStyleSettings.font]) s.push(STYLE_FONTS[usernameStyleSettings.font]);
     }
-    
+
     // Color or gradient
     if (usernameStyleSettings.gradient) {
-        var gradientStyles = {
-            'rainbow': 'background:linear-gradient(90deg,#ff0000,#ff7700,#ffff00,#00ff00,#0077ff,#8b00ff);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text',
-            'fire': 'background:linear-gradient(90deg,#ff0000,#ff5500,#ffaa00,#ffcc00);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text',
-            'ocean': 'background:linear-gradient(90deg,#00ffff,#0088ff,#0044aa,#002255);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text',
-            'sunset': 'background:linear-gradient(90deg,#ff6b6b,#ffa500,#ffdb58,#ff6b9d);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text',
-            'neon': 'background:linear-gradient(90deg,#ff00ff,#00ffff,#ff00ff);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text',
-            'forest': 'background:linear-gradient(90deg,#228b22,#32cd32,#90ee90,#006400);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text',
-            'gold': 'background:linear-gradient(90deg,#ffd700,#ffec8b,#daa520,#b8860b);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text',
-            'ice': 'background:linear-gradient(90deg,#e0ffff,#87ceeb,#add8e6,#b0e0e6);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text'
-        };
-        if (gradientStyles[usernameStyleSettings.gradient]) s.push(gradientStyles[usernameStyleSettings.gradient]);
+        if (STYLE_GRADIENTS[usernameStyleSettings.gradient]) s.push(STYLE_GRADIENTS[usernameStyleSettings.gradient]);
     } else if (usernameStyleSettings.color) {
         s.push('color:' + (usernameStyleSettings.color === 'blue' ? '#55f' : usernameStyleSettings.color));
     }
-    
+
     // Glow
     if (usernameStyleSettings.glow) {
-        var glowStyles = {
-            'glow-white': 'text-shadow:0 0 10px #fff,0 0 20px #fff,0 0 30px #fff',
-            'glow-red': 'text-shadow:0 0 10px #f00,0 0 20px #f00,0 0 30px #f00',
-            'glow-blue': 'text-shadow:0 0 10px #00f,0 0 20px #00f,0 0 30px #0ff',
-            'glow-green': 'text-shadow:0 0 10px #0f0,0 0 20px #0f0,0 0 30px #0f0',
-            'glow-gold': 'text-shadow:0 0 10px #ffd700,0 0 20px #ffa500,0 0 30px #ff8c00',
-            'glow-pink': 'text-shadow:0 0 10px #ff69b4,0 0 20px #ff1493,0 0 30px #ff69b4',
-            'glow-rainbow': 'text-shadow:0 0 5px #f00,0 0 10px #ff0,0 0 15px #0f0,0 0 20px #0ff,0 0 25px #00f,0 0 30px #f0f'
-        };
-        if (glowStyles[usernameStyleSettings.glow]) s.push(glowStyles[usernameStyleSettings.glow]);
+        if (STYLE_GLOWS[usernameStyleSettings.glow]) s.push(STYLE_GLOWS[usernameStyleSettings.glow]);
     }
     
     // Bold
@@ -5319,6 +5310,7 @@ var gifObserver = new MutationObserver(function(mutations) {
 var msgBuffer = document.getElementById('messagebuffer');
 if (msgBuffer) {
     gifObserver.observe(msgBuffer, { childList: true, subtree: true });
+    _bokiCleanup.registerObserver('gifObserver', gifObserver);
 }
 
 // Register formatChatMsg with dispatcher (priority 40 - runs after sync checks)
@@ -5836,6 +5828,7 @@ function initCurrentTitleObserver() {
         characterData: true,
         subtree: true
     });
+    _bokiCleanup.registerObserver('currentTitleObserver', currentTitleObserver);
 
     // Initial update
     updateCurrentTitleDisplay();
@@ -6150,7 +6143,8 @@ function initPlaylistRenameObserver() {
     });
     
     observer.observe(queue, { childList: true });
-    
+    _bokiCleanup.registerObserver('playlistRenameObserver', observer);
+
     // Debounced playlist update to prevent scroll bounce
     var playlistUpdateTimer = null;
     function debouncedPlaylistUpdate(delay) {
@@ -6163,7 +6157,9 @@ function initPlaylistRenameObserver() {
     }
 
     // Also listen for playlist socket events to refresh names
-    if (typeof socket !== 'undefined') {
+    // Use flag to prevent duplicate handler registration on reconnect
+    if (typeof socket !== 'undefined' && !window._bokiPlaylistSocketInit) {
+        window._bokiPlaylistSocketInit = true;
         socket.on('playlist', function() {
             debouncedPlaylistUpdate(600);
         });
@@ -6239,6 +6235,11 @@ function initPlaylistRename() {
         // Start the observer after names are loaded
         initPlaylistRenameObserver();
         // Also start the current title observer
+        initCurrentTitleObserver();
+    }).catch(function(err) {
+        console.error('[PlaylistRename] Failed to fetch names, continuing with defaults:', err);
+        // Still initialize observers so rename UI works even if fetch failed
+        initPlaylistRenameObserver();
         initCurrentTitleObserver();
     });
 }
@@ -9253,18 +9254,21 @@ function initBuddySyncListener() {
     // CRITICAL: Add DIRECT socket.on handler as backup
     // The dispatcher might miss messages due to timing issues
     // This ensures buddy sync works regardless of dispatcher state
-    if (typeof socket !== 'undefined' && socket.on) {
+    // Use flag to prevent duplicate handler registration on reconnect
+    if (typeof socket !== 'undefined' && socket.on && !window._bokiBuddySyncSocketInit) {
+        window._bokiBuddySyncSocketInit = true;
         socket.on('chatMsg', function(data) {
             if (data && data.msg && isBuddySyncMessage(data.msg)) {
                 processSyncMessage(data.msg, 'direct-socket');
             }
         });
         console.log('[BuddySync] Direct socket handler registered');
-    } else {
+    } else if (!window._bokiBuddySyncSocketInit) {
         console.log('[BuddySync] WARNING: socket not available for direct handler');
         // Retry after delay
         setTimeout(function() {
-            if (typeof socket !== 'undefined' && socket.on) {
+            if (typeof socket !== 'undefined' && socket.on && !window._bokiBuddySyncSocketInit) {
+                window._bokiBuddySyncSocketInit = true;
                 socket.on('chatMsg', function(data) {
                     if (data && data.msg && isBuddySyncMessage(data.msg)) {
                         processSyncMessage(data.msg, 'direct-socket-delayed');
@@ -9312,6 +9316,7 @@ function initBuddySyncListener() {
             });
         });
         observer.observe(msgBuffer, { childList: true, subtree: false });
+        _bokiCleanup.registerObserver('buddySyncMsgObserver', observer);
     }
 
     // NND Chat Cleanup - ONLY target NND overlay elements, NOT chat elements
@@ -9339,9 +9344,10 @@ function initBuddySyncListener() {
         });
     });
     nndObserver.observe(document.body, { childList: true, subtree: false }); // Only direct children
+    _bokiCleanup.registerObserver('nndObserver', nndObserver);
 
     // Periodic cleanup for NND overlay - be very targeted
-    setInterval(function() {
+    var _nndCleanupIntervalId = setInterval(function() {
         // Only look at direct children of body that aren't main UI containers
         var bodyChildren = document.body.children;
         for (var i = bodyChildren.length - 1; i >= 0; i--) {
@@ -9726,12 +9732,13 @@ function initConnectedBuddies() {
     }, 3000);
 
     // Rescan periodically
-    setInterval(scanChatForWords, 3000);
+    var _buddyWordScanIntervalId = setInterval(scanChatForWords, 3000);
 
     observeUserlistChanges();
     observeChatMessages();
 
-    if (typeof socket !== 'undefined') {
+    if (typeof socket !== 'undefined' && !window._bokiBuddyUserSocketInit) {
+        window._bokiBuddyUserSocketInit = true;
         socket.on('addUser', function(data) { if (data.name) addBuddy(data.name); });
         socket.on('userLeave', function(data) { if (data.name) removeBuddy(data.name); });
         socket.on('userlist', function() { setTimeout(syncBuddiesWithUserlist, 500); });
@@ -10110,6 +10117,7 @@ function observeUserlistChanges() {
         window.buddySyncTimeout = setTimeout(syncBuddiesWithUserlist, 300);
     });
     observer.observe(userlist, { childList: true, subtree: true });
+    _bokiCleanup.registerObserver('buddyUserlistObserver', observer);
 }
 
 function observeChatMessages() {
@@ -10158,6 +10166,7 @@ function observeChatMessages() {
         }
     });
     observer.observe(msgBuffer, { childList: true });
+    _bokiCleanup.registerObserver('buddyChatObserver', observer);
 }
 
 function addBuddy(username) {
@@ -11151,6 +11160,11 @@ function escapeHtml(text) {
     var div = document.createElement('div');
     div.textContent = text;
     return div.innerHTML;
+}
+
+// Escape a string for safe use in HTML attributes (single/double quotes, &, <, >)
+function escapeAttr(str) {
+    return String(str).replace(/&/g, '&amp;').replace(/'/g, '&#39;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\\/g, '&#92;');
 }
 
 // ========== MADLIB CONVERSATION SYSTEM ==========
