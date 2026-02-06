@@ -8731,6 +8731,12 @@ function handlePusherBuddySettings(data) {
 }
 
 function handlePusherBuddyAction(data) {
+    // Extended actions carry extra fields beyond user1/user2/action/seed
+    if (data.action === 'group' || data.action === 'hunt' || data.action === 'job' ||
+        data.action === 'evolve' || data.action === 'physics' || data.action === 'rel') {
+        handleSyncedAdvancedAction(data);
+        return;
+    }
     handleSyncedInteraction(data.user1, data.user2, data.action, data.seed,
         data.pos1 ? data.pos1.split(',').map(Number) : null,
         data.pos2 ? data.pos2.split(',').map(Number) : null);
@@ -8872,6 +8878,141 @@ function broadcastInteraction(user1, user2, interactionType, seed) {
     }
 }
 
+// Broadcast an advanced action (group, hunt, job, evolve, physics, rel)
+// Uses Pusher with chat BACT fallback. Extra data sent as JSON in 'extra' field.
+function broadcastAdvancedAction(actionType, extraData) {
+    var myName = getMyUsername();
+    if (!myName) return;
+
+    var payload = {
+        user1: myName,
+        user2: extraData.user2 || '',
+        action: actionType,
+        seed: extraData.seed || Math.floor(Math.random() * 1000000),
+        extra: extraData
+    };
+
+    // Try Pusher first
+    if (pusherEnabled && pusherChannel) {
+        try {
+            pusherChannel.trigger('client-buddy-action', payload);
+            return;
+        } catch (e) {
+            console.log('[Pusher] Advanced action trigger failed, using chat fallback');
+        }
+    }
+
+    // Chat fallback: encode extra data as base64 JSON
+    var extraStr = '';
+    try { extraStr = btoa(JSON.stringify(extraData)); } catch(e) { return; }
+    var hiddenMsg = '\u200B\u200CBACT:' + myName + ':' + (extraData.user2 || '_') + ':' + actionType + ':' + payload.seed + ':' + extraStr + ':_:BACT\u200B\u200C';
+    // Check message length - critical for Cytube
+    if (hiddenMsg.length > 235) {
+        console.log('[BuddySync] Advanced action too long for chat:', hiddenMsg.length, 'skipping chat fallback');
+        return;
+    }
+    if (typeof socket !== 'undefined' && socket.emit) {
+        socket.emit('chatMsg', { msg: hiddenMsg, meta: {} });
+    }
+}
+
+// Handle incoming advanced actions (from Pusher or parsed chat)
+function handleSyncedAdvancedAction(data) {
+    var myName = getMyUsername();
+    if (data.user1 === myName) return; // Don't process own actions
+
+    var extra = data.extra || {};
+    switch(data.action) {
+        case 'group':
+            handleSyncedGroupInteraction(extra);
+            break;
+        case 'hunt':
+            handleSyncedHunt(extra);
+            break;
+        case 'job':
+            handleSyncedJob(extra);
+            break;
+        case 'evolve':
+            handleSyncedEvolution(extra);
+            break;
+        case 'physics':
+            handleSyncedPhysicsSpawn(extra);
+            break;
+        case 'rel':
+            handleSyncedRelationship(extra);
+            break;
+    }
+}
+
+// --- Synced Group Interaction ---
+function handleSyncedGroupInteraction(extra) {
+    var participants = extra.participants;
+    var groupType = extra.groupType;
+    if (!participants || !groupType) return;
+
+    // Verify participants exist
+    var valid = participants.filter(function(n) { return buddyCharacters[n]; });
+    if (valid.length < 3) return;
+
+    // Use startGroupInteraction with fromSync=true to avoid re-broadcasting
+    startGroupInteraction(valid, true, groupType);
+}
+
+// --- Synced Hunt ---
+function handleSyncedHunt(extra) {
+    var predator = extra.predator;
+    var prey = extra.prey;
+    if (!predator || !prey) return;
+    if (!buddyCharacters[predator] || !buddyCharacters[prey]) return;
+    startHunt(predator, prey, true);
+}
+
+// --- Synced Job ---
+function handleSyncedJob(extra) {
+    var worker = extra.worker;
+    var jobName = extra.jobName;
+    if (!worker || !jobName) return;
+    var b = buddyCharacters[worker];
+    if (!b || b.interacting || b.job) return;
+
+    var job = BUDDY_JOBS.find(function(j) { return j.name === jobName; });
+    if (!job) return;
+
+    if (job.init && !job.init(b)) return;
+    b.job = job;
+    b.jobTimer = BUDDY_CONFIG.jobDuration;
+    showExpression(b, job.emoji);
+    showSpeechBubble(b, 'Time for work!', 'flirt');
+    b.element.classList.add('buddy-job-' + job.name);
+}
+
+// --- Synced Evolution ---
+function handleSyncedEvolution(extra) {
+    var username = extra.username;
+    var tier = extra.tier;
+    if (!username || tier === undefined) return;
+    if (!buddyEvolutionData[username]) {
+        buddyEvolutionData[username] = { interactions: 0, tier: 0 };
+    }
+    buddyEvolutionData[username].tier = tier;
+    applyEvolutionTier(username, tier);
+}
+
+// --- Synced Physics Spawn ---
+function handleSyncedPhysicsSpawn(extra) {
+    var zone = getBuddyZone();
+    spawnPhysicsObject(zone, true, extra);
+}
+
+// --- Synced Relationship ---
+function handleSyncedRelationship(extra) {
+    var n1 = extra.n1;
+    var n2 = extra.n2;
+    var delta = extra.delta;
+    if (!n1 || !n2 || delta === undefined) return;
+    updateRelationship(n1, n2, delta, true);
+}
+
 // Check if a message is a buddy sync message
 function isBuddySyncMessage(msgText) {
     if (!msgText) return false;
@@ -8984,14 +9125,26 @@ function parseBuddySyncMessage(msgText) {
         var user2 = actionMatch[2];
         var actionType = actionMatch[3];
         var seed = parseInt(actionMatch[4]);
-        var pos1 = actionMatch[5].split(',').map(Number);
-        var pos2 = actionMatch[6].split(',').map(Number);
 
         // Only process if we didn't initiate this (to avoid double-triggering)
         var myName = getMyUsername();
         if (user1 !== myName) {
-            console.log('[BuddySync] ✓ SUCCESS: Received action', actionType, 'between', user1, 'and', user2);
-            handleSyncedInteraction(user1, user2, actionType, seed, pos1, pos2);
+            // Check if this is an advanced action (extra data is base64 JSON, not coordinates)
+            var ADVANCED_ACTIONS = ['group', 'hunt', 'job', 'evolve', 'physics', 'rel'];
+            if (ADVANCED_ACTIONS.indexOf(actionType) !== -1) {
+                try {
+                    var extraJson = atob(actionMatch[5]);
+                    var extra = JSON.parse(extraJson);
+                    handleSyncedAdvancedAction({ user1: user1, action: actionType, seed: seed, extra: extra });
+                } catch(e) {
+                    console.log('[BuddySync] Failed to parse advanced action:', e);
+                }
+            } else {
+                var pos1 = actionMatch[5].split(',').map(Number);
+                var pos2 = actionMatch[6].split(',').map(Number);
+                console.log('[BuddySync] ✓ SUCCESS: Received action', actionType, 'between', user1, 'and', user2);
+                handleSyncedInteraction(user1, user2, actionType, seed, pos1, pos2);
+            }
         }
         return true;
     }
@@ -13177,11 +13330,16 @@ function getRelationship(n1, n2) {
     return buddyRelationships[getRelationshipKey(n1, n2)] || 0;
 }
 
-function updateRelationship(n1, n2, delta) {
+function updateRelationship(n1, n2, delta, fromSync) {
     var key = getRelationshipKey(n1, n2);
     var val = (buddyRelationships[key] || 0) + delta;
     buddyRelationships[key] = Math.max(-100, Math.min(100, val));
     buddyEventBus.emit('relationshipChanged', { n1: n1, n2: n2, value: buddyRelationships[key], delta: delta });
+    // Broadcast as safety net - only master sends, to avoid all clients broadcasting same delta
+    // Primary sync is deterministic: all clients run same interactions = same updates
+    if (!fromSync && isInteractionMaster()) {
+        broadcastAdvancedAction('rel', { n1: n1, n2: n2, delta: delta });
+    }
 }
 
 function getRelationshipTier(n1, n2) {
@@ -13538,15 +13696,31 @@ var PHYSICS_OBJ_TYPES = [
     { emoji: '🍎', name: 'apple', bounce: 0.4, mass: 0.8 }
 ];
 
-function spawnPhysicsObject(zone) {
+function spawnPhysicsObject(zone, fromSync, syncData) {
     if (physicsObjects.length >= BUDDY_CONFIG.physicsObjMaxCount) return;
-    var type = PHYSICS_OBJ_TYPES[Math.floor(Math.random() * PHYSICS_OBJ_TYPES.length)];
+
+    var typeIdx, nx, nvx;
+    if (fromSync && syncData) {
+        // Use synced data for deterministic spawn
+        typeIdx = syncData.typeIdx;
+        nx = syncData.nx;
+        nvx = syncData.nvx;
+    } else {
+        // Generate spawn data and broadcast
+        typeIdx = Math.floor(Math.random() * PHYSICS_OBJ_TYPES.length);
+        nx = Math.random(); // Normalized x position (0-1)
+        nvx = (Math.random() - 0.5) * 3;
+        broadcastAdvancedAction('physics', { typeIdx: typeIdx, nx: nx, nvx: nvx });
+    }
+
+    if (typeIdx < 0 || typeIdx >= PHYSICS_OBJ_TYPES.length) return;
+    var type = PHYSICS_OBJ_TYPES[typeIdx];
 
     var obj = {
         type: type,
-        x: zone.left + Math.random() * (zone.right - zone.left),
+        x: zone.left + nx * (zone.right - zone.left),
         y: zone.top,
-        vx: (Math.random() - 0.5) * 3,
+        vx: nvx,
         vy: 0,
         age: 0,
         maxAge: 30000, // Despawn after 30s
@@ -13657,8 +13831,8 @@ function checkMultiBuddyInteraction(names) {
 
 var GROUP_INTERACTIONS = ['huddle', 'groupDance', 'riot', 'summoning'];
 
-function startGroupInteraction(participants) {
-    var type = GROUP_INTERACTIONS[Math.floor(Math.random() * GROUP_INTERACTIONS.length)];
+function startGroupInteraction(participants, fromSync, syncedType) {
+    var type = syncedType || GROUP_INTERACTIONS[Math.floor(Math.random() * GROUP_INTERACTIONS.length)];
     var center = { x: 0, y: 0 };
     participants.forEach(function(name) {
         var b = buddyCharacters[name];
@@ -13666,6 +13840,15 @@ function startGroupInteraction(participants) {
     });
     center.x /= participants.length;
     center.y /= participants.length;
+
+    // Broadcast to other clients (only if we initiated, not from sync)
+    if (!fromSync) {
+        broadcastAdvancedAction('group', {
+            participants: participants,
+            groupType: type,
+            seed: Math.floor(Math.random() * 1000000)
+        });
+    }
 
     switch(type) {
         case 'huddle':
@@ -14013,6 +14196,9 @@ function assignBuddyJobs(names) {
     if (Date.now() - lastJobAssign < BUDDY_CONFIG.jobAssignInterval) return;
     lastJobAssign = Date.now();
 
+    // Only master assigns jobs to prevent desync
+    if (!isInteractionMaster()) return;
+
     // Only assign to idle, non-interacting buddies without jobs
     var available = names.filter(function(name) {
         var b = buddyCharacters[name];
@@ -14035,6 +14221,9 @@ function assignBuddyJobs(names) {
     showExpression(b, job.emoji);
     showSpeechBubble(b, 'Time for work!', 'flirt');
     b.element.classList.add('buddy-job-' + job.name);
+
+    // Broadcast job assignment to other clients
+    broadcastAdvancedAction('job', { worker: lucky, jobName: job.name });
 }
 
 function updateBuddyJobs(names, zone) {
@@ -14095,10 +14284,15 @@ function checkPredatorPrey(names) {
     }
 }
 
-function startHunt(predatorName, preyName) {
+function startHunt(predatorName, preyName, fromSync) {
     var hunter = buddyCharacters[predatorName];
     var prey = buddyCharacters[preyName];
     if (!hunter || !prey) return;
+
+    // Broadcast to other clients if we initiated this hunt
+    if (!fromSync) {
+        broadcastAdvancedAction('hunt', { predator: predatorName, prey: preyName });
+    }
 
     hunter.interacting = true;
     prey.interacting = true;
@@ -14256,6 +14450,10 @@ function trackInteraction(username) {
     if (newTier > data.tier) {
         data.tier = newTier;
         applyEvolutionTier(username, newTier);
+        // Broadcast tier change to other clients (master-only to prevent duplicate broadcasts)
+        if (isInteractionMaster()) {
+            broadcastAdvancedAction('evolve', { username: username, tier: newTier });
+        }
     }
 }
 
@@ -14307,8 +14505,8 @@ function updateAdvancedBuddySystems(names, zone) {
         scanUISurfaces();
     }
 
-    // Physics objects
-    if (Date.now() - lastPhysicsSpawn > BUDDY_CONFIG.physicsObjSpawnInterval) {
+    // Physics objects - only master spawns to prevent desync
+    if (isInteractionMaster() && Date.now() - lastPhysicsSpawn > BUDDY_CONFIG.physicsObjSpawnInterval) {
         lastPhysicsSpawn = Date.now();
         if (Math.random() < BUDDY_CONFIG.physicsObjChance) {
             spawnPhysicsObject(zone);
