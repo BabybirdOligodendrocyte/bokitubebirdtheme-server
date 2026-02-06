@@ -460,16 +460,30 @@ var BokiTheme = (function() {
             },
 
             // Cleanup buddy settings for users no longer present
+            // Uses a 5-minute grace period so settings survive brief disconnects/rejoins
             cleanupBuddySettings: function() {
                 if (typeof customBuddySettings === 'undefined' || typeof buddyCharacters === 'undefined') return 0;
 
                 var removed = 0;
                 var activeUsers = Object.keys(buddyCharacters);
+                var now = Date.now();
+                var GRACE_PERIOD = 5 * 60 * 1000; // 5 minutes
 
                 Object.keys(customBuddySettings).forEach(function(username) {
                     if (activeUsers.indexOf(username) === -1) {
-                        delete customBuddySettings[username];
-                        removed++;
+                        var departedAt = customBuddySettings[username]._departedAt;
+                        if (departedAt && (now - departedAt) > GRACE_PERIOD) {
+                            delete customBuddySettings[username];
+                            removed++;
+                        } else if (!departedAt) {
+                            // First cleanup cycle after they left - start grace period
+                            customBuddySettings[username]._departedAt = now;
+                        }
+                    } else {
+                        // User is active - clear departure timestamp
+                        if (customBuddySettings[username] && customBuddySettings[username]._departedAt) {
+                            delete customBuddySettings[username]._departedAt;
+                        }
                     }
                 });
                 return removed;
@@ -8375,6 +8389,7 @@ var recentChatMessages = [];
 var customBuddySettings = {};  // Store custom settings received from other users
 var myBuddySettings = null;    // Current user's custom settings
 var lastSettingsBroadcast = 0; // Debounce settings broadcast
+var lastChatRejoinBroadcast = 0; // Rate-limit chat-based re-broadcasts on user join
 var visualBroadcastTimer = null; // Debounce timer for visual slider changes
 
 // Schedule a visual settings broadcast with debouncing (for sliders that fire many events)
@@ -9739,7 +9754,36 @@ function initConnectedBuddies() {
 
     if (typeof socket !== 'undefined' && !window._bokiBuddyUserSocketInit) {
         window._bokiBuddyUserSocketInit = true;
-        socket.on('addUser', function(data) { if (data.name) addBuddy(data.name); });
+        socket.on('addUser', function(data) {
+            if (!data.name) return;
+            addBuddy(data.name);
+
+            var myName = getMyUsername();
+
+            // If WE just reconnected, re-broadcast our settings so others see our sprite
+            if (data.name === myName && myBuddySettings) {
+                console.log('[BuddySync] Self rejoin detected - re-broadcasting settings');
+                setTimeout(function() {
+                    lastSettingsBroadcast = 0;
+                    broadcastMyBuddySettings();
+                }, 2000);
+                return;
+            }
+
+            // When someone else joins, re-broadcast our settings so they see our sprite
+            // Pusher handles this via member_added; for chat fallback, rate-limit to avoid flooding
+            if (data.name !== myName && myBuddySettings && !pusherEnabled) {
+                var now = Date.now();
+                if (now - lastChatRejoinBroadcast > 10000) {
+                    lastChatRejoinBroadcast = now;
+                    var delay = 1000 + Math.random() * 2000;
+                    setTimeout(function() {
+                        lastSettingsBroadcast = 0;
+                        broadcastMyBuddySettings();
+                    }, delay);
+                }
+            }
+        });
         socket.on('userLeave', function(data) { if (data.name) removeBuddy(data.name); });
         socket.on('userlist', function() { setTimeout(syncBuddiesWithUserlist, 500); });
     }
@@ -10307,6 +10351,15 @@ function addBuddy(username) {
 function removeBuddy(username) {
     var buddy = buddyCharacters[username];
     if (!buddy) return;
+
+    // Preserve custom settings so sprite can be restored on rejoin
+    if (buddy.customSettings && !customBuddySettings[username]) {
+        customBuddySettings[username] = buddy.customSettings;
+    }
+    if (customBuddySettings[username]) {
+        customBuddySettings[username]._departedAt = Date.now();
+    }
+
     buddy.element.style.transition = 'opacity 0.4s, transform 0.4s';
     buddy.element.style.opacity = '0';
     buddy.element.style.transform = 'scale(0.3)';
