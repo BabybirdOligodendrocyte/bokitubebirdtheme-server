@@ -601,6 +601,7 @@ var BokiTheme = (function() {
                     emoteFavorites: emoteFavorites.length,
                     ignoredUsers: ignoredUsers.length,
                     buddyCount: typeof buddyCharacters !== 'undefined' ? Object.keys(buddyCharacters).length : 0,
+                    activeArtifacts: typeof buddyArtifacts !== 'undefined' ? Object.keys(buddyArtifacts).length : 0,
                     pusherEnabled: typeof pusherEnabled !== 'undefined' ? pusherEnabled : false,
                     memory: BokiTheme.Memory.getStats(),
                     settings: {
@@ -9733,6 +9734,7 @@ function initConnectedBuddies() {
         scanChatForWords();
         syncBuddiesWithUserlist();
         startBuddyAnimation();
+        initArtifactSystem();
     }, 1500);
 
     // Re-apply custom settings after enough time for responses to arrive
@@ -10122,9 +10124,209 @@ function injectBuddyStyles() {
             100% { opacity: 1; filter: blur(0); }
         }
 
+        /* ========== BUDDY COURT SYSTEM ========== */
+        .buddy-court-judge {
+            position: fixed;
+            font-size: 28px;
+            z-index: 10003;
+            pointer-events: none;
+            animation: judge-enter 0.5s ease-out forwards;
+            filter: drop-shadow(0 0 6px rgba(255,215,0,0.8));
+        }
+        .buddy-court-judge .judge-wig {
+            position: absolute;
+            top: -12px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 14px;
+        }
+        .buddy-court-gavel {
+            position: fixed;
+            font-size: 24px;
+            z-index: 10004;
+            pointer-events: none;
+            animation: gavel-slam 0.4s ease-in forwards;
+        }
+        .buddy-speech.court {
+            border-color: #DAA520;
+            background: linear-gradient(135deg, #FFF8DC, #FFFACD);
+            color: #333;
+            font-family: 'Georgia', serif;
+            font-style: italic;
+            max-width: 200px;
+            z-index: 10005;
+        }
+        .buddy-speech.court::after {
+            border-top-color: #DAA520;
+        }
+        .buddy-speech.verdict {
+            border-color: #FF4500;
+            background: linear-gradient(135deg, #1a1a2e, #16213e);
+            color: #FFD700;
+            font-family: Impact, sans-serif;
+            font-style: normal;
+            font-size: 13px;
+            max-width: 220px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            box-shadow: 0 0 15px rgba(255,215,0,0.4);
+        }
+        .buddy-speech.verdict::after {
+            border-top-color: #FF4500;
+        }
+        .buddy-character.court-punishment-dance {
+            animation: court-forced-dance 0.3s ease-in-out infinite !important;
+        }
+        .buddy-character.court-punishment-shrink {
+            animation: court-forced-shrink 2s ease-in-out forwards !important;
+        }
+        .buddy-character.court-punishment-spin {
+            animation: court-forced-spin 0.5s linear infinite !important;
+        }
+        .buddy-character.court-punishment-vibrate {
+            animation: court-forced-vibrate 0.08s linear infinite !important;
+        }
+        .buddy-character.court-punishment-float {
+            animation: court-forced-float 1.5s ease-in-out infinite !important;
+        }
+        @keyframes judge-enter {
+            0% { transform: translateY(-40px) scale(0); opacity: 0; }
+            60% { transform: translateY(5px) scale(1.2); opacity: 1; }
+            100% { transform: translateY(0) scale(1); opacity: 1; }
+        }
+        @keyframes gavel-slam {
+            0% { transform: rotate(-45deg) scale(1.5); opacity: 1; }
+            50% { transform: rotate(15deg) scale(1); }
+            70% { transform: rotate(-5deg) scale(1.2); }
+            100% { transform: rotate(0deg) scale(1); opacity: 0; }
+        }
+        @keyframes court-forced-dance {
+            0% { transform: translateX(0) rotate(0deg); }
+            25% { transform: translateX(-8px) rotate(-15deg); }
+            50% { transform: translateX(0) rotate(0deg) scaleY(0.85); }
+            75% { transform: translateX(8px) rotate(15deg); }
+            100% { transform: translateX(0) rotate(0deg); }
+        }
+        @keyframes court-forced-shrink {
+            0% { transform: scale(1); }
+            50% { transform: scale(0.3) rotate(720deg); }
+            100% { transform: scale(1) rotate(0deg); }
+        }
+        @keyframes court-forced-spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        @keyframes court-forced-vibrate {
+            0% { transform: translate(0, 0); }
+            25% { transform: translate(-2px, 2px); }
+            50% { transform: translate(2px, -2px); }
+            75% { transform: translate(-2px, -1px); }
+            100% { transform: translate(1px, 2px); }
+        }
+        @keyframes court-forced-float {
+            0%, 100% { transform: translateY(0); opacity: 0.5; }
+            50% { transform: translateY(-25px); opacity: 1; }
+        }
+
+        /* ========== BUDDY ARTIFACT SYSTEM ========== */
+        .buddy-artifact {
+            position: fixed;
+            font-size: 18px;
+            z-index: 9990;
+            pointer-events: none;
+            animation: artifact-spawn 0.6s ease-out forwards;
+            filter: drop-shadow(0 0 8px rgba(255,215,0,0.6));
+        }
+        .buddy-artifact.artifact-discovered {
+            animation: artifact-pickup 0.5s ease-in forwards;
+        }
+        .buddy-artifact-sparkle {
+            position: fixed;
+            font-size: 10px;
+            pointer-events: none;
+            z-index: 9989;
+            animation: artifact-sparkle-anim 1s ease-out infinite;
+        }
+        .buddy-artifact-toast {
+            position: fixed;
+            top: 80px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: linear-gradient(135deg, #1a1a2e, #16213e);
+            color: #FFD700;
+            padding: 8px 18px;
+            border-radius: 8px;
+            font-family: 'Georgia', serif;
+            font-size: 14px;
+            z-index: 10010;
+            box-shadow: 0 0 20px rgba(255,215,0,0.3);
+            border: 1px solid #DAA520;
+            animation: artifact-toast-anim 3s ease-in-out forwards;
+            pointer-events: none;
+            text-align: center;
+        }
+        .buddy-character.artifact-sword {
+            filter: drop-shadow(0 0 6px #FF4444) !important;
+        }
+        .buddy-character.artifact-potion {
+            animation: buddy-idle 1.5s ease-in-out infinite, artifact-potion-colors 2s linear infinite !important;
+        }
+        .buddy-character.artifact-scroll {
+            filter: drop-shadow(0 0 5px #DAA520) !important;
+        }
+        .buddy-character.artifact-orb {
+            filter: drop-shadow(0 0 10px #9400D3) drop-shadow(0 0 20px #9400D3) !important;
+        }
+        .buddy-character.artifact-crown {
+            filter: drop-shadow(0 0 8px #FFD700) drop-shadow(0 0 16px #FFD700) !important;
+        }
+        .buddy-character.artifact-mirror {
+            filter: drop-shadow(0 0 6px #00CED1) !important;
+        }
+        .buddy-artifact-badge {
+            position: absolute;
+            top: -4px;
+            left: -4px;
+            font-size: 10px;
+            animation: artifact-badge-pulse 1.5s ease-in-out infinite;
+            pointer-events: none;
+        }
+        @keyframes artifact-spawn {
+            0% { transform: scale(0) rotate(-180deg); opacity: 0; }
+            60% { transform: scale(1.3) rotate(10deg); opacity: 1; }
+            100% { transform: scale(1) rotate(0deg); opacity: 1; }
+        }
+        @keyframes artifact-pickup {
+            0% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(1.5) translateY(-15px); opacity: 1; }
+            100% { transform: scale(0) translateY(-30px); opacity: 0; }
+        }
+        @keyframes artifact-sparkle-anim {
+            0%, 100% { opacity: 0.3; transform: scale(0.8); }
+            50% { opacity: 1; transform: scale(1.2); }
+        }
+        @keyframes artifact-toast-anim {
+            0% { opacity: 0; transform: translateX(-50%) translateY(-20px); }
+            15% { opacity: 1; transform: translateX(-50%) translateY(0); }
+            80% { opacity: 1; transform: translateX(-50%) translateY(0); }
+            100% { opacity: 0; transform: translateX(-50%) translateY(-10px); }
+        }
+        @keyframes artifact-potion-colors {
+            0% { filter: hue-rotate(0deg) drop-shadow(1px 1px 2px rgba(0,0,0,0.4)); }
+            33% { filter: hue-rotate(120deg) drop-shadow(1px 1px 2px rgba(0,0,0,0.4)); }
+            66% { filter: hue-rotate(240deg) drop-shadow(1px 1px 2px rgba(0,0,0,0.4)); }
+            100% { filter: hue-rotate(360deg) drop-shadow(1px 1px 2px rgba(0,0,0,0.4)); }
+        }
+        @keyframes artifact-badge-pulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.3); }
+        }
+
         @media (max-width: 768px) {
             .buddy-character { display: none; }
             .buddy-speech { display: none; }
+            .buddy-artifact { display: none; }
+            .buddy-artifact-toast { display: none; }
         }
     `;
     document.head.appendChild(styles);
@@ -10657,10 +10859,13 @@ function showSpeechBubble(b, text, type) {
     var existing = document.querySelectorAll('.buddy-speech[data-buddy="' + b.element.id + '"]');
     existing.forEach(function(e) { e.remove(); });
 
+    // Artifact buff: Scroll modifies speech to archaic English
+    var displayText = getArtifactModifiedSpeech(b.username, text);
+
     var speech = document.createElement('div');
     speech.className = 'buddy-speech ' + (type || '');
     speech.setAttribute('data-buddy', b.element.id || '');
-    speech.textContent = text;
+    speech.textContent = displayText;
     speech.style.left = (b.x - 20) + 'px';
     speech.style.top = (b.y - 50) + 'px';
     document.body.appendChild(speech);
@@ -10767,6 +10972,9 @@ function checkInteractions(names) {
             }
         }
     });
+
+    // Apply artifact buffs (orb gravity pull)
+    applyOrbGravity();
 
     // Only the "master" client initiates proximity interactions
     // This prevents multiple clients from broadcasting conflicting interactions
@@ -11143,6 +11351,11 @@ function startFight(n1, n2, seededRandom) {
     setAnim(b1, 'fighting');
     setAnim(b2, 'fighting');
 
+    // Artifact buff: Sword causes screen shake during fights
+    var hasSword = (buddyArtifacts[n1] && buddyArtifacts[n1].type === 'sword') ||
+                   (buddyArtifacts[n2] && buddyArtifacts[n2].type === 'sword');
+    if (hasSword) triggerSwordScreenShake();
+
     var exprs = ['😤', '💢', '😠'];
     showExpression(b1, exprs[Math.floor(rng() * 3)]);
     showExpression(b2, exprs[Math.floor(rng() * 3)]);
@@ -11167,6 +11380,13 @@ function startFight(n1, n2, seededRandom) {
 function endFight(n1, n2, rng) {
     var b1 = buddyCharacters[n1], b2 = buddyCharacters[n2];
     var r = rng || Math.random;
+
+    // 5% chance of triggering a court trial after a fight
+    if (b1 && b2 && r() < 0.05) {
+        startCourtTrial(n1, n2, r);
+        return;
+    }
+
     var exprs = ['😮‍💨', '😤', '😊'];
     var e1 = exprs[Math.floor(r() * 3)];
     var e2 = exprs[Math.floor(r() * 3)];
@@ -11207,6 +11427,486 @@ function createDust(x, y) {
     d.style.top = y + 'px';
     document.body.appendChild(d);
     setTimeout(function() { d.remove(); }, 500);
+}
+
+// ========== BUDDY COURT SYSTEM ==========
+// After a fight, there's a small chance a Judge appears and holds a trial
+
+var COURT_PROSECUTIONS = [
+    function(n1, n2) { return n1 + " CLEARLY threw the first BONK"; },
+    function(n1, n2) { return "Witnesses report " + n1 + " was vibing aggressively"; },
+    function(n1, n2) { return n1 + " has a HISTORY of unsanctioned yeet-ing"; },
+    function(n1, n2) { return "The defendant " + n1 + " was caught red-handed doing crimes"; },
+    function(n1, n2) { return n1 + " violated Section 69 of the Buddy Code"; },
+    function(n1, n2) { return "Exhibit A: " + n1 + " looked at " + n2 + " with MALICE"; },
+    function(n1, n2) { return n1 + " did a violence. The evidence is... vibes"; },
+    function(n1, n2) { return "My client " + n2 + " was simply existing when " + n1 + " chose CHAOS"; }
+];
+
+var COURT_DEFENSES = [
+    function(n1) { return "My client was simply vibing, your honor"; },
+    function(n1) { return n1 + " pleads not guilty by reason of being adorable"; },
+    function(n1) { return "Objection! " + n1 + " was provoked by... existence"; },
+    function(n1) { return n1 + " claims diplomatic immunity as a registered silly goose"; },
+    function(n1) { return "The defense argues that bonking is a love language"; },
+    function(n1) { return n1 + " was sleepwalking. Sleepfighting. It's a condition"; },
+    function(n1) { return "Your honor, my client doesn't even have hands"; },
+    function(n1) { return "We plead the fifth... dimension of cuteness"; }
+];
+
+var COURT_VERDICTS = [
+    { text: "GUILTY! Sentenced to 30 seconds of mandatory dancing", punishment: 'court-punishment-dance', duration: 30000 },
+    { text: "GUILTY! The defendant must spin until they learn their lesson", punishment: 'court-punishment-spin', duration: 20000 },
+    { text: "GUILTY! Shrunk to humbling size for crimes against vibes", punishment: 'court-punishment-shrink', duration: 15000 },
+    { text: "GUILTY! Sentenced to existential vibrating", punishment: 'court-punishment-vibrate', duration: 20000 },
+    { text: "GUILTY! Must float in shame for 25 seconds", punishment: 'court-punishment-float', duration: 25000 },
+    { text: "NOT GUILTY! But the judge is suspicious...", punishment: null, duration: 0 },
+    { text: "MISTRIAL! The gavel has gone missing", punishment: null, duration: 0 },
+    { text: "GUILTY of being too cute. This is worse than jail", punishment: 'court-punishment-dance', duration: 20000 },
+    { text: "GUILTY! Community service: 20 seconds of vibing penance", punishment: 'court-punishment-float', duration: 20000 },
+    { text: "DOUBLE GUILTY! Both parties sentenced to synchronized dancing", punishment: 'court-punishment-dance', duration: 25000, punishBoth: true }
+];
+
+function startCourtTrial(n1, n2, rng) {
+    var b1 = buddyCharacters[n1], b2 = buddyCharacters[n2];
+    if (!b1 || !b2) return;
+    var r = rng || Math.random;
+
+    console.log('[BuddyCourt] Trial initiated between', n1, 'and', n2);
+
+    // Keep both buddies locked in interacting state during trial
+    b1.interacting = true;
+    b2.interacting = true;
+    setAnim(b1, 'idle');
+    setAnim(b2, 'idle');
+
+    // Separate the fighters
+    b1.x -= 30;
+    b2.x += 30;
+    b1.element.style.left = b1.x + 'px';
+    b2.element.style.left = b2.x + 'px';
+
+    // Spawn the judge between them
+    var judgeX = (b1.x + b2.x) / 2;
+    var judgeY = Math.min(b1.y, b2.y) - 20;
+
+    var judge = document.createElement('div');
+    judge.className = 'buddy-court-judge';
+    judge.innerHTML = '🦉<span class="judge-wig">⚖️</span>';
+    judge.style.left = judgeX + 'px';
+    judge.style.top = judgeY + 'px';
+    document.body.appendChild(judge);
+
+    // Pre-generate trial elements using seeded random
+    var prosecutionIdx = Math.floor(r() * COURT_PROSECUTIONS.length);
+    var defenseIdx = Math.floor(r() * COURT_DEFENSES.length);
+    var verdictIdx = Math.floor(r() * COURT_VERDICTS.length);
+
+    // Randomly pick who is the defendant
+    var defendant = r() < 0.5 ? n1 : n2;
+    var plaintiff = defendant === n1 ? n2 : n1;
+
+    showExpression(b1, '😰');
+    showExpression(b2, '😰');
+
+    // Phase 1: Judge announces (1s delay)
+    setTimeout(function() {
+        showCourtSpeech(judgeX, judgeY - 50, "ORDER IN THE COURT!", 'court');
+    }, 800);
+
+    // Phase 2: Prosecution (3s delay)
+    setTimeout(function() {
+        var prosecutionText = COURT_PROSECUTIONS[prosecutionIdx](defendant, plaintiff);
+        showCourtSpeech(judgeX - 40, judgeY - 50, prosecutionText, 'court');
+        var bDef = buddyCharacters[defendant];
+        if (bDef) showExpression(bDef, '😨');
+    }, 3000);
+
+    // Phase 3: Defense (5.5s delay)
+    setTimeout(function() {
+        var defenseText = COURT_DEFENSES[defenseIdx](defendant);
+        showCourtSpeech(judgeX + 20, judgeY - 50, defenseText, 'court');
+        var bDef = buddyCharacters[defendant];
+        if (bDef) showExpression(bDef, '🥺');
+    }, 5500);
+
+    // Phase 4: Gavel slam (8s delay)
+    setTimeout(function() {
+        var gavel = document.createElement('div');
+        gavel.className = 'buddy-court-gavel';
+        gavel.textContent = '🔨';
+        gavel.style.left = (judgeX + 10) + 'px';
+        gavel.style.top = (judgeY - 10) + 'px';
+        document.body.appendChild(gavel);
+        setTimeout(function() { if (gavel.parentNode) gavel.remove(); }, 500);
+    }, 8000);
+
+    // Phase 5: Verdict (8.8s delay)
+    setTimeout(function() {
+        var verdict = COURT_VERDICTS[verdictIdx];
+        showCourtSpeech(judgeX - 20, judgeY - 60, verdict.text, 'verdict');
+
+        // Apply punishment
+        if (verdict.punishment) {
+            var bDef = buddyCharacters[defendant];
+            var bPlain = buddyCharacters[plaintiff];
+
+            if (bDef) {
+                bDef.element.classList.add(verdict.punishment);
+                showExpression(bDef, '😵');
+            }
+            if (verdict.punishBoth && bPlain) {
+                bPlain.element.classList.add(verdict.punishment);
+                showExpression(bPlain, '😵');
+            }
+
+            // Remove punishment after duration
+            setTimeout(function() {
+                if (bDef && bDef.element) bDef.element.classList.remove(verdict.punishment);
+                if (verdict.punishBoth && bPlain && bPlain.element) bPlain.element.classList.remove(verdict.punishment);
+            }, verdict.duration);
+        } else {
+            // Not guilty - show relief
+            var bDef = buddyCharacters[defendant];
+            if (bDef) showExpression(bDef, '😮‍💨');
+        }
+    }, 8800);
+
+    // Phase 6: Judge exits (11s delay)
+    setTimeout(function() {
+        if (judge.parentNode) {
+            judge.style.animation = 'judge-enter 0.5s ease-in reverse forwards';
+            setTimeout(function() { if (judge.parentNode) judge.remove(); }, 500);
+        }
+
+        // Release buddies from trial
+        endCourtTrial(n1, n2);
+    }, 11000);
+}
+
+function showCourtSpeech(x, y, text, type) {
+    var speech = document.createElement('div');
+    speech.className = 'buddy-speech ' + (type || 'court');
+    speech.textContent = text;
+    speech.style.left = x + 'px';
+    speech.style.top = y + 'px';
+    document.body.appendChild(speech);
+    setTimeout(function() { if (speech.parentNode) speech.remove(); }, 2500);
+}
+
+function endCourtTrial(n1, n2) {
+    var b1 = buddyCharacters[n1], b2 = buddyCharacters[n2];
+    if (b1) {
+        b1.interacting = false;
+        b1.interactCooldown = 10000;
+        b1.state = 'idle';
+        setAnim(b1, 'idle');
+    }
+    if (b2) {
+        b2.interacting = false;
+        b2.interactCooldown = 10000;
+        b2.state = 'idle';
+        setAnim(b2, 'idle');
+    }
+}
+
+// ========== BUDDY ARTIFACT SYSTEM ==========
+// Buddies occasionally discover artifacts while roaming, gaining temporary buffs
+
+var BUDDY_ARTIFACTS = [
+    {
+        emoji: '🗡️',
+        name: 'Sword of Mild Inconvenience',
+        type: 'sword',
+        cssClass: 'artifact-sword',
+        badge: '⚔️',
+        duration: 300000,
+        rarity: 'common',
+        description: 'Fights cause dramatic screen shake',
+        speechOnFind: ["A WEAPON!", "en garde!", "finally... power", "*unsheathes menacingly*"]
+    },
+    {
+        emoji: '⚗️',
+        name: 'Potion of Chromatic Chaos',
+        type: 'potion',
+        cssClass: 'artifact-potion',
+        badge: '🧪',
+        duration: 300000,
+        rarity: 'common',
+        description: 'Colors cycle wildly',
+        speechOnFind: ["ooh shiny!", "what does this do--", "*glug glug*", "i feel... different"]
+    },
+    {
+        emoji: '📜',
+        name: 'Scroll of Ye Olde Internet',
+        type: 'scroll',
+        cssClass: 'artifact-scroll',
+        badge: '📜',
+        duration: 300000,
+        rarity: 'common',
+        description: 'Speaks in faux-archaic',
+        speechOnFind: ["hark!", "ancient wisdom!", "it says... 'lol'", "*adjusts monocle*"]
+    },
+    {
+        emoji: '🔮',
+        name: 'Orb of Gravitational Sass',
+        type: 'orb',
+        cssClass: 'artifact-orb',
+        badge: '🔮',
+        duration: 300000,
+        rarity: 'uncommon',
+        description: 'Pulls nearby buddies closer',
+        speechOnFind: ["UNLIMITED POWER", "come to me...", "the orb... it speaks", "*ominous humming*"]
+    },
+    {
+        emoji: '👑',
+        name: 'Crown of Unearned Authority',
+        type: 'crown',
+        cssClass: 'artifact-crown',
+        badge: '👑',
+        duration: 300000,
+        rarity: 'uncommon',
+        description: 'Radiates golden energy',
+        speechOnFind: ["I AM THE LAW", "bow before me!", "finally, recognition", "*adjusts crown*"]
+    },
+    {
+        emoji: '🪞',
+        name: 'Mirror of Existential Dread',
+        type: 'mirror',
+        cssClass: 'artifact-mirror',
+        badge: '🪞',
+        duration: 300000,
+        rarity: 'rare',
+        description: 'Nearby buddies briefly face the mirror holder',
+        speechOnFind: ["what... am I?", "it shows... the void", "*stares into infinity*", "oh no it's me"]
+    }
+];
+
+var ARCHAIC_SPEECH = [
+    "Forsooth!", "Hark, a commotion!", "By mine honor!", "Prithee, cease thy tomfoolery!",
+    "Verily, this is most vexing!", "Thou art a scallywag!", "'Twas foretold in the prophecy!",
+    "Mayhaps we should touch grass?", "I declare this most sus!", "Mine eyes have seen cringe",
+    "Methinks the vibes are off", "Lo, the algorithm provides!", "By the ancient forums!",
+    "Hear ye, hear ye!", "In sooth, I know not why I am so based"
+];
+
+// Track active artifacts per buddy
+var buddyArtifacts = {};  // { username: { type, expiresAt, element } }
+var artifactSpawnTimer = null;
+
+function initArtifactSystem() {
+    // Check for artifact spawns every 30 seconds
+    artifactSpawnTimer = setInterval(function() {
+        var names = Object.keys(buddyCharacters);
+        if (names.length === 0) return;
+
+        names.forEach(function(name) {
+            var b = buddyCharacters[name];
+            if (!b || b.interacting) return;
+
+            // Skip if buddy already has an artifact
+            if (buddyArtifacts[name] && buddyArtifacts[name].expiresAt > Date.now()) return;
+
+            // 8% chance per buddy per check (roughly every 3-5 minutes per buddy)
+            if (Math.random() < 0.08) {
+                spawnArtifactNear(name);
+            }
+        });
+    }, 30000);
+
+    // Cleanup expired artifacts every 10 seconds
+    setInterval(function() {
+        var now = Date.now();
+        Object.keys(buddyArtifacts).forEach(function(name) {
+            var art = buddyArtifacts[name];
+            if (art && art.expiresAt <= now) {
+                removeArtifactFromBuddy(name);
+            }
+        });
+    }, 10000);
+
+    console.log('[Artifacts] System initialized');
+}
+
+function spawnArtifactNear(username) {
+    var b = buddyCharacters[username];
+    if (!b) return;
+
+    // Pick a random artifact weighted by rarity
+    var roll = Math.random();
+    var pool;
+    if (roll < 0.1) {
+        pool = BUDDY_ARTIFACTS.filter(function(a) { return a.rarity === 'rare'; });
+    } else if (roll < 0.35) {
+        pool = BUDDY_ARTIFACTS.filter(function(a) { return a.rarity === 'uncommon'; });
+    } else {
+        pool = BUDDY_ARTIFACTS.filter(function(a) { return a.rarity === 'common'; });
+    }
+    if (pool.length === 0) pool = BUDDY_ARTIFACTS;
+
+    var artifact = pool[Math.floor(Math.random() * pool.length)];
+
+    // Spawn artifact element near buddy
+    var offsetX = (Math.random() - 0.5) * 60;
+    var offsetY = (Math.random() - 0.5) * 40;
+    var artX = b.x + offsetX;
+    var artY = b.y + offsetY;
+
+    var artEl = document.createElement('div');
+    artEl.className = 'buddy-artifact';
+    artEl.textContent = artifact.emoji;
+    artEl.style.left = artX + 'px';
+    artEl.style.top = artY + 'px';
+    document.body.appendChild(artEl);
+
+    // Add sparkles around artifact
+    var sparkleInterval = setInterval(function() {
+        if (!artEl.parentNode) { clearInterval(sparkleInterval); return; }
+        var sparkle = document.createElement('div');
+        sparkle.className = 'buddy-artifact-sparkle';
+        sparkle.textContent = '✨';
+        sparkle.style.left = (artX + (Math.random() - 0.5) * 30) + 'px';
+        sparkle.style.top = (artY + (Math.random() - 0.5) * 20) + 'px';
+        document.body.appendChild(sparkle);
+        setTimeout(function() { if (sparkle.parentNode) sparkle.remove(); }, 1000);
+    }, 400);
+
+    console.log('[Artifacts] Spawned', artifact.name, 'near', username);
+
+    // After 1.5s, buddy walks to it and picks it up
+    setTimeout(function() {
+        if (!buddyCharacters[username] || !artEl.parentNode) {
+            clearInterval(sparkleInterval);
+            if (artEl.parentNode) artEl.remove();
+            return;
+        }
+
+        // Buddy discovers artifact
+        artEl.classList.add('artifact-discovered');
+        clearInterval(sparkleInterval);
+
+        setTimeout(function() {
+            if (artEl.parentNode) artEl.remove();
+            applyArtifactToBuddy(username, artifact);
+        }, 500);
+    }, 1500);
+}
+
+function applyArtifactToBuddy(username, artifact) {
+    var b = buddyCharacters[username];
+    if (!b) return;
+
+    // Remove any existing artifact
+    removeArtifactFromBuddy(username);
+
+    // Apply CSS class for visual effect
+    b.element.classList.add(artifact.cssClass);
+
+    // Add badge indicator
+    var badge = document.createElement('span');
+    badge.className = 'buddy-artifact-badge';
+    badge.textContent = artifact.badge;
+    badge.setAttribute('data-artifact', 'true');
+    b.element.appendChild(badge);
+
+    // Store artifact data
+    buddyArtifacts[username] = {
+        type: artifact.type,
+        artifact: artifact,
+        expiresAt: Date.now() + artifact.duration,
+        cssClass: artifact.cssClass
+    };
+
+    // Speech on find
+    var speech = artifact.speechOnFind[Math.floor(Math.random() * artifact.speechOnFind.length)];
+    showSpeechBubble(b, speech, 'excited');
+    showExpression(b, '✨');
+
+    // Show toast notification
+    showArtifactToast(username, artifact);
+
+    console.log('[Artifacts]', username, 'found', artifact.name, '(' + artifact.rarity + ')');
+}
+
+function removeArtifactFromBuddy(username) {
+    var art = buddyArtifacts[username];
+    if (!art) return;
+
+    var b = buddyCharacters[username];
+    if (b && b.element) {
+        b.element.classList.remove(art.cssClass);
+        var badge = b.element.querySelector('[data-artifact]');
+        if (badge) badge.remove();
+    }
+
+    delete buddyArtifacts[username];
+}
+
+function showArtifactToast(username, artifact) {
+    var rarityStars = artifact.rarity === 'rare' ? ' ★★★' : (artifact.rarity === 'uncommon' ? ' ★★' : ' ★');
+    var toast = document.createElement('div');
+    toast.className = 'buddy-artifact-toast';
+    toast.innerHTML = artifact.emoji + ' <strong>' + username + '</strong> found ' + artifact.name + rarityStars;
+    document.body.appendChild(toast);
+    setTimeout(function() { if (toast.parentNode) toast.remove(); }, 3500);
+}
+
+// Artifact buff: Scroll makes buddy speak in archaic English
+function getArtifactModifiedSpeech(username, originalText) {
+    var art = buddyArtifacts[username];
+    if (!art || art.type !== 'scroll') return originalText;
+
+    // 50% chance to replace speech with archaic version
+    if (Math.random() < 0.5) {
+        return ARCHAIC_SPEECH[Math.floor(Math.random() * ARCHAIC_SPEECH.length)];
+    }
+    return originalText;
+}
+
+// Artifact buff: Sword causes screen shake on fight
+function triggerSwordScreenShake() {
+    var body = document.body;
+    body.style.transition = 'none';
+    var shakeCount = 0;
+    var shakeInterval = setInterval(function() {
+        var x = (Math.random() - 0.5) * 8;
+        var y = (Math.random() - 0.5) * 8;
+        body.style.transform = 'translate(' + x + 'px, ' + y + 'px)';
+        if (++shakeCount >= 8) {
+            clearInterval(shakeInterval);
+            body.style.transform = '';
+        }
+    }, 50);
+}
+
+// Artifact buff: Orb gravity pull
+function applyOrbGravity() {
+    Object.keys(buddyArtifacts).forEach(function(orbOwner) {
+        var art = buddyArtifacts[orbOwner];
+        if (!art || art.type !== 'orb') return;
+
+        var orbBuddy = buddyCharacters[orbOwner];
+        if (!orbBuddy) return;
+
+        Object.keys(buddyCharacters).forEach(function(otherName) {
+            if (otherName === orbOwner) return;
+            var other = buddyCharacters[otherName];
+            if (!other || other.interacting) return;
+
+            var dx = orbBuddy.x - other.x;
+            var dy = orbBuddy.y - other.y;
+            var dist = Math.sqrt(dx * dx + dy * dy);
+
+            // Only pull within 150px range
+            if (dist < 150 && dist > 30) {
+                var pullStrength = 0.3;
+                other.x += (dx / dist) * pullStrength;
+                other.y += (dy / dist) * pullStrength;
+                other.element.style.left = other.x + 'px';
+                other.element.style.top = other.y + 'px';
+            }
+        });
+    });
 }
 
 function escapeHtml(text) {
