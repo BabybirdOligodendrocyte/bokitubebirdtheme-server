@@ -8682,7 +8682,21 @@ function connectPusher() {
         // Listen for position correction snapshots from master
         pusherChannel.bind('client-buddy-positions', function(data) {
             if (data.from && data.from !== getMyUsername()) {
-                handlePositionCorrection(data.positions);
+                handlePositionCorrection(data.positions, data.ts);
+            }
+        });
+
+        // Listen for speech bubble sync (so all clients see same speech at same time)
+        pusherChannel.bind('client-buddy-speech', function(data) {
+            if (data.from && data.from !== getMyUsername()) {
+                handlePusherBuddySpeech(data);
+            }
+        });
+
+        // Listen for visual state sync (animations, expressions, facing)
+        pusherChannel.bind('client-buddy-visual', function(data) {
+            if (data.from && data.from !== getMyUsername()) {
+                handlePusherBuddyVisual(data);
             }
         });
 
@@ -8745,9 +8759,70 @@ function handlePusherBuddyAction(data) {
         handleSyncedAdvancedAction(data);
         return;
     }
-    handleSyncedInteraction(data.user1, data.user2, data.action, data.seed,
-        data.pos1 ? data.pos1.split(',').map(Number) : null,
-        data.pos2 ? data.pos2.split(',').map(Number) : null);
+
+    // Denormalize positions if they were sent as normalized (0-1) coords
+    var pos1 = data.pos1 ? data.pos1.split(',').map(Number) : null;
+    var pos2 = data.pos2 ? data.pos2.split(',').map(Number) : null;
+
+    if (data.normalized && pos1 && pos2) {
+        var zone = getBuddyZone();
+        var zoneW = Math.max(1, zone.right - zone.left);
+        var zoneH = Math.max(1, zone.absoluteBottom - zone.top);
+        pos1 = [zone.left + pos1[0] * zoneW, zone.top + pos1[1] * zoneH];
+        pos2 = [zone.left + pos2[0] * zoneW, zone.top + pos2[1] * zoneH];
+    }
+
+    handleSyncedInteraction(data.user1, data.user2, data.action, data.seed, pos1, pos2);
+}
+
+// Handle synced speech bubbles from other clients
+function handlePusherBuddySpeech(data) {
+    if (!data.username || !data.text) return;
+    var b = buddyCharacters[data.username];
+    if (!b) return;
+    showSpeechBubble(b, data.text, data.type || '');
+    if (data.expr) showExpression(b, data.expr);
+}
+
+// Broadcast a speech bubble via Pusher for sync
+function broadcastSpeech(username, text, type, expr) {
+    if (!pusherEnabled || !pusherChannel) return;
+    try {
+        pusherChannel.trigger('client-buddy-speech', {
+            from: getMyUsername(),
+            username: username,
+            text: text,
+            type: type || '',
+            expr: expr || null
+        });
+    } catch (e) { /* Pusher rate limit */ }
+}
+
+// Handle synced visual state (animation class, facing, expressions)
+function handlePusherBuddyVisual(data) {
+    if (!data.buddies) return;
+    Object.keys(data.buddies).forEach(function(name) {
+        var b = buddyCharacters[name];
+        if (!b) return;
+        var vis = data.buddies[name];
+        if (vis.anim) setAnim(b, vis.anim);
+        if (vis.face !== undefined) {
+            if (vis.face) b.element.classList.add('face-left');
+            else b.element.classList.remove('face-left');
+        }
+        if (vis.expr) showExpression(b, vis.expr);
+    });
+}
+
+// Broadcast visual state changes via Pusher
+function broadcastVisualState(buddyVisuals) {
+    if (!pusherEnabled || !pusherChannel) return;
+    try {
+        pusherChannel.trigger('client-buddy-visual', {
+            from: getMyUsername(),
+            buddies: buddyVisuals
+        });
+    } catch (e) { /* Pusher rate limit */ }
 }
 
 // Broadcast my settings via Pusher (preferred) or chat fallback
@@ -8852,12 +8927,17 @@ function broadcastMyBuddySettings() {
     }
 }
 
-// Broadcast an interaction for sync (includes positions for visual consistency)
+// Broadcast an interaction for sync (includes NORMALIZED positions for cross-screen consistency)
 function broadcastInteraction(user1, user2, interactionType, seed) {
     var b1 = buddyCharacters[user1];
     var b2 = buddyCharacters[user2];
-    var pos1 = b1 ? Math.round(b1.x) + ',' + Math.round(b1.y) : '0,0';
-    var pos2 = b2 ? Math.round(b2.x) + ',' + Math.round(b2.y) : '0,0';
+    var zone = getBuddyZone();
+    var zoneW = Math.max(1, zone.right - zone.left);
+    var zoneH = Math.max(1, zone.absoluteBottom - zone.top);
+
+    // Use normalized coords (0-1) for Pusher, absolute for chat fallback
+    var npos1 = b1 ? ((b1.x - zone.left) / zoneW).toFixed(4) + ',' + ((b1.y - zone.top) / zoneH).toFixed(4) : '0.5,0.5';
+    var npos2 = b2 ? ((b2.x - zone.left) / zoneW).toFixed(4) + ',' + ((b2.y - zone.top) / zoneH).toFixed(4) : '0.5,0.5';
 
     // Try Pusher first (no chat pollution)
     if (pusherEnabled && pusherChannel) {
@@ -8867,8 +8947,9 @@ function broadcastInteraction(user1, user2, interactionType, seed) {
                 user2: user2,
                 action: interactionType,
                 seed: seed,
-                pos1: pos1,
-                pos2: pos2
+                pos1: npos1,
+                pos2: npos2,
+                normalized: true // Flag so receiver knows to denormalize
             });
             return;
         } catch (e) {
@@ -8876,7 +8957,9 @@ function broadcastInteraction(user1, user2, interactionType, seed) {
         }
     }
 
-    // Fallback to chat-based sync
+    // Fallback to chat-based sync (uses absolute coords due to message length constraints)
+    var pos1 = b1 ? Math.round(b1.x) + ',' + Math.round(b1.y) : '0,0';
+    var pos2 = b2 ? Math.round(b2.x) + ',' + Math.round(b2.y) : '0,0';
     var hiddenMsg = '\u200B\u200CBACT:' + user1 + ':' + user2 + ':' + interactionType + ':' + seed + ':' + pos1 + ':' + pos2 + ':BACT\u200B\u200C';
     console.log('[BuddySync] Broadcasting action:', interactionType, 'between', user1, 'and', user2);
     if (typeof socket !== 'undefined' && socket.emit) {
@@ -9061,10 +9144,12 @@ function handleSyncedHuntEnd(extra) {
 
 // ===== POSITION CORRECTION SYSTEM =====
 var lastPositionBroadcast = 0;
-var POSITION_BROADCAST_INTERVAL = 3000; // Master broadcasts every 3 seconds
-var POSITION_LERP_DURATION = 500; // Smooth correction over 500ms
+var POSITION_BROADCAST_INTERVAL = 2000; // Master broadcasts every 2 seconds for tighter sync
+var POSITION_LERP_DURATION = 400; // Smooth correction over 400ms
+var SYNC_SEED_EPOCH = 5000; // Shared seed rotation period (must be same on all clients)
 
-// Master broadcasts all buddy positions as a compact snapshot
+// Master broadcasts all buddy positions as NORMALIZED coordinates (0-1)
+// This ensures positions map correctly across different screen sizes
 function broadcastPositionCorrection() {
     if (!isInteractionMaster()) return;
     if (!pusherEnabled || !pusherChannel) return; // Positions only via Pusher (too large for chat)
@@ -9073,22 +9158,31 @@ function broadcastPositionCorrection() {
     if (now - lastPositionBroadcast < POSITION_BROADCAST_INTERVAL) return;
     lastPositionBroadcast = now;
 
+    var zone = getBuddyZone();
+    var zoneW = Math.max(1, zone.right - zone.left);
+    var zoneH = Math.max(1, zone.absoluteBottom - zone.top);
+
     var positions = {};
     var names = Object.keys(buddyCharacters);
+    var syncSeedBase = Math.floor(now / SYNC_SEED_EPOCH);
+
     for (var i = 0; i < names.length; i++) {
         var b = buddyCharacters[names[i]];
         if (!b) continue;
-        // Compact format: "x,y,state" - round to integers to save space
-        positions[names[i]] = Math.round(b.x) + ',' + Math.round(b.y) + ',' + b.state;
+        // Normalized format: "nx,ny,state,vx,vy" where nx/ny are 0-1 ratios
+        var nx = ((b.x - zone.left) / zoneW).toFixed(4);
+        var ny = ((b.y - zone.top) / zoneH).toFixed(4);
+        positions[names[i]] = nx + ',' + ny + ',' + b.state + ',' + b.vx.toFixed(2) + ',' + (b.vy || 0).toFixed(2);
         // Re-seed own RNG to match what receivers will get
-        var syncSeed = hashUsername(names[i]) + Math.floor(now / 5000);
+        var syncSeed = hashUsername(names[i]) + syncSeedBase;
         b.moveRng = createSeededRandom(syncSeed);
     }
 
     try {
         pusherChannel.trigger('client-buddy-positions', {
             from: getMyUsername(),
-            positions: positions
+            positions: positions,
+            ts: now // timestamp for latency detection
         });
     } catch (e) {
         // Pusher rate limit or error - skip this cycle
@@ -9096,9 +9190,13 @@ function broadcastPositionCorrection() {
 }
 
 // Receive position correction from master and set lerp targets
-function handlePositionCorrection(positions) {
+// Uses NORMALIZED coordinates (0-1) to handle different screen sizes
+function handlePositionCorrection(positions, timestamp) {
     if (!positions) return;
     var zone = getBuddyZone();
+    var zoneW = Math.max(1, zone.right - zone.left);
+    var zoneH = Math.max(1, zone.absoluteBottom - zone.top);
+    var syncSeedBase = Math.floor(Date.now() / SYNC_SEED_EPOCH);
 
     Object.keys(positions).forEach(function(name) {
         var b = buddyCharacters[name];
@@ -9108,13 +9206,19 @@ function handlePositionCorrection(positions) {
         if (b.interacting || b.wallRunning || b.sleeping || b.isEgg) return;
 
         var parts = positions[name].split(',');
-        var targetX = parseInt(parts[0], 10);
-        var targetY = parseInt(parts[1], 10);
+        var nx = parseFloat(parts[0]);
+        var ny = parseFloat(parts[1]);
         var masterState = parts[2] || 'idle';
+        var masterVx = parseFloat(parts[3]) || 0;
+        var masterVy = parseFloat(parts[4]) || 0;
 
-        if (isNaN(targetX) || isNaN(targetY)) return;
+        if (isNaN(nx) || isNaN(ny)) return;
 
-        // Clamp master's position to our local zone (screens may differ)
+        // Convert normalized coords to local screen coords
+        var targetX = zone.left + nx * zoneW;
+        var targetY = zone.top + ny * zoneH;
+
+        // Clamp to local zone bounds
         targetX = Math.max(zone.left, Math.min(zone.right, targetX));
         targetY = Math.max(zone.top, Math.min(zone.absoluteBottom, targetY));
 
@@ -9125,20 +9229,25 @@ function handlePositionCorrection(positions) {
             setAnim(b, masterState === 'hopping' ? 'hopping' : (masterState === 'perched' ? 'perched' : 'idle'));
         }
 
+        // Sync velocity direction for consistent visual facing
+        b.vx = masterVx;
+        b.vy = masterVy;
+        updateFace(b);
+
         // Re-seed the buddy's RNG to re-synchronize decision sequences
-        // Use a shared seed derived from username + current second (rounded to 5s)
-        var syncSeed = hashUsername(name) + Math.floor(Date.now() / 3000);
+        // CRITICAL: Use same SYNC_SEED_EPOCH as master for consistent seeding
+        var syncSeed = hashUsername(name) + syncSeedBase;
         b.moveRng = createSeededRandom(syncSeed);
 
         var dx = targetX - b.x;
         var dy = targetY - b.y;
         var dist = Math.sqrt(dx * dx + dy * dy);
-        if (dist < 5) return;
+        if (dist < 3) return; // Tighter threshold for better precision
 
-        // If very far off (>150px), snap closer immediately
-        if (dist > 150) {
-            b.x += dx * 0.7;
-            b.y += dy * 0.7;
+        // If very far off (>100px), snap closer immediately (reduced from 150)
+        if (dist > 100) {
+            b.x += dx * 0.8;
+            b.y += dy * 0.8;
         }
 
         // Set lerp target for smooth correction
@@ -9159,10 +9268,10 @@ function applyPositionLerp(b) {
         b.posLerpTarget = null;
         b.posLerpProgress = 0;
     } else {
-        // Smooth interpolation - directly set position toward target (not additive)
+        // Smooth interpolation with ease-out curve
         var t = b.posLerpProgress;
-        t = 1 - (1 - t) * (1 - t); // Ease-out
-        var lerpStrength = 0.15 + t * 0.35; // Ramps from 15% to 50% pull
+        t = 1 - (1 - t) * (1 - t); // Ease-out quadratic
+        var lerpStrength = 0.2 + t * 0.4; // Ramps from 20% to 60% pull (stronger correction)
         b.x += (b.posLerpTarget.x - b.x) * lerpStrength;
         b.y += (b.posLerpTarget.y - b.y) * lerpStrength;
     }
@@ -11066,7 +11175,10 @@ function addBuddy(username) {
         posLerpTarget: null,      // Target position for smooth correction lerp
         posLerpProgress: 0,       // 0-1 lerp progress
         hopFriction: 0.97,        // Deceleration rate during hopping (organic movement)
-        hopPauseTime: 0           // Time at which to pause mid-hop (0 = no pause)
+        hopPauseTime: 0,          // Time at which to pause mid-hop (0 = no pause)
+        _stuckTimer: 0,           // Tracks how long buddy has been in blocking state
+        _trackedIntervals: [],    // All setInterval IDs for cleanup on removal
+        _trackedTimeouts: []      // All setTimeout IDs for cleanup on removal
     };
 
     // Delayed re-sync: if custom settings arrive after buddy creation, apply them
@@ -11096,6 +11208,16 @@ function removeBuddy(username) {
         customBuddySettings[username]._departedAt = Date.now();
     }
 
+    // Clean up all tracked intervals/timeouts to prevent ghost interactions
+    cleanupBuddyTimers(buddy);
+
+    // Reset interaction flag immediately so other buddies aren't blocked
+    buddy.interacting = false;
+    buddy.isEgg = false;
+    buddy.sleeping = false;
+    buddy.wallRunning = false;
+    buddy.job = null;
+
     buddy.element.style.transition = 'opacity 0.4s, transform 0.4s';
     buddy.element.style.opacity = '0';
     buddy.element.style.transform = 'scale(0.3)';
@@ -11103,6 +11225,53 @@ function removeBuddy(username) {
         if (buddy.element.parentNode) buddy.element.remove();
         delete buddyCharacters[username];
     }, 400);
+}
+
+// Clean up all tracked timers on a buddy to prevent stuck states
+function cleanupBuddyTimers(buddy) {
+    if (!buddy) return;
+    // Clear all tracked intervals
+    if (buddy._trackedIntervals) {
+        buddy._trackedIntervals.forEach(function(id) {
+            clearInterval(id);
+        });
+        buddy._trackedIntervals = [];
+    }
+    // Clear all tracked timeouts
+    if (buddy._trackedTimeouts) {
+        buddy._trackedTimeouts.forEach(function(id) {
+            clearTimeout(id);
+        });
+        buddy._trackedTimeouts = [];
+    }
+    // Clear hunt-specific cleanup
+    if (buddy._huntEnded) {
+        buddy._huntEnded();
+        buddy._huntEnded = null;
+    }
+}
+
+// Track an interval on a buddy for cleanup when removed
+function trackBuddyInterval(buddy, intervalId) {
+    if (!buddy) return intervalId;
+    if (!buddy._trackedIntervals) buddy._trackedIntervals = [];
+    buddy._trackedIntervals.push(intervalId);
+    return intervalId;
+}
+
+// Track a timeout on a buddy for cleanup when removed
+function trackBuddyTimeout(buddy, timeoutId) {
+    if (!buddy) return timeoutId;
+    if (!buddy._trackedTimeouts) buddy._trackedTimeouts = [];
+    buddy._trackedTimeouts.push(timeoutId);
+    return timeoutId;
+}
+
+// Remove a specific interval from tracking (when it completes naturally)
+function untrackBuddyInterval(buddy, intervalId) {
+    if (!buddy || !buddy._trackedIntervals) return;
+    var idx = buddy._trackedIntervals.indexOf(intervalId);
+    if (idx !== -1) buddy._trackedIntervals.splice(idx, 1);
 }
 
 function startBuddyAnimation() {
@@ -11120,11 +11289,15 @@ function startBuddyAnimation() {
         }
 
         // Return settings with defaults
+        // CRITICAL: energyLevel must NEVER be 0 or falsy, or stateTime stops incrementing and buddy freezes
+        var rawEnergy = settings ? settings.energyLevel : 1.0;
+        var safeEnergy = (typeof rawEnergy === 'number' && rawEnergy > 0) ? rawEnergy : 1.0;
+
         return {
             positionPreference: (settings && settings.positionPreference) || 'roam',
-            movementSpeed: (settings && settings.movementSpeed) || 1.0,
+            movementSpeed: Math.max(0.1, (settings && settings.movementSpeed) || 1.0),
             movementStyle: (settings && settings.movementStyle) || 'default',
-            energyLevel: (settings && settings.energyLevel) || 1.0,
+            energyLevel: safeEnergy,
             chattiness: (settings && settings.chattiness) || 1.0,
             interactionFrequency: (settings && settings.interactionFrequency) || 1.0,
             catchphrase: (settings && settings.catchphrase) || null,
@@ -11220,13 +11393,71 @@ function startBuddyAnimation() {
         }
     }
 
+    // Max time any interaction/state should last before forced recovery (15 seconds)
+    var MAX_INTERACTION_TIME = 15000;
+    var MAX_STATE_TIME = 60000; // Max 60s in any single state before forced transition
+
     function update() {
         var names = Object.keys(buddyCharacters);
         var zone = getBuddyZone();
 
         names.forEach(function(name) {
             var b = buddyCharacters[name];
-            if (!b || b.interacting) return;
+            if (!b) return;
+
+            // ===== STUCK BUDDY RECOVERY =====
+            // Track how long buddy has been in current interaction or blocking state
+            if (!b._stuckTimer) b._stuckTimer = 0;
+
+            if (b.interacting || b.isEgg || b.sleeping) {
+                b._stuckTimer += BUDDY_CONFIG.updateInterval;
+
+                // Force-unstick buddies that have been interacting too long
+                if (b.interacting && b._stuckTimer > MAX_INTERACTION_TIME) {
+                    console.log('[BuddyRecovery] Force-unsticking', name, 'after', b._stuckTimer, 'ms in interaction');
+                    cleanupBuddyTimers(b);
+                    b.interacting = false;
+                    b.inConversation = false;
+                    b.interactCooldown = 3000;
+                    b.state = 'idle';
+                    b.stateTime = 0;
+                    b._stuckTimer = 0;
+                    b.wallRunning = false;
+                    setAnim(b, 'idle');
+                    b.element.style.transform = '';
+                    b.element.classList.remove('wall-running', 'wall-left', 'wall-right', 'wall-top');
+                }
+
+                // Force-unstick eggs that have been eggs too long (2x normal duration)
+                if (b.isEgg && b._stuckTimer > BUDDY_CONFIG.respawnEggDuration * 2) {
+                    console.log('[BuddyRecovery] Force-hatching stuck egg', name);
+                    b.isEgg = false;
+                    b.interacting = false;
+                    b.eggTimer = 0;
+                    b.state = 'idle';
+                    b.stateTime = 0;
+                    b._stuckTimer = 0;
+                    b.element.classList.remove('buddy-egg');
+                    // Restore sprite
+                    if (b.sprite) {
+                        b.element.childNodes[0].textContent = b.sprite.body;
+                    }
+                    setAnim(b, 'idle');
+                }
+
+                // Force wake sleeping buddies after 5 minutes
+                if (b.sleeping && b._stuckTimer > 300000) {
+                    console.log('[BuddyRecovery] Force-waking', name, 'after 5 min sleep');
+                    b.sleeping = false;
+                    b._stuckTimer = 0;
+                    b.element.classList.remove('buddy-sleeping');
+                }
+            } else {
+                b._stuckTimer = 0;
+            }
+
+            // Skip further processing for interacting buddies
+            if (b.interacting) return;
 
             // Get all settings for this buddy
             var settings = getBuddySettings(name);
@@ -11236,6 +11467,17 @@ function startBuddyAnimation() {
 
             if (b.interactCooldown > 0) b.interactCooldown -= BUDDY_CONFIG.updateInterval;
             b.stateTime += BUDDY_CONFIG.updateInterval * energy; // Energy affects time progression
+
+            // Force state transition if stuck too long in any state
+            if (b.stateTime > MAX_STATE_TIME && b.state !== 'idle') {
+                console.log('[BuddyRecovery] Forcing', name, 'out of stuck state:', b.state);
+                b.state = 'idle';
+                b.stateTime = 0;
+                b.wallRunning = false;
+                b.element.style.transform = '';
+                b.element.classList.remove('wall-running', 'wall-left', 'wall-right', 'wall-top');
+                setAnim(b, 'idle');
+            }
 
             // Skip normal movement for buddies with jobs, sleeping, or eggs
             if (b.job || b.sleeping || b.isEgg) return;
@@ -11586,26 +11828,38 @@ function getBuddySpeechPhrase(name, phraseType) {
 
 // Check for all interactions between buddies
 function checkInteractions(names) {
-    // Random speech (local only, doesn't need sync)
-    names.forEach(function(name) {
-        var b = buddyCharacters[name];
-        if (!b || b.interacting || b.speechCooldown > 0) return;
-        b.speechCooldown -= BUDDY_CONFIG.updateInterval;
+    // Random speech - only master initiates to prevent duplicates, broadcasts to others
+    if (isInteractionMaster()) {
+        names.forEach(function(name) {
+            var b = buddyCharacters[name];
+            if (!b || b.interacting || b.speechCooldown > 0) return;
+            b.speechCooldown -= BUDDY_CONFIG.updateInterval;
 
-        // Get chattiness setting - higher = more likely to speak
-        var settings = getBuddySettingsForName(name);
-        var speechChance = BUDDY_CONFIG.speechChance * settings.chattiness;
+            // Get chattiness setting - higher = more likely to speak
+            var settings = getBuddySettingsForName(name);
+            var speechChance = BUDDY_CONFIG.speechChance * settings.chattiness;
 
-        if (Math.random() < speechChance) {
-            var phrase = getBuddySpeechPhrase(name, 'random');
-            if (phrase) {
-                showSpeechBubble(b, phrase, 'flirt');
-                showExpression(b, ['💬', '😊', '🗣️', '💭'][Math.floor(Math.random() * 4)]);
-                // Lower chattiness = longer cooldown between speeches
-                b.speechCooldown = 8000 / settings.chattiness;
+            if (Math.random() < speechChance) {
+                var phrase = getBuddySpeechPhrase(name, 'random');
+                if (phrase) {
+                    var expr = ['💬', '😊', '🗣️', '💭'][Math.floor(Math.random() * 4)];
+                    showSpeechBubble(b, phrase, 'flirt');
+                    showExpression(b, expr);
+                    // Broadcast to other clients
+                    broadcastSpeech(name, phrase, 'flirt', expr);
+                    // Lower chattiness = longer cooldown between speeches
+                    b.speechCooldown = 8000 / settings.chattiness;
+                }
             }
-        }
-    });
+        });
+    } else {
+        // Non-master: just decrement cooldowns (speech comes via Pusher)
+        names.forEach(function(name) {
+            var b = buddyCharacters[name];
+            if (!b || b.interacting) return;
+            if (b.speechCooldown > 0) b.speechCooldown -= BUDDY_CONFIG.updateInterval;
+        });
+    }
 
     // Apply artifact buffs (orb gravity pull)
     applyOrbGravity();
@@ -11756,18 +12010,26 @@ function startKiss(n1, n2, seededRandom) {
         });
     }
 
-    // Spawn floating hearts
+    // Spawn floating hearts (tracked for cleanup)
     var count = 0;
     var heartInterval = setInterval(function() {
         var h = hearts[count];
         createKissEffect(mx + h.offsetX, my - 10, h.heart);
-        if (++count >= 6) clearInterval(heartInterval);
+        if (++count >= 6) {
+            clearInterval(heartInterval);
+            untrackBuddyInterval(b1, heartInterval);
+            untrackBuddyInterval(b2, heartInterval);
+        }
     }, 200);
+    trackBuddyInterval(b1, heartInterval);
+    trackBuddyInterval(b2, heartInterval);
 
     // Heart burst in middle
     createHeartBurst(mx, my);
 
-    setTimeout(function() { endKiss(n1, n2, rng); }, 2000);
+    var kissTimeout = setTimeout(function() { endKiss(n1, n2, rng); }, 2000);
+    trackBuddyTimeout(b1, kissTimeout);
+    trackBuddyTimeout(b2, kissTimeout);
 }
 
 function endKiss(n1, n2, rng) {
@@ -11839,12 +12101,16 @@ function startConfess(n1, n2, seededRandom) {
     var selectedReaction = reactions[Math.floor(rng() * reactions.length)];
 
     // Other buddy reacts
-    setTimeout(function() {
+    var reactTimeout = setTimeout(function() {
         showSpeechBubble(b2, selectedReaction.text, selectedReaction.type);
         showExpression(b2, selectedReaction.expr);
     }, 800);
+    trackBuddyTimeout(b1, reactTimeout);
+    trackBuddyTimeout(b2, reactTimeout);
 
-    setTimeout(function() { endConfess(n1, n2); }, 3500);
+    var confessEndTimeout = setTimeout(function() { endConfess(n1, n2); }, 3500);
+    trackBuddyTimeout(b1, confessEndTimeout);
+    trackBuddyTimeout(b2, confessEndTimeout);
 }
 
 function endConfess(n1, n2) {
@@ -11882,6 +12148,8 @@ function startChase(n1, n2, seededRandom) {
     var chaseInterval = setInterval(function() {
         if (!buddyCharacters[n1] || !buddyCharacters[n2]) {
             clearInterval(chaseInterval);
+            untrackBuddyInterval(chaser, chaseInterval);
+            untrackBuddyInterval(runner, chaseInterval);
             return;
         }
 
@@ -11904,11 +12172,17 @@ function startChase(n1, n2, seededRandom) {
         runner.element.style.left = runner.x + 'px';
         chaser.element.style.left = chaser.x + 'px';
     }, 50);
+    trackBuddyInterval(chaser, chaseInterval);
+    trackBuddyInterval(runner, chaseInterval);
 
-    setTimeout(function() {
+    var chaseTimeout = setTimeout(function() {
         clearInterval(chaseInterval);
+        untrackBuddyInterval(chaser, chaseInterval);
+        untrackBuddyInterval(runner, chaseInterval);
         endChase(n1, n2);
     }, 2500);
+    trackBuddyTimeout(chaser, chaseTimeout);
+    trackBuddyTimeout(runner, chaseTimeout);
 }
 
 function endChase(n1, n2) {
@@ -11954,6 +12228,8 @@ function startFlee(n1, n2, seededRandom) {
     var fleeInterval = setInterval(function() {
         if (!buddyCharacters[n1] || !buddyCharacters[n2]) {
             clearInterval(fleeInterval);
+            untrackBuddyInterval(b1, fleeInterval);
+            untrackBuddyInterval(b2, fleeInterval);
             return;
         }
         b1.x += dir1 * BUDDY_CONFIG.moveSpeed * 2;
@@ -11967,11 +12243,17 @@ function startFlee(n1, n2, seededRandom) {
         b1.element.style.left = b1.x + 'px';
         b2.element.style.left = b2.x + 'px';
     }, 50);
+    trackBuddyInterval(b1, fleeInterval);
+    trackBuddyInterval(b2, fleeInterval);
 
-    setTimeout(function() {
+    var fleeTimeout = setTimeout(function() {
         clearInterval(fleeInterval);
+        untrackBuddyInterval(b1, fleeInterval);
+        untrackBuddyInterval(b2, fleeInterval);
         endFlee(n1, n2);
     }, 1500);
+    trackBuddyTimeout(b1, fleeTimeout);
+    trackBuddyTimeout(b2, fleeTimeout);
 }
 
 function endFlee(n1, n2) {
@@ -12011,10 +12293,18 @@ function startFight(n1, n2, seededRandom) {
     var count = 0;
     var iv = setInterval(function() {
         createFightEffect(mx, my, moves[count]);
-        if (++count >= 4) clearInterval(iv);
+        if (++count >= 4) {
+            clearInterval(iv);
+            untrackBuddyInterval(b1, iv);
+            untrackBuddyInterval(b2, iv);
+        }
     }, 250);
+    trackBuddyInterval(b1, iv);
+    trackBuddyInterval(b2, iv);
 
-    setTimeout(function() { endFight(n1, n2, rng); }, BUDDY_CONFIG.fightDuration);
+    var fightTimeout = setTimeout(function() { endFight(n1, n2, rng); }, BUDDY_CONFIG.fightDuration);
+    trackBuddyTimeout(b1, fightTimeout);
+    trackBuddyTimeout(b2, fightTimeout);
 }
 
 function endFight(n1, n2, rng) {
@@ -12674,6 +12964,13 @@ function startConversation(n1, n2, seededRandom) {
     }
 
     function nextLine() {
+        // Safety check: if buddies no longer exist or were force-unstuck, stop conversation
+        if (!buddyCharacters[n1] || !buddyCharacters[n2] ||
+            !buddyCharacters[n1].interacting || !buddyCharacters[n2].interacting) {
+            endConversation(n1, n2);
+            return;
+        }
+
         if (lineIndex >= template.lines.length) {
             endConversation(n1, n2);
             return;
@@ -12689,7 +12986,9 @@ function startConversation(n1, n2, seededRandom) {
 
         var delay = pregenerated[lineIndex].delay;
         lineIndex++;
-        setTimeout(nextLine, delay);
+        var lineTimeout = setTimeout(nextLine, delay);
+        trackBuddyTimeout(b1, lineTimeout);
+        trackBuddyTimeout(b2, lineTimeout);
     }
 
     // Start the conversation
@@ -13728,9 +14027,12 @@ function startWallRun(b, side, zone, fromSync) {
 function updateWallRun(b, zone) {
     if (!b.wallRunning) return false;
     var speed = BUDDY_CONFIG.wallRunSpeed * getMoodSpeedMultiplier(b);
+    // Ensure minimum speed so wall run always progresses
+    speed = Math.max(0.1, speed);
     b.wallRunProgress += speed * 0.01;
 
-    if (b.wallRunProgress >= 1) {
+    // Safety: end wall run if progress exceeds 1 or has been running too long (8 seconds)
+    if (b.wallRunProgress >= 1 || b.stateTime > 8000) {
         // Finished wall run, detach
         endWallRun(b);
         return false;
@@ -14582,6 +14884,8 @@ function startHunt(predatorName, preyName, fromSync) {
     var huntInterval = setInterval(function() {
         if (!buddyCharacters[predatorName] || !buddyCharacters[preyName] || huntEnded) {
             clearInterval(huntInterval);
+            untrackBuddyInterval(hunter, huntInterval);
+            untrackBuddyInterval(prey, huntInterval);
             return;
         }
         var elapsed = Date.now() - huntStart;
@@ -14612,6 +14916,8 @@ function startHunt(predatorName, preyName, fromSync) {
             if (dist < 15 || (elapsed > 3000 && dist < 40)) {
                 huntEnded = true;
                 clearInterval(huntInterval);
+                untrackBuddyInterval(hunter, huntInterval);
+                untrackBuddyInterval(prey, huntInterval);
                 // Broadcast outcome to all clients
                 broadcastAdvancedAction('huntend', { predator: predatorName, prey: preyName, caught: true });
                 endHunt(predatorName, preyName, true);
@@ -14622,6 +14928,8 @@ function startHunt(predatorName, preyName, fromSync) {
             if (elapsed > 4000) {
                 huntEnded = true;
                 clearInterval(huntInterval);
+                untrackBuddyInterval(hunter, huntInterval);
+                untrackBuddyInterval(prey, huntInterval);
                 broadcastAdvancedAction('huntend', { predator: predatorName, prey: preyName, caught: false });
                 endHunt(predatorName, preyName, false);
             }
@@ -14630,14 +14938,28 @@ function startHunt(predatorName, preyName, fromSync) {
             if (elapsed > 5000) {
                 huntEnded = true;
                 clearInterval(huntInterval);
+                untrackBuddyInterval(hunter, huntInterval);
+                untrackBuddyInterval(prey, huntInterval);
                 endHunt(predatorName, preyName, false);
             }
         }
     }, 50);
+    trackBuddyInterval(hunter, huntInterval);
+    trackBuddyInterval(prey, huntInterval);
 
     // Store huntEnded flag so synced huntend can stop the chase
-    hunter._huntEnded = function() { huntEnded = true; clearInterval(huntInterval); };
-    prey._huntEnded = function() { huntEnded = true; clearInterval(huntInterval); };
+    hunter._huntEnded = function() {
+        huntEnded = true;
+        clearInterval(huntInterval);
+        untrackBuddyInterval(hunter, huntInterval);
+        untrackBuddyInterval(prey, huntInterval);
+    };
+    prey._huntEnded = function() {
+        huntEnded = true;
+        clearInterval(huntInterval);
+        untrackBuddyInterval(hunter, huntInterval);
+        untrackBuddyInterval(prey, huntInterval);
+    };
 }
 
 function endHunt(predatorName, preyName, caught, fromSync) {
@@ -14702,23 +15024,28 @@ function startEggRespawn(username) {
     b.element.childNodes[0].textContent = '🥚';
     b.element.classList.add('buddy-egg');
 
-    // Egg falls
+    // Egg falls (tracked for cleanup)
     var eggFall = setInterval(function() {
         b.y += 2;
         if (b.y >= zone.absoluteBottom - 10) {
             b.y = zone.absoluteBottom - 10;
             clearInterval(eggFall);
+            untrackBuddyInterval(b, eggFall);
         }
         b.element.style.top = b.y + 'px';
     }, 50);
+    trackBuddyInterval(b, eggFall);
 
-    // Hatch after timer
-    setTimeout(function() {
+    // Hatch after timer (tracked for cleanup)
+    var hatchTimeout = setTimeout(function() {
         if (!buddyCharacters[username]) return;
         b.isEgg = false;
         b.interacting = false;
         b.eggTimer = 0;
-        b.element.childNodes[0].textContent = b.sprite.body;
+        b._stuckTimer = 0;
+        if (b.sprite) {
+            b.element.childNodes[0].textContent = b.sprite.body;
+        }
         b.element.classList.remove('buddy-egg');
         b.element.classList.add('buddy-hatching');
         showExpression(b, '🐣');
@@ -14726,6 +15053,7 @@ function startEggRespawn(username) {
         b.stateTime = 0;
         setTimeout(function() { b.element.classList.remove('buddy-hatching'); }, 1000);
     }, BUDDY_CONFIG.respawnEggDuration);
+    trackBuddyTimeout(b, hatchTimeout);
 }
 
 // ===== EVOLVING ANIMATIONS (#14) =====
