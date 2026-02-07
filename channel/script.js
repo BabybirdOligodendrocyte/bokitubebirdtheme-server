@@ -8636,7 +8636,7 @@ function connectPusher() {
         });
 
         pusherChannel.bind('pusher:subscription_error', function(err) {
-            console.log('[Pusher] Subscription error, using chat fallback:', err);
+            console.log('[Pusher] Subscription error:', err, '- buddy sync requires Pusher, interactions will be local-only');
             pusherEnabled = false;
         });
 
@@ -8841,7 +8841,7 @@ function broadcastMyBuddySettings() {
     }
     lastSettingsBroadcast = now;
 
-    // Try Pusher first (no message length limit - send ALL settings)
+    // Pusher-only broadcast (no chat pollution)
     if (pusherEnabled && pusherChannel) {
         try {
             // Full settings object for Pusher - no truncation needed
@@ -8878,11 +8878,20 @@ function broadcastMyBuddySettings() {
             console.log('[Pusher] Broadcast sent for', myName, '(full settings)');
             return;
         } catch (e) {
-            console.log('[Pusher] Trigger failed, using chat fallback');
+            console.log('[Pusher] Trigger failed:', e);
         }
     }
 
-    // Fallback to chat-based sync (240 char limit - minimal settings only)
+    // No chat fallback - Pusher is required for buddy sync
+    console.log('[BuddySync] Pusher not available - settings not broadcast');
+}
+
+// Send a ONE-TIME minimal BSET via chat ONLY on self-rejoin so visual sprites
+// can be restored even if Pusher is slow to reconnect. This is the ONLY chat message.
+function broadcastRejoinVisual() {
+    var myName = getMyUsername();
+    if (!myName || !myBuddySettings) return;
+
     var minimalSettings = {
         si: myBuddySettings.spriteIndex,
         sz: myBuddySettings.size || 'medium',
@@ -8891,119 +8900,70 @@ function broadcastMyBuddySettings() {
         br: myBuddySettings.brightness || 100,
         dn: myBuddySettings.displayName || ''
     };
-
-    // Glow settings (only if set)
-    if (myBuddySettings.glowColor) {
-        minimalSettings.gc = myBuddySettings.glowColor;
-    }
-    if (myBuddySettings.glowIntensity && myBuddySettings.glowIntensity > 0) {
-        minimalSettings.gi = myBuddySettings.glowIntensity;
-    }
-
-    // Custom sprite URL (only if set) - NOTE: Long URLs may exceed message limit
-    if (myBuddySettings.customSpriteUrl) {
-        minimalSettings.cu = myBuddySettings.customSpriteUrl;
-    }
-
-    // Catchphrase only (truncated to 15 chars for chat fallback)
-    var cp = truncateForSync(myBuddySettings.catchphrase, 15);
-    if (cp) minimalSettings.cp = cp;
+    if (myBuddySettings.glowColor) minimalSettings.gc = myBuddySettings.glowColor;
+    if (myBuddySettings.glowIntensity > 0) minimalSettings.gi = myBuddySettings.glowIntensity;
+    if (myBuddySettings.customSpriteUrl) minimalSettings.cu = myBuddySettings.customSpriteUrl;
 
     var encoded = encodeBuddySettings(minimalSettings);
-    if (!encoded) {
-        console.log('[BuddySync] Encoding failed');
+    if (!encoded) return;
+
+    var hiddenMsg = '\u200B\u200CBSET:' + myName + ':' + encoded + ':BSET\u200B\u200C';
+    if (hiddenMsg.length > 240) {
+        console.log('[BuddySync] Rejoin visual too long, skipping chat message');
         return;
     }
 
-    var hiddenMsg = '\u200B\u200CBSET:' + myName + ':' + encoded + ':BSET\u200B\u200C';
-    console.log('[BuddySync] Message length:', hiddenMsg.length, '(must be <240 for Cytube)');
-    console.log('[BuddySync] Broadcasting settings - spriteIndex:', minimalSettings.si, 'size:', minimalSettings.sz);
-
     if (typeof socket !== 'undefined' && socket.emit) {
         socket.emit('chatMsg', { msg: hiddenMsg, meta: {} });
-        console.log('[BuddySync] Chat broadcast sent for', myName, '- check other browser for "[BuddySync] Sync message from" log');
-    } else {
-        console.log('[BuddySync] ERROR: socket not available for broadcast!');
+        console.log('[BuddySync] Rejoin visual sent via chat (one-time)');
     }
 }
 
-// Broadcast an interaction for sync (includes NORMALIZED positions for cross-screen consistency)
+// Broadcast an interaction for sync via Pusher (normalized positions for cross-screen consistency)
 function broadcastInteraction(user1, user2, interactionType, seed) {
+    if (!pusherEnabled || !pusherChannel) return; // Pusher required
+
     var b1 = buddyCharacters[user1];
     var b2 = buddyCharacters[user2];
     var zone = getBuddyZone();
     var zoneW = Math.max(1, zone.right - zone.left);
     var zoneH = Math.max(1, zone.absoluteBottom - zone.top);
 
-    // Use normalized coords (0-1) for Pusher, absolute for chat fallback
     var npos1 = b1 ? ((b1.x - zone.left) / zoneW).toFixed(4) + ',' + ((b1.y - zone.top) / zoneH).toFixed(4) : '0.5,0.5';
     var npos2 = b2 ? ((b2.x - zone.left) / zoneW).toFixed(4) + ',' + ((b2.y - zone.top) / zoneH).toFixed(4) : '0.5,0.5';
 
-    // Try Pusher first (no chat pollution)
-    if (pusherEnabled && pusherChannel) {
-        try {
-            pusherChannel.trigger('client-buddy-action', {
-                user1: user1,
-                user2: user2,
-                action: interactionType,
-                seed: seed,
-                pos1: npos1,
-                pos2: npos2,
-                normalized: true // Flag so receiver knows to denormalize
-            });
-            return;
-        } catch (e) {
-            console.log('[Pusher] Action trigger failed, using chat fallback');
-        }
-    }
-
-    // Fallback to chat-based sync (uses absolute coords due to message length constraints)
-    var pos1 = b1 ? Math.round(b1.x) + ',' + Math.round(b1.y) : '0,0';
-    var pos2 = b2 ? Math.round(b2.x) + ',' + Math.round(b2.y) : '0,0';
-    var hiddenMsg = '\u200B\u200CBACT:' + user1 + ':' + user2 + ':' + interactionType + ':' + seed + ':' + pos1 + ':' + pos2 + ':BACT\u200B\u200C';
-    console.log('[BuddySync] Broadcasting action:', interactionType, 'between', user1, 'and', user2);
-    if (typeof socket !== 'undefined' && socket.emit) {
-        socket.emit('chatMsg', { msg: hiddenMsg, meta: {} });
-    } else {
-        console.log('[BuddySync] ERROR: socket not available for action broadcast!');
+    try {
+        pusherChannel.trigger('client-buddy-action', {
+            user1: user1,
+            user2: user2,
+            action: interactionType,
+            seed: seed,
+            pos1: npos1,
+            pos2: npos2,
+            normalized: true
+        });
+    } catch (e) {
+        console.log('[Pusher] Action trigger failed:', e);
     }
 }
 
-// Broadcast an advanced action (group, hunt, job, evolve, physics, rel)
-// Uses Pusher with chat BACT fallback. Extra data sent as JSON in 'extra' field.
+// Broadcast an advanced action via Pusher only (group, hunt, job, evolve, physics, rel)
 function broadcastAdvancedAction(actionType, extraData) {
+    if (!pusherEnabled || !pusherChannel) return; // Pusher required
+
     var myName = getMyUsername();
     if (!myName) return;
 
-    var payload = {
-        user1: myName,
-        user2: extraData.user2 || '',
-        action: actionType,
-        seed: extraData.seed || Math.floor(Math.random() * 1000000),
-        extra: extraData
-    };
-
-    // Try Pusher first
-    if (pusherEnabled && pusherChannel) {
-        try {
-            pusherChannel.trigger('client-buddy-action', payload);
-            return;
-        } catch (e) {
-            console.log('[Pusher] Advanced action trigger failed, using chat fallback');
-        }
-    }
-
-    // Chat fallback: encode extra data as base64 JSON
-    var extraStr = '';
-    try { extraStr = btoa(JSON.stringify(extraData)); } catch(e) { return; }
-    var hiddenMsg = '\u200B\u200CBACT:' + myName + ':' + (extraData.user2 || '_') + ':' + actionType + ':' + payload.seed + ':' + extraStr + ':_:BACT\u200B\u200C';
-    // Check message length - critical for Cytube
-    if (hiddenMsg.length > 235) {
-        console.log('[BuddySync] Advanced action too long for chat:', hiddenMsg.length, 'skipping chat fallback');
-        return;
-    }
-    if (typeof socket !== 'undefined' && socket.emit) {
-        socket.emit('chatMsg', { msg: hiddenMsg, meta: {} });
+    try {
+        pusherChannel.trigger('client-buddy-action', {
+            user1: myName,
+            user2: extraData.user2 || '',
+            action: actionType,
+            seed: extraData.seed || Math.floor(Math.random() * 1000000),
+            extra: extraData
+        });
+    } catch (e) {
+        console.log('[Pusher] Advanced action trigger failed:', e);
     }
 }
 
@@ -9679,43 +9639,19 @@ function getBuddyPhrase(buddy, phraseType, defaultPhrases, seededRandom) {
 
 // Initialize sync message listener
 function initBuddySyncListener() {
-    console.log('[BuddySync] Initializing sync listener...');
+    console.log('[BuddySync] Initializing sync listener (Pusher-primary)...');
 
-    // Track if we've processed a message to avoid duplicates
-    var processedMessages = new Set();
-    var MAX_PROCESSED = 100;
-
-    function processSyncMessage(msgText, source) {
-        if (!msgText) return false;
-
-        // Create a simple hash to track processed messages
-        var msgHash = msgText.length + ':' + msgText.substring(0, 50);
-        if (processedMessages.has(msgHash)) {
-            return true; // Already processed
-        }
-
-        if (isBuddySyncMessage(msgText)) {
-            console.log('[BuddySync] Sync message from ' + source + ', length:', msgText.length);
-
-            // Mark as processed
-            processedMessages.add(msgHash);
-            if (processedMessages.size > MAX_PROCESSED) {
-                var first = processedMessages.values().next().value;
-                processedMessages.delete(first);
-            }
-
-            parseBuddySyncMessage(msgText);
-            return true;
-        }
-        return false;
-    }
-
-    // Register with dispatcher (priority 100 - HIGHEST, runs first to filter sync messages)
+    // Register with dispatcher (priority 100) - catches any straggler BSET messages
+    // from chat (rejoin visual restore only). BACT no longer goes through chat.
     BokiChatDispatcher.register('buddySync', function(data) {
         if (!data.msg) return false;
 
-        if (processSyncMessage(data.msg, 'dispatcher')) {
-            // Hide the message from chat display
+        if (isBuddySyncMessage(data.msg)) {
+            // Only process BSET messages (visual settings restore)
+            if (data.msg.indexOf('BSET:') !== -1) {
+                parseBuddySyncMessage(data.msg);
+            }
+            // Always hide sync messages from chat display
             setTimeout(function() {
                 var msgs = document.querySelectorAll('#messagebuffer > div');
                 var lastMsg = msgs[msgs.length - 1];
@@ -9723,61 +9659,32 @@ function initBuddySyncListener() {
                     lastMsg.remove();
                 }
             }, 50);
-
-            return true; // STOP processing - don't pass to other handlers
+            return true; // STOP processing
         }
-        return false; // Not a sync message, continue to other handlers
+        return false;
     }, 100);
 
-    // CRITICAL: Add DIRECT socket.on handler as backup
-    // The dispatcher might miss messages due to timing issues
-    // This ensures buddy sync works regardless of dispatcher state
-    // Use flag to prevent duplicate handler registration on reconnect
-    if (typeof socket !== 'undefined' && socket.on && !window._bokiBuddySyncSocketInit) {
-        window._bokiBuddySyncSocketInit = true;
-        socket.on('chatMsg', function(data) {
-            if (data && data.msg && isBuddySyncMessage(data.msg)) {
-                processSyncMessage(data.msg, 'direct-socket');
-            }
-        });
-        console.log('[BuddySync] Direct socket handler registered');
-    } else if (!window._bokiBuddySyncSocketInit) {
-        console.log('[BuddySync] WARNING: socket not available for direct handler');
-        // Retry after delay
-        setTimeout(function() {
-            if (typeof socket !== 'undefined' && socket.on && !window._bokiBuddySyncSocketInit) {
-                window._bokiBuddySyncSocketInit = true;
-                socket.on('chatMsg', function(data) {
-                    if (data && data.msg && isBuddySyncMessage(data.msg)) {
-                        processSyncMessage(data.msg, 'direct-socket-delayed');
-                    }
-                });
-                console.log('[BuddySync] Direct socket handler registered (delayed)');
-            }
-        }, 2000);
-    }
-
-    // Clean up EXISTING messages in chat history (from before we joined)
+    // Clean up any existing sync messages from chat history
     function cleanupExistingMessages() {
         var msgBuffer = document.getElementById('messagebuffer');
         if (msgBuffer) {
             var msgs = msgBuffer.querySelectorAll(':scope > div');
             msgs.forEach(function(msg) {
                 var text = msg.textContent || '';
-                // Remove if it contains BSET or BACT sync markers
                 if (isBuddySyncMessage(text)) {
-                    parseBuddySyncMessage(text);
+                    // Parse BSET for visual restore, ignore BACT
+                    if (text.indexOf('BSET:') !== -1) {
+                        parseBuddySyncMessage(text);
+                    }
                     msg.remove();
                 }
             });
         }
     }
-    // Run cleanup immediately and after a delay (for late-loaded history)
     cleanupExistingMessages();
-    setTimeout(cleanupExistingMessages, 1000);
-    setTimeout(cleanupExistingMessages, 3000);
+    setTimeout(cleanupExistingMessages, 1500);
 
-    // Watch messagebuffer for NEW sync messages
+    // Watch messagebuffer for any sync messages that sneak through and remove them
     var msgBuffer = document.getElementById('messagebuffer');
     if (msgBuffer) {
         var observer = new MutationObserver(function(mutations) {
@@ -9786,7 +9693,9 @@ function initBuddySyncListener() {
                     if (node.nodeType === 1) {
                         var text = node.textContent || '';
                         if (isBuddySyncMessage(text)) {
-                            parseBuddySyncMessage(text);
+                            if (text.indexOf('BSET:') !== -1) {
+                                parseBuddySyncMessage(text);
+                            }
                             node.remove();
                         }
                     }
@@ -9797,65 +9706,11 @@ function initBuddySyncListener() {
         _bokiCleanup.registerObserver('buddySyncMsgObserver', observer);
     }
 
-    // NND Chat Cleanup - ONLY target NND overlay elements, NOT chat elements
-    // NND overlay elements are typically outside #main/#wrap and have specific characteristics
-    var nndObserver = new MutationObserver(function(mutations) {
-        mutations.forEach(function(mutation) {
-            mutation.addedNodes.forEach(function(node) {
-                if (node.nodeType === 1) {
-                    // Skip if inside important containers
-                    if (node.closest('#main, #wrap, #messagebuffer, #userlist, #chatline, .modal')) return;
-
-                    var text = node.textContent || '';
-                    if (isBuddySyncMessage(text)) {
-                        // Only remove if it looks like an NND element (has animation/transform)
-                        var style = window.getComputedStyle(node);
-                        if (style.animation !== 'none' ||
-                            style.transform !== 'none' ||
-                            style.position === 'fixed' ||
-                            (style.position === 'absolute' && !node.closest('#main, #wrap'))) {
-                            node.remove();
-                        }
-                    }
-                }
-            });
-        });
-    });
-    nndObserver.observe(document.body, { childList: true, subtree: false }); // Only direct children
-    _bokiCleanup.registerObserver('nndObserver', nndObserver);
-
-    // Periodic cleanup for NND overlay - be very targeted
-    var _nndCleanupIntervalId = setInterval(function() {
-        // Only look at direct children of body that aren't main UI containers
-        var bodyChildren = document.body.children;
-        for (var i = bodyChildren.length - 1; i >= 0; i--) {
-            var el = bodyChildren[i];
-            // Skip important containers
-            if (el.id === 'main' || el.id === 'wrap' || el.id === 'footer' ||
-                el.classList.contains('modal') || el.classList.contains('buddy-character') ||
-                el.tagName === 'SCRIPT' || el.tagName === 'STYLE' || el.tagName === 'LINK') {
-                continue;
-            }
-            var text = el.textContent || '';
-            if (isBuddySyncMessage(text)) {
-                el.remove();
-            }
-        }
-    }, 100);
-
-    // Load my settings and broadcast ONCE on init
-    // We only broadcast when: 1) We first join, 2) Our settings change
-    // This prevents flooding chat history with sync messages
+    // Load my settings and broadcast via Pusher on init
     loadMyBuddySettings();
-
-    // Single broadcast after joining (give time for socket to be ready)
     setTimeout(function() {
         broadcastMyBuddySettings();
     }, 2000);
-
-    // NO periodic broadcasts - they flood chat history
-    // NO broadcast when others join - hash-based defaults handle most cases
-    // Settings only broadcast when user explicitly changes them
 }
 
 // Hash function for deterministic assignment
@@ -10232,29 +10087,18 @@ function initConnectedBuddies() {
 
             var myName = getMyUsername();
 
-            // If WE just reconnected, re-broadcast our settings so others see our sprite
+            // If WE just reconnected, re-broadcast settings via Pusher + send ONE chat BSET for visual restore
             if (data.name === myName && myBuddySettings) {
-                console.log('[BuddySync] Self rejoin detected - re-broadcasting settings');
+                console.log('[BuddySync] Self rejoin detected');
                 setTimeout(function() {
                     lastSettingsBroadcast = 0;
-                    broadcastMyBuddySettings();
+                    broadcastMyBuddySettings();   // Pusher (full settings)
+                    broadcastRejoinVisual();       // Chat (minimal visual only, one-time)
                 }, 2000);
                 return;
             }
 
-            // When someone else joins, re-broadcast our settings so they see our sprite
-            // Pusher handles this via member_added; for chat fallback, rate-limit to avoid flooding
-            if (data.name !== myName && myBuddySettings && !pusherEnabled) {
-                var now = Date.now();
-                if (now - lastChatRejoinBroadcast > 10000) {
-                    lastChatRejoinBroadcast = now;
-                    var delay = 1000 + Math.random() * 2000;
-                    setTimeout(function() {
-                        lastSettingsBroadcast = 0;
-                        broadcastMyBuddySettings();
-                    }, delay);
-                }
-            }
+            // Other user joins: Pusher handles via member_added event, no chat broadcast needed
         });
         socket.on('userLeave', function(data) { if (data.name) removeBuddy(data.name); });
         socket.on('userlist', function() { setTimeout(syncBuddiesWithUserlist, 500); });
