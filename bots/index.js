@@ -8,7 +8,7 @@ const { io } = require('socket.io-client');
 //  Configuration
 // ============================================================
 
-const CHANNEL = process.env.CYTUBE_CHANNEL || 'bokigang';
+const CHANNEL = process.env.CYTUBE_CHANNEL || 'AltarOfVictory';
 const BOT_COUNT = parseInt(process.env.BOT_COUNT, 10) || 20;
 
 // CyTube rate-limits connections: 5 burst, then ~1 per 10s.
