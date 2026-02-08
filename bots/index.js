@@ -10,7 +10,7 @@ const { SocksProxyAgent } = require('socks-proxy-agent');
 // ============================================================
 
 const CHANNEL = process.env.CYTUBE_CHANNEL || 'AltarOfVictory';
-const BOT_COUNT = parseInt(process.env.BOT_COUNT, 10) || 20;
+const BOT_COUNT = parseInt(process.env.BOT_COUNT, 10) || 30;
 
 // Proxy support - route bots through one or more SOCKS proxies (e.g. VPN).
 // Comma-separated list of proxy URLs with bot counts.
