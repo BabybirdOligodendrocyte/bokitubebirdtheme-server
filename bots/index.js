@@ -3,13 +3,22 @@
 const https = require('https');
 const http = require('http');
 const { io } = require('socket.io-client');
+const { SocksProxyAgent } = require('socks-proxy-agent');
 
 // ============================================================
 //  Configuration
 // ============================================================
 
 const CHANNEL = process.env.CYTUBE_CHANNEL || 'AltarOfVictory';
-const BOT_COUNT = parseInt(process.env.BOT_COUNT, 10) || 20;
+const BOT_COUNT = parseInt(process.env.BOT_COUNT, 10) || 30;
+
+// Proxy support - route bots through one or more SOCKS proxies (e.g. VPN).
+// Comma-separated list of proxy URLs with bot counts.
+// Example: PROXIES=socks5://127.0.0.1:1080,socks5://127.0.0.1:1081
+//          PROXY_BOT_COUNTS=10,10
+// This routes bots 1-10 through :1080, bots 11-20 through :1081, rest go direct.
+const PROXIES = (process.env.PROXIES || process.env.PROXY_URL || '').split(',').map(s => s.trim()).filter(Boolean);
+const PROXY_BOT_COUNTS = (process.env.PROXY_BOT_COUNTS || process.env.PROXY_BOT_COUNT || '10').split(',').map(s => parseInt(s.trim(), 10));
 
 // CyTube rate-limits connections: 5 burst, then ~1 per 10s.
 // We stagger beyond the burst window to stay safe.
@@ -55,11 +64,12 @@ function ts() {
 // ============================================================
 
 class CytubeBot {
-  constructor(id, serverUrl, channel) {
+  constructor(id, serverUrl, channel, proxyUrl) {
     this.id = id;
     this.label = `Bot-${String(id).padStart(2, '0')}`;
     this.serverUrl = serverUrl;
     this.channel = channel;
+    this.proxyUrl = proxyUrl || null;
     this.socket = null;
     this.connected = false;
     this.guestName = null;
@@ -71,15 +81,23 @@ class CytubeBot {
 
   connect() {
     return new Promise((resolve) => {
-      this.log(`Connecting to ${this.serverUrl} ...`);
+      var via = this.proxyUrl ? ` via proxy ${this.proxyUrl}` : ' (direct)';
+      this.log(`Connecting to ${this.serverUrl}${via} ...`);
 
-      this.socket = io(this.serverUrl, {
+      var opts = {
         secure: true,
         reconnection: true,
         reconnectionDelay: 5000,
         reconnectionAttempts: 10,
         transports: ['websocket'],
-      });
+      };
+
+      if (this.proxyUrl) {
+        var agent = new SocksProxyAgent(this.proxyUrl);
+        opts.agent = agent;
+      }
+
+      this.socket = io(this.serverUrl, opts);
 
       this.socket.on('connect', () => {
         this.connected = true;
@@ -158,6 +176,17 @@ async function main() {
   console.log(`\n=== CyTube Multi-Bot Launcher ===`);
   console.log(`Channel : ${CHANNEL}`);
   console.log(`Bots    : ${BOT_COUNT}`);
+  if (PROXIES.length > 0) {
+    var totalProxied = 0;
+    PROXIES.forEach(function(p, idx) {
+      var count = PROXY_BOT_COUNTS[idx] || 0;
+      totalProxied += count;
+      console.log(`Proxy ${idx + 1} : ${p}  (${count} bots)`);
+    });
+    console.log(`Direct  : ${Math.max(0, BOT_COUNT - totalProxied)} bots`);
+  } else {
+    console.log(`Proxy   : none (all direct)`);
+  }
   console.log(`Burst   : ${BURST_SIZE}, then 1 every ${STAGGER_MS / 1000}s\n`);
 
   // Step 1 - Fetch socket server URL
@@ -180,7 +209,18 @@ async function main() {
   const bots = [];
 
   for (let i = 1; i <= BOT_COUNT; i++) {
-    const bot = new CytubeBot(i, serverUrl, CHANNEL);
+    // Assign proxy: walk through proxy ranges, rest go direct
+    var useProxy = null;
+    var offset = 0;
+    for (var p = 0; p < PROXIES.length; p++) {
+      var count = PROXY_BOT_COUNTS[p] || 0;
+      if (i > offset && i <= offset + count) {
+        useProxy = PROXIES[p];
+        break;
+      }
+      offset += count;
+    }
+    const bot = new CytubeBot(i, serverUrl, CHANNEL, useProxy);
     bots.push(bot);
 
     await bot.connect();
