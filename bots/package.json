@@ -1,0 +1,12 @@
+{
+  "name": "cytube-multi-bot",
+  "version": "1.0.0",
+  "description": "Multi-bot Socket.IO client for CyTube channels",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "socket.io-client": "^4.7.0"
+  }
+}
