@@ -17,8 +17,9 @@ const BOT_COUNT = parseInt(process.env.BOT_COUNT, 10) || 30;
 // Example: PROXIES=socks5://127.0.0.1:1080,socks5://127.0.0.1:1081
 //          PROXY_BOT_COUNTS=10,10
 // This routes bots 1-10 through :1080, bots 11-20 through :1081, rest go direct.
-const PROXIES = (process.env.PROXIES || process.env.PROXY_URL || '').split(',').map(s => s.trim()).filter(Boolean);
-const PROXY_BOT_COUNTS = (process.env.PROXY_BOT_COUNTS || process.env.PROXY_BOT_COUNT || '10').split(',').map(s => parseInt(s.trim(), 10));
+// EDIT THESE with your VPN's SOCKS proxy addresses and ports:
+const PROXIES = (process.env.PROXIES || 'socks5://127.0.0.1:1080,socks5://127.0.0.1:1081').split(',').map(s => s.trim()).filter(Boolean);
+const PROXY_BOT_COUNTS = (process.env.PROXY_BOT_COUNTS || '10,10').split(',').map(s => parseInt(s.trim(), 10));
 
 // CyTube rate-limits connections: 5 burst, then ~1 per 10s.
 // We stagger beyond the burst window to stay safe.
