@@ -10,7 +10,7 @@ const { SocksProxyAgent } = require('socks-proxy-agent');
 // ============================================================
 
 const CHANNEL = process.env.CYTUBE_CHANNEL || 'AltarOfVictory';
-const BOT_COUNT = parseInt(process.env.BOT_COUNT, 10) || 30;
+const BOT_COUNT = parseInt(process.env.BOT_COUNT, 10) || 20;
 
 // Proxy support - route bots through one or more SOCKS proxies (e.g. VPN).
 // Comma-separated list of proxy URLs with bot counts.
@@ -18,8 +18,8 @@ const BOT_COUNT = parseInt(process.env.BOT_COUNT, 10) || 30;
 //          PROXY_BOT_COUNTS=10,10
 // This routes bots 1-10 through :1080, bots 11-20 through :1081, rest go direct.
 // EDIT THESE with your VPN's SOCKS proxy addresses and ports:
-const PROXIES = (process.env.PROXIES || 'socks5://127.0.0.1:1080,socks5://127.0.0.1:1081').split(',').map(s => s.trim()).filter(Boolean);
-const PROXY_BOT_COUNTS = (process.env.PROXY_BOT_COUNTS || '10,10').split(',').map(s => parseInt(s.trim(), 10));
+const PROXIES = (process.env.PROXIES || 'socks5://YOUR_PIA_USER:YOUR_PIA_PASS@proxy-nl.privateinternetaccess.com:1080').split(',').map(s => s.trim()).filter(Boolean);
+const PROXY_BOT_COUNTS = (process.env.PROXY_BOT_COUNTS || '10').split(',').map(s => parseInt(s.trim(), 10));
 
 // CyTube rate-limits connections: 5 burst, then ~1 per 10s.
 // We stagger beyond the burst window to stay safe.
