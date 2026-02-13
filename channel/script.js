@@ -6415,6 +6415,11 @@ window.resetRename = resetRename;
                 var containerWidth = contentWrap.offsetWidth;
                 var percentWidth = (leftContent.offsetWidth / containerWidth) * 100;
                 localStorage.setItem('cytube_column_width', percentWidth.toFixed(1) + '%');
+
+                // Return buddies that ended up in the video area after column resize
+                if (typeof returnBuddiesToZone === 'function') {
+                    setTimeout(returnBuddiesToZone, 100);
+                }
             }
         });
 
@@ -8700,6 +8705,23 @@ function connectPusher() {
             }
         });
 
+        // Listen for buddy drag events
+        pusherChannel.bind('client-buddy-drag-start', function(data) {
+            if (data.dragger && data.dragger !== getMyUsername()) {
+                handlePusherDragStart(data);
+            }
+        });
+        pusherChannel.bind('client-buddy-drag-move', function(data) {
+            if (data.dragger && data.dragger !== getMyUsername()) {
+                handlePusherDragMove(data);
+            }
+        });
+        pusherChannel.bind('client-buddy-drag-end', function(data) {
+            if (data.dragger && data.dragger !== getMyUsername()) {
+                handlePusherDragEnd(data);
+            }
+        });
+
         console.log('[Pusher] Initialized');
     } catch (e) {
         console.log('[Pusher] Init error:', e);
@@ -10060,6 +10082,7 @@ function initConnectedBuddies() {
         startBuddyAnimation();
         initArtifactSystem();
         initAdvancedBuddySystems();
+        initBuddyResizeContainment();
     }, 1500);
 
     // Re-apply custom settings after enough time for responses to arrive
@@ -10787,6 +10810,47 @@ function injectBuddyStyles() {
             50% { transform: translateX(-50%) translateY(-3px) rotate(5deg); }
         }
 
+        /* ========== BUDDY DRAG & DROP ========== */
+        .buddy-character.buddy-being-dragged {
+            z-index: 10010 !important;
+            cursor: grabbing !important;
+            animation: none !important;
+            transition: none !important;
+        }
+        .buddy-character.buddy-being-dragged .buddy-nametag {
+            opacity: 0 !important;
+        }
+        .buddy-drag-ring {
+            position: fixed;
+            pointer-events: none;
+            z-index: 10009;
+            border: 2px solid rgba(255,215,0,0.9);
+            border-radius: 50%;
+            box-shadow: 0 0 10px rgba(255,215,0,0.5), inset 0 0 6px rgba(255,215,0,0.3);
+            animation: buddy-drag-ring-pulse 0.8s ease-in-out infinite;
+        }
+        .buddy-drag-label {
+            position: fixed;
+            pointer-events: none;
+            z-index: 10010;
+            background: rgba(0,0,0,0.85);
+            color: #ffd700;
+            padding: 2px 8px;
+            border-radius: 8px;
+            font-size: 10px;
+            font-family: monospace;
+            white-space: nowrap;
+            border: 1px solid rgba(255,215,0,0.6);
+            box-shadow: 0 0 6px rgba(255,215,0,0.3);
+        }
+        @keyframes buddy-drag-ring-pulse {
+            0%, 100% { transform: scale(1); opacity: 0.9; }
+            50% { transform: scale(1.12); opacity: 0.6; }
+        }
+        .buddy-character.buddy-returning {
+            transition: left 0.4s ease-out, top 0.4s ease-out !important;
+        }
+
         @media (max-width: 768px) {
             .buddy-character { display: none; }
             .buddy-speech { display: none; }
@@ -10969,15 +11033,8 @@ function addBuddy(username) {
     el.style.left = startX + 'px';
     el.style.top = startY + 'px';
 
-    el.addEventListener('click', function(e) {
-        e.stopPropagation();
-        var b = buddyCharacters[username];
-        if (b && b.state !== 'jumping' && !b.interacting) {
-            b.element.classList.add('buddy-excited');
-            showExpression(b, '😊');
-            setTimeout(function() { b.element.classList.remove('buddy-excited'); }, 600);
-        }
-    });
+    // Drag-and-drop (includes click fallback for non-drag taps)
+    initBuddyDrag(el, username);
 
     document.body.appendChild(el);
 
@@ -11248,6 +11305,9 @@ function startBuddyAnimation() {
         names.forEach(function(name) {
             var b = buddyCharacters[name];
             if (!b) return;
+
+            // Skip buddies being dragged - position controlled by drag handler
+            if (b.dragging) return;
 
             // ===== STUCK BUDDY RECOVERY =====
             // Track how long buddy has been in current interaction or blocking state
@@ -14895,6 +14955,362 @@ function startEggRespawn(username) {
         setTimeout(function() { b.element.classList.remove('buddy-hatching'); }, 1000);
     }, BUDDY_CONFIG.respawnEggDuration);
     trackBuddyTimeout(b, hatchTimeout);
+}
+
+// ===== BUDDY DRAG & DROP =====
+// State for active drags (keyed by buddy username)
+var buddyDragState = {};
+
+// Throttle helper: returns true if enough time has passed since last call
+var _dragBroadcastTimers = {};
+function canBroadcastDrag(buddyName) {
+    var now = Date.now();
+    if (!_dragBroadcastTimers[buddyName] || now - _dragBroadcastTimers[buddyName] >= 66) {
+        _dragBroadcastTimers[buddyName] = now;
+        return true;
+    }
+    return false;
+}
+
+// Create the visual ring + label elements for a drag
+function createDragHighlight(buddyName, draggerName) {
+    removeDragHighlight(buddyName);
+    var ring = document.createElement('div');
+    ring.className = 'buddy-drag-ring';
+    ring.id = 'buddy-drag-ring-' + buddyName;
+    document.body.appendChild(ring);
+
+    var label = document.createElement('div');
+    label.className = 'buddy-drag-label';
+    label.id = 'buddy-drag-label-' + buddyName;
+    label.textContent = draggerName + ' is moving...';
+    document.body.appendChild(label);
+    return { ring: ring, label: label };
+}
+
+// Update ring + label position around a buddy
+function updateDragHighlight(buddyName, x, y, size) {
+    var ring = document.getElementById('buddy-drag-ring-' + buddyName);
+    var label = document.getElementById('buddy-drag-label-' + buddyName);
+    if (!ring || !label) return;
+    var padding = 10;
+    var ringSize = size + padding * 2;
+    ring.style.width = ringSize + 'px';
+    ring.style.height = ringSize + 'px';
+    ring.style.left = (x - padding) + 'px';
+    ring.style.top = (y - padding) + 'px';
+    label.style.left = (x + size / 2) + 'px';
+    label.style.top = (y + size + 8) + 'px';
+    label.style.transform = 'translateX(-50%)';
+}
+
+// Remove drag highlight elements
+function removeDragHighlight(buddyName) {
+    var ring = document.getElementById('buddy-drag-ring-' + buddyName);
+    var label = document.getElementById('buddy-drag-label-' + buddyName);
+    if (ring) ring.remove();
+    if (label) label.remove();
+}
+
+// Get the pixel size of a buddy element
+function getBuddyPixelSize(b) {
+    if (!b || !b.element) return 24;
+    return b.element.offsetWidth || parseFloat(b.element.style.fontSize) || 24;
+}
+
+// Broadcast drag events via Pusher
+function broadcastDragStart(buddyName) {
+    if (!pusherEnabled || !pusherChannel) return;
+    var zone = getBuddyZone();
+    var b = buddyCharacters[buddyName];
+    if (!b) return;
+    var zoneW = Math.max(1, zone.right - zone.left);
+    var zoneH = Math.max(1, zone.absoluteBottom - zone.top);
+    try {
+        pusherChannel.trigger('client-buddy-drag-start', {
+            target: buddyName,
+            dragger: getMyUsername(),
+            x: ((b.x - zone.left) / zoneW).toFixed(4),
+            y: ((b.y - zone.top) / zoneH).toFixed(4)
+        });
+    } catch (e) { /* Pusher rate limit */ }
+}
+
+function broadcastDragMove(buddyName, nx, ny) {
+    if (!pusherEnabled || !pusherChannel) return;
+    if (!canBroadcastDrag(buddyName)) return;
+    try {
+        pusherChannel.trigger('client-buddy-drag-move', {
+            target: buddyName,
+            dragger: getMyUsername(),
+            x: nx.toFixed(4),
+            y: ny.toFixed(4)
+        });
+    } catch (e) { /* Pusher rate limit */ }
+}
+
+function broadcastDragEnd(buddyName, nx, ny) {
+    if (!pusherEnabled || !pusherChannel) return;
+    try {
+        pusherChannel.trigger('client-buddy-drag-end', {
+            target: buddyName,
+            dragger: getMyUsername(),
+            x: nx.toFixed(4),
+            y: ny.toFixed(4)
+        });
+    } catch (e) { /* Pusher rate limit */ }
+    delete _dragBroadcastTimers[buddyName];
+}
+
+// ---- Local drag handlers (attached to buddy elements) ----
+
+function initBuddyDrag(el, username) {
+    var dragging = false;
+    var offsetX = 0;
+    var offsetY = 0;
+    var startX = 0;
+    var startY = 0;
+    var moved = false;
+
+    function onPointerDown(e) {
+        // Only primary button (left click) or touch
+        if (e.button && e.button !== 0) return;
+        var b = buddyCharacters[username];
+        if (!b) return;
+        // Don't start drag if another user is already dragging this buddy
+        if (buddyDragState[username] && buddyDragState[username].dragger !== getMyUsername()) return;
+
+        e.preventDefault();
+        e.stopPropagation();
+
+        var clientX = e.touches ? e.touches[0].clientX : e.clientX;
+        var clientY = e.touches ? e.touches[0].clientY : e.clientY;
+        offsetX = clientX - b.x;
+        offsetY = clientY - b.y;
+        startX = clientX;
+        startY = clientY;
+        moved = false;
+        dragging = true;
+
+        // Mark buddy as being dragged
+        b.dragging = true;
+        b.draggedBy = getMyUsername();
+        buddyDragState[username] = { dragger: getMyUsername(), local: true };
+        el.classList.add('buddy-being-dragged');
+
+        var size = getBuddyPixelSize(b);
+        createDragHighlight(username, getMyUsername());
+        updateDragHighlight(username, b.x, b.y, size);
+        broadcastDragStart(username);
+
+        document.addEventListener('mousemove', onPointerMove, { passive: false });
+        document.addEventListener('mouseup', onPointerUp);
+        document.addEventListener('touchmove', onPointerMove, { passive: false });
+        document.addEventListener('touchend', onPointerUp);
+        document.addEventListener('touchcancel', onPointerUp);
+    }
+
+    function onPointerMove(e) {
+        if (!dragging) return;
+        e.preventDefault();
+        var b = buddyCharacters[username];
+        if (!b) { onPointerUp(); return; }
+
+        var clientX = e.touches ? e.touches[0].clientX : e.clientX;
+        var clientY = e.touches ? e.touches[0].clientY : e.clientY;
+
+        // Detect if actually moved (3px dead zone to allow clicks)
+        if (!moved && (Math.abs(clientX - startX) > 3 || Math.abs(clientY - startY) > 3)) {
+            moved = true;
+        }
+        if (!moved) return;
+
+        var zone = getBuddyZone();
+        var newX = clientX - offsetX;
+        var newY = clientY - offsetY;
+
+        // Clamp within zone
+        newX = Math.max(zone.left, Math.min(zone.right, newX));
+        newY = Math.max(zone.top, Math.min(zone.absoluteBottom, newY));
+
+        b.x = newX;
+        b.y = newY;
+        b.vx = 0;
+        b.vy = 0;
+        el.style.left = newX + 'px';
+        el.style.top = newY + 'px';
+
+        var size = getBuddyPixelSize(b);
+        updateDragHighlight(username, newX, newY, size);
+
+        // Broadcast normalized position
+        var zoneW = Math.max(1, zone.right - zone.left);
+        var zoneH = Math.max(1, zone.absoluteBottom - zone.top);
+        broadcastDragMove(username, (newX - zone.left) / zoneW, (newY - zone.top) / zoneH);
+    }
+
+    function onPointerUp(e) {
+        if (!dragging) return;
+        dragging = false;
+
+        document.removeEventListener('mousemove', onPointerMove);
+        document.removeEventListener('mouseup', onPointerUp);
+        document.removeEventListener('touchmove', onPointerMove);
+        document.removeEventListener('touchend', onPointerUp);
+        document.removeEventListener('touchcancel', onPointerUp);
+
+        var b = buddyCharacters[username];
+        if (b) {
+            b.dragging = false;
+            b.draggedBy = null;
+            b.state = 'idle';
+            b.stateTime = 0;
+            b.vx = 0;
+            b.vy = 0;
+            el.classList.remove('buddy-being-dragged');
+            setAnim(b, 'idle');
+
+            // Broadcast final position
+            var zone = getBuddyZone();
+            var zoneW = Math.max(1, zone.right - zone.left);
+            var zoneH = Math.max(1, zone.absoluteBottom - zone.top);
+            broadcastDragEnd(username, (b.x - zone.left) / zoneW, (b.y - zone.top) / zoneH);
+        }
+
+        removeDragHighlight(username);
+        delete buddyDragState[username];
+
+        // If didn't actually move, treat as click (excited reaction)
+        if (!moved && b && b.state !== 'jumping' && !b.interacting) {
+            b.element.classList.add('buddy-excited');
+            showExpression(b, '😊');
+            setTimeout(function() { if (b.element) b.element.classList.remove('buddy-excited'); }, 600);
+        }
+    }
+
+    el.addEventListener('mousedown', onPointerDown);
+    el.addEventListener('touchstart', onPointerDown, { passive: false });
+}
+
+// ---- Receive drag events from other users via Pusher ----
+
+function handlePusherDragStart(data) {
+    var buddyName = data.target;
+    var dragger = data.dragger;
+    if (!buddyName || !dragger) return;
+
+    var b = buddyCharacters[buddyName];
+    if (!b) return;
+
+    // Mark buddy as being dragged by remote user
+    b.dragging = true;
+    b.draggedBy = dragger;
+    buddyDragState[buddyName] = { dragger: dragger, local: false };
+    b.element.classList.add('buddy-being-dragged');
+
+    var size = getBuddyPixelSize(b);
+    createDragHighlight(buddyName, dragger);
+    updateDragHighlight(buddyName, b.x, b.y, size);
+}
+
+function handlePusherDragMove(data) {
+    var buddyName = data.target;
+    if (!buddyName) return;
+    var b = buddyCharacters[buddyName];
+    if (!b) return;
+
+    var zone = getBuddyZone();
+    var zoneW = Math.max(1, zone.right - zone.left);
+    var zoneH = Math.max(1, zone.absoluteBottom - zone.top);
+    var newX = zone.left + parseFloat(data.x) * zoneW;
+    var newY = zone.top + parseFloat(data.y) * zoneH;
+
+    b.x = newX;
+    b.y = newY;
+    b.vx = 0;
+    b.vy = 0;
+    b.element.style.left = newX + 'px';
+    b.element.style.top = newY + 'px';
+
+    var size = getBuddyPixelSize(b);
+    updateDragHighlight(buddyName, newX, newY, size);
+}
+
+function handlePusherDragEnd(data) {
+    var buddyName = data.target;
+    if (!buddyName) return;
+    var b = buddyCharacters[buddyName];
+    if (b) {
+        // Apply final position
+        var zone = getBuddyZone();
+        var zoneW = Math.max(1, zone.right - zone.left);
+        var zoneH = Math.max(1, zone.absoluteBottom - zone.top);
+        b.x = zone.left + parseFloat(data.x) * zoneW;
+        b.y = zone.top + parseFloat(data.y) * zoneH;
+        b.vx = 0;
+        b.vy = 0;
+        b.element.style.left = b.x + 'px';
+        b.element.style.top = b.y + 'px';
+
+        b.dragging = false;
+        b.draggedBy = null;
+        b.state = 'idle';
+        b.stateTime = 0;
+        b.element.classList.remove('buddy-being-dragged');
+        setAnim(b, 'idle');
+    }
+
+    removeDragHighlight(buddyName);
+    delete buddyDragState[buddyName];
+}
+
+// ===== BUDDY ZONE CONTAINMENT ON RESIZE =====
+var _buddyResizeTimer = null;
+
+function returnBuddiesToZone() {
+    var zone = getBuddyZone();
+    var names = Object.keys(buddyCharacters);
+    names.forEach(function(name) {
+        var b = buddyCharacters[name];
+        if (!b) return;
+        // Don't move buddies being dragged
+        if (b.dragging) return;
+
+        var outOfBounds = b.x < zone.left || b.x > zone.right ||
+                          b.y < zone.top || b.y > zone.absoluteBottom;
+
+        if (outOfBounds) {
+            // Smooth transition back into zone
+            b.element.classList.add('buddy-returning');
+
+            var newX = Math.max(zone.left, Math.min(zone.right, b.x));
+            var newY = Math.max(zone.top, Math.min(zone.absoluteBottom, b.y));
+
+            b.x = newX;
+            b.y = newY;
+            b.vx = 0;
+            b.vy = 0;
+            b.element.style.left = newX + 'px';
+            b.element.style.top = newY + 'px';
+
+            // Remove transition class after animation completes
+            setTimeout(function() {
+                if (b.element) b.element.classList.remove('buddy-returning');
+            }, 450);
+        }
+    });
+}
+
+function initBuddyResizeContainment() {
+    window.addEventListener('resize', function() {
+        clearTimeout(_buddyResizeTimer);
+        _buddyResizeTimer = setTimeout(returnBuddiesToZone, 200);
+    });
+
+    window.addEventListener('orientationchange', function() {
+        clearTimeout(_buddyResizeTimer);
+        _buddyResizeTimer = setTimeout(returnBuddiesToZone, 300);
+    });
 }
 
 // ===== EVOLVING ANIMATIONS (#14) =====
