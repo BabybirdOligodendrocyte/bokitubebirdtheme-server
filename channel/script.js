@@ -8289,12 +8289,12 @@ function removeSrtFromPopup() {
 function addSrtVideoButton() {
     if (document.getElementById('srt-video-btn')) return;
 
-    var videoContainer = document.getElementById('video-container');
-    if (!videoContainer) videoContainer = document.getElementById('videowrap');
-    if (!videoContainer) return;
+    var leftControls = document.getElementById('leftcontrols');
+    if (!leftControls) return;
 
     var btn = document.createElement('button');
     btn.id = 'srt-video-btn';
+    btn.className = 'btn btn-sm btn-default';
     btn.title = 'Subtitles (.srt)';
     btn.textContent = 'CC';
 
@@ -8314,8 +8314,7 @@ function addSrtVideoButton() {
         openSrtPopup(mediaKey, title);
     });
 
-    videoContainer.style.position = 'relative';
-    videoContainer.appendChild(btn);
+    leftControls.appendChild(btn);
 
     updateSrtVideoButton();
 }
@@ -8538,36 +8537,19 @@ function initSrtPusher() {
     var style = document.createElement('style');
     style.id = 'srt-subtitle-styles';
     style.textContent = `
-        /* SRT Video Button */
+        /* SRT Video Button (in #leftcontrols bar) */
         #srt-video-btn {
-            position: absolute;
-            bottom: 12px;
-            right: 12px;
-            z-index: 9999;
-            background: rgba(0, 0, 0, 0.7);
-            color: #ccc;
-            border: 1px solid rgba(255, 255, 255, 0.3);
-            border-radius: 4px;
-            padding: 4px 8px;
-            font-size: 12px;
             font-weight: bold;
             font-family: monospace;
-            cursor: pointer;
-            transition: all 0.2s;
             letter-spacing: 1px;
         }
-        #srt-video-btn:hover {
-            background: rgba(0, 0, 0, 0.9);
-            color: #fff;
-            border-color: rgba(255, 255, 255, 0.6);
-        }
         #srt-video-btn.srt-active {
-            background: rgba(40, 120, 40, 0.8);
+            background: rgba(40, 120, 40, 0.8) !important;
             color: #fff;
             border-color: #4a7;
         }
         #srt-video-btn.srt-active:hover {
-            background: rgba(40, 120, 40, 0.95);
+            background: rgba(40, 120, 40, 0.95) !important;
         }
 
         /* Playlist Entry SRT Button */
@@ -8771,12 +8753,6 @@ function initSrtPusher() {
 
         /* Mobile adjustments */
         @media (max-width: 768px) {
-            #srt-video-btn {
-                bottom: 8px;
-                right: 8px;
-                padding: 3px 6px;
-                font-size: 10px;
-            }
             #srt-popup {
                 width: 95vw;
             }
