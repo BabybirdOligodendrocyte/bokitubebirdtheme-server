@@ -343,7 +343,7 @@ div.embed-responsive * { max-height: calc(100vh - 50px); }
 #emotes-btn { display: flex; justify-content: center; align-items: center; }
 #favorites-btn { display: flex; justify-content: center; align-items: center; }
 #font-tags-btn { display: flex; justify-content: center; align-items: center; }
-#afk-btn { margin-left: auto; }
+/* #afk-btn lives in overflow menu now */
 
 #needpw { top: 50% !important; left: 50% !important; transform: translate(-50%, -50%); }
 #needpw input { background-color: var(--secondarycolor) !important; }
