@@ -3949,6 +3949,198 @@ $('<button id="draw-btn" class="btn btn-sm btn-default" title="Draw on Video">�
 $("#favorites-btn").after($("#voteskip"));
 $('#newpollbtn').prependTo($("#leftcontrols"));
 
+/* ========== OVERFLOW MENU SYSTEM ========== */
+/* Groups less-used buttons behind a "..." menu to keep the bar compact */
+
+(function initOverflowMenu() {
+    var leftControls = document.getElementById('leftcontrols');
+    if (!leftControls) return;
+
+    // Inject overflow menu CSS
+    var overflowStyle = document.createElement('style');
+    overflowStyle.id = 'overflow-menu-styles';
+    overflowStyle.textContent = `
+        /* Overflow menu wrapper */
+        #overflow-menu-wrap {
+            position: relative;
+            margin-left: auto;
+            flex: 0 0 auto;
+        }
+        #overflow-menu-btn {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 32px;
+            font-size: 16px;
+            letter-spacing: 2px;
+            line-height: 1;
+            padding: 5px 8px;
+        }
+        #overflow-menu-btn:hover {
+            filter: brightness(1.3);
+        }
+        /* Dropdown panel */
+        #overflow-menu-dropdown {
+            display: none;
+            position: absolute;
+            bottom: 100%;
+            right: 0;
+            margin-bottom: 4px;
+            background: #1a1a1e;
+            border: 1px solid #444;
+            border-radius: 8px;
+            padding: 4px;
+            min-width: 160px;
+            box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.6);
+            z-index: 99999;
+            flex-direction: column;
+            gap: 2px;
+        }
+        #overflow-menu-dropdown.open {
+            display: flex;
+        }
+        /* Items inside dropdown */
+        #overflow-menu-dropdown .overflow-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 8px 12px;
+            border: none;
+            border-radius: 6px;
+            background: transparent;
+            color: #ddd;
+            font-size: 13px;
+            cursor: pointer;
+            white-space: nowrap;
+            transition: background 0.15s;
+            text-align: left;
+            width: 100%;
+        }
+        #overflow-menu-dropdown .overflow-item:hover {
+            background: #2a2a32;
+        }
+        #overflow-menu-dropdown .overflow-item .overflow-icon {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 22px;
+            flex-shrink: 0;
+        }
+        #overflow-menu-dropdown .overflow-item .overflow-icon svg {
+            width: 16px;
+            height: 16px;
+        }
+        #overflow-menu-dropdown .overflow-item .overflow-label {
+            flex: 1;
+        }
+        /* Active/highlighted state for CC when subs loaded */
+        #overflow-menu-dropdown .overflow-item.srt-active {
+            color: #8f8;
+        }
+    `;
+    document.head.appendChild(overflowStyle);
+
+    // Create the "..." button
+    var wrap = document.createElement('div');
+    wrap.id = 'overflow-menu-wrap';
+
+    var moreBtn = document.createElement('button');
+    moreBtn.id = 'overflow-menu-btn';
+    moreBtn.className = 'btn btn-sm btn-default';
+    moreBtn.title = 'More options';
+    moreBtn.innerHTML = '&middot;&middot;&middot;';
+    wrap.appendChild(moreBtn);
+
+    // Create dropdown
+    var dropdown = document.createElement('div');
+    dropdown.id = 'overflow-menu-dropdown';
+    wrap.appendChild(dropdown);
+
+    leftControls.appendChild(wrap);
+
+    // Toggle dropdown on click
+    moreBtn.addEventListener('click', function(e) {
+        e.stopPropagation();
+        dropdown.classList.toggle('open');
+    });
+
+    // Close on outside click
+    document.addEventListener('click', function(e) {
+        if (!wrap.contains(e.target)) {
+            dropdown.classList.remove('open');
+        }
+    });
+
+    // Move existing buttons that should be hidden into the overflow dropdown
+    var overflowButtonIds = ['newpollbtn', 'voteskip', 'afk-btn', 'clear-btn'];
+    var overflowLabels = {
+        'newpollbtn': 'Create Poll',
+        'voteskip': 'Vote Skip',
+        'afk-btn': 'AFK',
+        'clear-btn': 'Clear Chat'
+    };
+
+    overflowButtonIds.forEach(function(id) {
+        var btn = document.getElementById(id);
+        if (!btn) return;
+
+        // Capture the original icon HTML
+        var iconHTML = '';
+        var svg = btn.querySelector('svg');
+        if (svg) {
+            iconHTML = svg.outerHTML;
+        } else {
+            // Text-based buttons get a simple icon
+            var iconMap = {
+                'afk-btn': '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#FFF" viewBox="0 0 24 24"><path d="M12 2C6.486 2 2 6.486 2 12s4.486 10 10 10 10-4.486 10-10S17.514 2 12 2zm0 18c-4.411 0-8-3.589-8-8s3.589-8 8-8 8 3.589 8 8-3.589 8-8 8zm1-13h-2v5.414l3.293 3.293 1.414-1.414L13 11.586V7z"/></svg>',
+                'clear-btn': '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#FFF" viewBox="0 0 24 24"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>'
+            };
+            iconHTML = iconMap[id] || '';
+        }
+
+        // Capture original click handler by cloning behavior
+        var item = document.createElement('button');
+        item.className = 'overflow-item';
+        item.id = 'overflow-' + id;
+        item.innerHTML = '<span class="overflow-icon">' + iconHTML + '</span><span class="overflow-label">' + (overflowLabels[id] || btn.title || btn.textContent.trim()) + '</span>';
+
+        // Attach original click behavior
+        item.addEventListener('click', function(e) {
+            e.stopPropagation();
+            btn.click();
+            dropdown.classList.remove('open');
+        });
+
+        dropdown.appendChild(item);
+
+        // Hide the original button from the bar
+        btn.style.display = 'none';
+    });
+})();
+
+// Helper to add a button to the overflow menu (used by later-initialized features)
+function addToOverflowMenu(id, iconHTML, label, onClick) {
+    var dropdown = document.getElementById('overflow-menu-dropdown');
+    if (!dropdown) return false;
+
+    // Don't add duplicates
+    if (document.getElementById('overflow-' + id)) return true;
+
+    var item = document.createElement('button');
+    item.className = 'overflow-item';
+    item.id = 'overflow-' + id;
+    item.innerHTML = '<span class="overflow-icon">' + iconHTML + '</span><span class="overflow-label">' + label + '</span>';
+
+    item.addEventListener('click', function(e) {
+        e.stopPropagation();
+        onClick(e);
+        dropdown.classList.remove('open');
+    });
+
+    dropdown.appendChild(item);
+    return true;
+}
+
 $(document).ready(function() {
     initStyleInterceptor();
     initUsernameStyleInterceptor();
@@ -7122,12 +7314,15 @@ function showIgnoredUsers() {
     }
 }
 
-// Add settings button
+// Add settings button to overflow menu
 function addSettingsButton() {
-    if (document.getElementById('settings-btn')) return;
-    var btn = $('<button id="settings-btn" class="btn btn-sm btn-default" title="Settings">⚙️</button>');
-    btn.on('click', openSettingsPanel);
-    btn.appendTo('#leftcontrols');
+    if (document.getElementById('overflow-settings-btn')) return;
+    addToOverflowMenu(
+        'settings-btn',
+        '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#FFF" viewBox="0 0 24 24"><path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 00.12-.61l-1.92-3.32a.49.49 0 00-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.484.484 0 00-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96a.49.49 0 00-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.07.62-.07.94s.02.64.07.94l-2.03 1.58a.49.49 0 00-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6A3.6 3.6 0 1112 8.4a3.6 3.6 0 010 7.2z"/></svg>',
+        'Settings',
+        function() { openSettingsPanel(); }
+    );
 }
 
 /* ========== SCREENSPAM SYSTEM ========== */
@@ -8287,49 +8482,44 @@ function removeSrtFromPopup() {
 // ===== VIDEO PLAYER BUTTON =====
 
 function addSrtVideoButton() {
-    if (document.getElementById('srt-video-btn')) return;
+    if (document.getElementById('overflow-srt-video-btn')) return;
 
-    var leftControls = document.getElementById('leftcontrols');
-    if (!leftControls) return;
-
-    var btn = document.createElement('button');
-    btn.id = 'srt-video-btn';
-    btn.className = 'btn btn-sm btn-default';
-    btn.title = 'Subtitles (.srt)';
-    btn.textContent = 'CC';
-
-    btn.addEventListener('click', function(e) {
-        e.stopPropagation();
-        var mediaKey = getCurrentMediaKey();
-        if (!mediaKey) {
-            showSubtitleToast('No video currently playing');
-            return;
+    addToOverflowMenu(
+        'srt-video-btn',
+        '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#FFF" viewBox="0 0 24 24"><path d="M20 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 14H4V6h16v12zM6 10h2v2H6v-2zm0 4h8v2H6v-2zm10 0h2v2h-2v-2zm-6-4h8v2h-8v-2z"/></svg>',
+        'Subtitles (.srt)',
+        function() {
+            var mediaKey = getCurrentMediaKey();
+            if (!mediaKey) {
+                showSubtitleToast('No video currently playing');
+                return;
+            }
+            var activeEntry = document.querySelector('.queue_entry.queue_active');
+            var title = '';
+            if (activeEntry) {
+                var titleEl = activeEntry.querySelector('.qe_title');
+                title = titleEl ? titleEl.textContent : '';
+            }
+            openSrtPopup(mediaKey, title);
         }
-        var activeEntry = document.querySelector('.queue_entry.queue_active');
-        var title = '';
-        if (activeEntry) {
-            var titleEl = activeEntry.querySelector('.qe_title');
-            title = titleEl ? titleEl.textContent : '';
-        }
-        openSrtPopup(mediaKey, title);
-    });
-
-    leftControls.appendChild(btn);
+    );
 
     updateSrtVideoButton();
 }
 
 function updateSrtVideoButton() {
-    var btn = document.getElementById('srt-video-btn');
+    var btn = document.getElementById('overflow-srt-video-btn');
     if (!btn) return;
 
     var mediaKey = getCurrentMediaKey();
     if (mediaKey && srtSubtitles[mediaKey]) {
         btn.classList.add('srt-active');
-        btn.title = 'Subtitles active (' + srtSubtitles[mediaKey].length + ' cues)';
+        var label = btn.querySelector('.overflow-label');
+        if (label) label.textContent = 'Subtitles (' + srtSubtitles[mediaKey].length + ' cues)';
     } else {
         btn.classList.remove('srt-active');
-        btn.title = 'Subtitles (.srt)';
+        var label = btn.querySelector('.overflow-label');
+        if (label) label.textContent = 'Subtitles (.srt)';
     }
 }
 
@@ -8537,21 +8727,6 @@ function initSrtPusher() {
     var style = document.createElement('style');
     style.id = 'srt-subtitle-styles';
     style.textContent = `
-        /* SRT Video Button (in #leftcontrols bar) */
-        #srt-video-btn {
-            font-weight: bold;
-            font-family: monospace;
-            letter-spacing: 1px;
-        }
-        #srt-video-btn.srt-active {
-            background: rgba(40, 120, 40, 0.8) !important;
-            color: #fff;
-            border-color: #4a7;
-        }
-        #srt-video-btn.srt-active:hover {
-            background: rgba(40, 120, 40, 0.95) !important;
-        }
-
         /* Playlist Entry SRT Button */
         .queue_entry .srt-btn {
             display: none;
