@@ -3955,6 +3955,7 @@ $('#newpollbtn').prependTo($("#leftcontrols"));
 /* Overflow: Poll, Skip, AFK, Clear, Settings, CC, NND, etc.           */
 
 (function initOverflowMenu() {
+  try {
     var leftControls = document.getElementById('leftcontrols');
     if (!leftControls) return;
 
@@ -4201,6 +4202,9 @@ $('#newpollbtn').prependTo($("#leftcontrols"));
     // Also retry after a delay to catch any Cytube-native buttons that appear late
     setTimeout(scanAndMoveButtons, 2000);
     setTimeout(scanAndMoveButtons, 5000);
+  } catch (e) {
+    console.error('[OverflowMenu] Init error (non-fatal):', e);
+  }
 })();
 
 // Helper to add a button to the overflow menu (used by later-initialized features)
@@ -9085,9 +9089,15 @@ window.closeSrtPopup = closeSrtPopup;
 window.applySrtFromPopup = applySrtFromPopup;
 window.removeSrtFromPopup = removeSrtFromPopup;
 
-// Initialize when ready
+// Initialize when ready (wrapped in try-catch to prevent crashing buddy system init)
 $(document).ready(function() {
-    setTimeout(initSrtSubtitleSystem, 1500);
+    setTimeout(function() {
+        try {
+            initSrtSubtitleSystem();
+        } catch (e) {
+            console.error('[SRT] Init error (non-fatal):', e);
+        }
+    }, 1500);
 });
 
 /* ========== END PLAYLIST SRT SUBTITLE SYSTEM ========== */
@@ -9839,10 +9849,15 @@ function decodeBuddySettings(encoded) {
 }
 
 // ========== PUSHER INITIALIZATION ==========
+var pusherRetryCount = 0;
+var PUSHER_MAX_RETRIES = 3;
+var PUSHER_RETRY_DELAYS = [3000, 8000, 20000]; // Exponential backoff
+
 function initPusher() {
     // Check if Pusher config is set
     if (typeof PUSHER_KEY === 'undefined' || typeof PUSHER_CLUSTER === 'undefined') {
-        console.log('[Pusher] Not configured - using chat fallback');
+        console.log('[Pusher] Not configured - PUSHER_KEY and PUSHER_CLUSTER must be set in channel External JS');
+        console.log('[Pusher] Buddy sync, drawing, and SRT broadcast require Pusher');
         return;
     }
 
@@ -9852,6 +9867,15 @@ function initPusher() {
         script.src = 'https://js.pusher.com/8.2.0/pusher.min.js';
         script.onload = function() {
             connectPusher();
+        };
+        script.onerror = function() {
+            console.error('[Pusher] Failed to load SDK from CDN - all real-time sync disabled');
+            if (pusherRetryCount < PUSHER_MAX_RETRIES) {
+                var delay = PUSHER_RETRY_DELAYS[pusherRetryCount] || 20000;
+                pusherRetryCount++;
+                console.log('[Pusher] Retrying SDK load in', delay / 1000, 's (attempt', pusherRetryCount + '/' + PUSHER_MAX_RETRIES + ')');
+                setTimeout(initPusher, delay);
+            }
         };
         document.head.appendChild(script);
     } else {
@@ -9894,8 +9918,35 @@ function connectPusher() {
         });
 
         pusherChannel.bind('pusher:subscription_error', function(err) {
-            console.log('[Pusher] Subscription error:', err, '- buddy sync requires Pusher, interactions will be local-only');
+            console.error('[Pusher] Subscription error:', err);
+            console.error('[Pusher] Auth endpoint:', typeof PUSHER_AUTH_ENDPOINT !== 'undefined' ? PUSHER_AUTH_ENDPOINT : 'NOT SET');
             pusherEnabled = false;
+
+            // Retry subscription with backoff
+            if (pusherRetryCount < PUSHER_MAX_RETRIES) {
+                var delay = PUSHER_RETRY_DELAYS[pusherRetryCount] || 20000;
+                pusherRetryCount++;
+                console.log('[Pusher] Retrying connection in', delay / 1000, 's (attempt', pusherRetryCount + '/' + PUSHER_MAX_RETRIES + ')');
+                setTimeout(function() {
+                    console.log('[Pusher] Reconnecting...');
+                    pusherChannel = pusherClient.subscribe('presence-' + (window.CHANNEL ? window.CHANNEL.name : 'buddy-sync'));
+                }, delay);
+            } else {
+                console.error('[Pusher] All retry attempts exhausted. Buddy sync, drawing, and SRT broadcast will not work.');
+                console.error('[Pusher] Check: 1) PUSHER_AUTH_ENDPOINT is reachable  2) Pusher app credentials are valid  3) Client events are enabled in Pusher dashboard');
+            }
+        });
+
+        // Monitor connection state changes
+        pusherClient.connection.bind('state_change', function(states) {
+            console.log('[Pusher] Connection:', states.previous, '->', states.current);
+            if (states.current === 'disconnected' || states.current === 'failed') {
+                pusherEnabled = false;
+            }
+        });
+
+        pusherClient.connection.bind('connected', function() {
+            console.log('[Pusher] Connection established (socket_id:', pusherClient.connection.socket_id + ')');
         });
 
         // When a new user joins, re-broadcast our settings so they see our customizations
