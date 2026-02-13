@@ -9184,8 +9184,8 @@ function handlePositionCorrection(positions, timestamp) {
         var b = buddyCharacters[name];
         if (!b) return;
 
-        // Don't correct buddies that are interacting, wall-running, sleeping, or eggs
-        if (b.interacting || b.wallRunning || b.sleeping || b.isEgg) return;
+        // Don't correct buddies that are interacting, wall-running, sleeping, eggs, or being dragged
+        if (b.interacting || b.wallRunning || b.sleeping || b.isEgg || b.dragging) return;
 
         var parts = positions[name].split(',');
         var nx = parseFloat(parts[0]);
@@ -9241,6 +9241,8 @@ function handlePositionCorrection(positions, timestamp) {
 // Apply position lerp smoothing in update loop (overrides normal movement)
 function applyPositionLerp(b) {
     if (!b.posLerpTarget) return;
+    // Cancel lerp if buddy is being dragged - drag position takes priority
+    if (b.dragging) { b.posLerpTarget = null; b.posLerpProgress = 0; return; }
 
     b.posLerpProgress += BUDDY_CONFIG.updateInterval / POSITION_LERP_DURATION;
     if (b.posLerpProgress >= 1) {
@@ -11112,6 +11114,14 @@ function removeBuddy(username) {
     // Clean up all tracked intervals/timeouts to prevent ghost interactions
     cleanupBuddyTimers(buddy);
 
+    // Clean up any active drag state and highlight elements
+    if (buddyDragState[username]) {
+        removeDragHighlight(username);
+        delete buddyDragState[username];
+    }
+    buddy.dragging = false;
+    buddy.draggedBy = null;
+
     // Reset interaction flag immediately so other buddies aren't blocked
     buddy.interacting = false;
     buddy.isEgg = false;
@@ -11306,8 +11316,8 @@ function startBuddyAnimation() {
             var b = buddyCharacters[name];
             if (!b) return;
 
-            // Skip buddies being dragged - position controlled by drag handler
-            if (b.dragging) return;
+            // Skip buddies being dragged or smoothly returning to zone
+            if (b.dragging || b._returning) return;
 
             // ===== STUCK BUDDY RECOVERY =====
             // Track how long buddy has been in current interaction or blocking state
@@ -14999,8 +15009,19 @@ function updateDragHighlight(buddyName, x, y, size) {
     ring.style.height = ringSize + 'px';
     ring.style.left = (x - padding) + 'px';
     ring.style.top = (y - padding) + 'px';
-    label.style.left = (x + size / 2) + 'px';
-    label.style.top = (y + size + 8) + 'px';
+
+    // Position label below buddy, but flip above if near bottom of viewport
+    var labelX = x + size / 2;
+    var labelY = y + size + 8;
+    var labelFlip = labelY > window.innerHeight - 30;
+    if (labelFlip) {
+        labelY = y - 22;
+    }
+    // Clamp horizontal so label stays on screen
+    var labelW = label.offsetWidth || 80;
+    labelX = Math.max(labelW / 2 + 4, Math.min(window.innerWidth - labelW / 2 - 4, labelX));
+    label.style.left = labelX + 'px';
+    label.style.top = labelY + 'px';
     label.style.transform = 'translateX(-50%)';
 }
 
@@ -15015,7 +15036,14 @@ function removeDragHighlight(buddyName) {
 // Get the pixel size of a buddy element
 function getBuddyPixelSize(b) {
     if (!b || !b.element) return 24;
-    return b.element.offsetWidth || parseFloat(b.element.style.fontSize) || 24;
+    var w = b.element.offsetWidth;
+    if (w > 0) return w;
+    // Fallback: derive from BUDDY_SIZES using custom settings
+    var settings = b.customSettings || (typeof myBuddySettings !== 'undefined' ? myBuddySettings : null);
+    if (settings && settings.size && typeof BUDDY_SIZES !== 'undefined' && BUDDY_SIZES[settings.size]) {
+        return BUDDY_SIZES[settings.size];
+    }
+    return 24;
 }
 
 // Broadcast drag events via Pusher
@@ -15079,6 +15107,8 @@ function initBuddyDrag(el, username) {
         if (!b) return;
         // Don't start drag if another user is already dragging this buddy
         if (buddyDragState[username] && buddyDragState[username].dragger !== getMyUsername()) return;
+        // Don't drag buddies that are mid-interaction, egg, or sleeping
+        if (b.interacting || b.isEgg || b.sleeping) return;
 
         e.preventDefault();
         e.stopPropagation();
@@ -15273,14 +15303,24 @@ function returnBuddiesToZone() {
     names.forEach(function(name) {
         var b = buddyCharacters[name];
         if (!b) return;
-        // Don't move buddies being dragged
-        if (b.dragging) return;
 
         var outOfBounds = b.x < zone.left || b.x > zone.right ||
                           b.y < zone.top || b.y > zone.absoluteBottom;
 
-        if (outOfBounds) {
+        // Dragged buddies: silently clamp position without animation
+        if (b.dragging && outOfBounds) {
+            b.x = Math.max(zone.left, Math.min(zone.right, b.x));
+            b.y = Math.max(zone.top, Math.min(zone.absoluteBottom, b.y));
+            b.element.style.left = b.x + 'px';
+            b.element.style.top = b.y + 'px';
+            var sz = getBuddyPixelSize(b);
+            updateDragHighlight(name, b.x, b.y, sz);
+            return;
+        }
+
+        if (outOfBounds && !b._returning) {
             // Smooth transition back into zone
+            b._returning = true;
             b.element.classList.add('buddy-returning');
 
             var newX = Math.max(zone.left, Math.min(zone.right, b.x));
@@ -15296,6 +15336,7 @@ function returnBuddiesToZone() {
             // Remove transition class after animation completes
             setTimeout(function() {
                 if (b.element) b.element.classList.remove('buddy-returning');
+                b._returning = false;
             }, 450);
         }
     });
