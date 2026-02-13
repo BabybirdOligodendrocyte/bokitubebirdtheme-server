@@ -3951,6 +3951,8 @@ $('#newpollbtn').prependTo($("#leftcontrols"));
 
 /* ========== OVERFLOW MENU SYSTEM ========== */
 /* Groups less-used buttons behind a "..." menu to keep the bar compact */
+/* Visible: Emotes, Favorites, Style, Buddy, Draw                      */
+/* Overflow: Poll, Skip, AFK, Clear, Settings, CC, NND, etc.           */
 
 (function initOverflowMenu() {
     var leftControls = document.getElementById('leftcontrols');
@@ -3960,7 +3962,7 @@ $('#newpollbtn').prependTo($("#leftcontrols"));
     var overflowStyle = document.createElement('style');
     overflowStyle.id = 'overflow-menu-styles';
     overflowStyle.textContent = `
-        /* Overflow menu wrapper */
+        /* Overflow menu wrapper - pushed right */
         #overflow-menu-wrap {
             position: relative;
             margin-left: auto;
@@ -3979,20 +3981,17 @@ $('#newpollbtn').prependTo($("#leftcontrols"));
         #overflow-menu-btn:hover {
             filter: brightness(1.3);
         }
-        /* Dropdown panel */
+        /* Dropdown - fixed position so it escapes overflow:hidden parents */
         #overflow-menu-dropdown {
             display: none;
-            position: absolute;
-            bottom: 100%;
-            right: 0;
-            margin-bottom: 4px;
+            position: fixed;
             background: #1a1a1e;
             border: 1px solid #444;
             border-radius: 8px;
             padding: 4px;
-            min-width: 160px;
-            box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.6);
-            z-index: 99999;
+            min-width: 170px;
+            box-shadow: 0 -6px 24px rgba(0, 0, 0, 0.7);
+            z-index: 1000000;
             flex-direction: column;
             gap: 2px;
         }
@@ -4040,7 +4039,7 @@ $('#newpollbtn').prependTo($("#leftcontrols"));
     `;
     document.head.appendChild(overflowStyle);
 
-    // Create the "..." button
+    // Create the "..." button inside #leftcontrols
     var wrap = document.createElement('div');
     wrap.id = 'overflow-menu-wrap';
 
@@ -4051,60 +4050,89 @@ $('#newpollbtn').prependTo($("#leftcontrols"));
     moreBtn.innerHTML = '&middot;&middot;&middot;';
     wrap.appendChild(moreBtn);
 
-    // Create dropdown
+    leftControls.appendChild(wrap);
+
+    // Create dropdown on <body> so it escapes all overflow:hidden containers
     var dropdown = document.createElement('div');
     dropdown.id = 'overflow-menu-dropdown';
-    wrap.appendChild(dropdown);
+    document.body.appendChild(dropdown);
 
-    leftControls.appendChild(wrap);
+    // Position the dropdown above the "..." button
+    function positionDropdown() {
+        var rect = moreBtn.getBoundingClientRect();
+        dropdown.style.bottom = (window.innerHeight - rect.top + 4) + 'px';
+        dropdown.style.right = (window.innerWidth - rect.right) + 'px';
+    }
 
     // Toggle dropdown on click
     moreBtn.addEventListener('click', function(e) {
         e.stopPropagation();
-        dropdown.classList.toggle('open');
+        if (dropdown.classList.contains('open')) {
+            dropdown.classList.remove('open');
+        } else {
+            positionDropdown();
+            dropdown.classList.add('open');
+        }
     });
 
     // Close on outside click
     document.addEventListener('click', function(e) {
-        if (!wrap.contains(e.target)) {
+        if (!wrap.contains(e.target) && !dropdown.contains(e.target)) {
             dropdown.classList.remove('open');
         }
     });
 
-    // Move existing buttons that should be hidden into the overflow dropdown
-    var overflowButtonIds = ['newpollbtn', 'voteskip', 'afk-btn', 'clear-btn'];
-    var overflowLabels = {
+    // Reposition on scroll/resize
+    window.addEventListener('resize', function() { dropdown.classList.remove('open'); });
+
+    // === Hide & delegate buttons into the overflow ===
+
+    // IDs of buttons that should always be visible (NOT moved to overflow)
+    var keepVisible = {
+        'emotes-btn': true,
+        'favorites-btn': true,
+        'font-tags-btn': true,
+        'buddy-settings-btn': true,
+        'draw-btn': true,
+        'overflow-menu-wrap': true
+    };
+
+    // Icon fallbacks for buttons that use text instead of SVG
+    var iconFallbacks = {
+        'afk-btn': '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#FFF" viewBox="0 0 24 24"><path d="M12 2C6.486 2 2 6.486 2 12s4.486 10 10 10 10-4.486 10-10S17.514 2 12 2zm0 18c-4.411 0-8-3.589-8-8s3.589-8 8-8 8 3.589 8 8-3.589 8-8 8zm1-13h-2v5.414l3.293 3.293 1.414-1.414L13 11.586V7z"/></svg>',
+        'clear-btn': '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#FFF" viewBox="0 0 24 24"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>'
+    };
+
+    // Label overrides (some native buttons have no good title)
+    var labelOverrides = {
         'newpollbtn': 'Create Poll',
         'voteskip': 'Vote Skip',
         'afk-btn': 'AFK',
         'clear-btn': 'Clear Chat'
     };
 
-    overflowButtonIds.forEach(function(id) {
-        var btn = document.getElementById(id);
-        if (!btn) return;
+    // Move a single button into the overflow dropdown
+    function moveButtonToOverflow(btn) {
+        if (!btn || !btn.id) return;
+        if (keepVisible[btn.id]) return;
+        if (document.getElementById('overflow-' + btn.id)) return; // Already moved
 
-        // Capture the original icon HTML
         var iconHTML = '';
         var svg = btn.querySelector('svg');
         if (svg) {
             iconHTML = svg.outerHTML;
         } else {
-            // Text-based buttons get a simple icon
-            var iconMap = {
-                'afk-btn': '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#FFF" viewBox="0 0 24 24"><path d="M12 2C6.486 2 2 6.486 2 12s4.486 10 10 10 10-4.486 10-10S17.514 2 12 2zm0 18c-4.411 0-8-3.589-8-8s3.589-8 8-8 8 3.589 8 8-3.589 8-8 8zm1-13h-2v5.414l3.293 3.293 1.414-1.414L13 11.586V7z"/></svg>',
-                'clear-btn': '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#FFF" viewBox="0 0 24 24"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>'
-            };
-            iconHTML = iconMap[id] || '';
+            iconHTML = iconFallbacks[btn.id] || '';
         }
 
-        // Capture original click handler by cloning behavior
+        // Determine label
+        var label = labelOverrides[btn.id] || btn.title || btn.textContent.trim() || btn.id;
+
         var item = document.createElement('button');
         item.className = 'overflow-item';
-        item.id = 'overflow-' + id;
-        item.innerHTML = '<span class="overflow-icon">' + iconHTML + '</span><span class="overflow-label">' + (overflowLabels[id] || btn.title || btn.textContent.trim()) + '</span>';
+        item.id = 'overflow-' + btn.id;
+        item.innerHTML = '<span class="overflow-icon">' + iconHTML + '</span><span class="overflow-label">' + label + '</span>';
 
-        // Attach original click behavior
         item.addEventListener('click', function(e) {
             e.stopPropagation();
             btn.click();
@@ -4112,10 +4140,48 @@ $('#newpollbtn').prependTo($("#leftcontrols"));
         });
 
         dropdown.appendChild(item);
-
-        // Hide the original button from the bar
         btn.style.display = 'none';
+    }
+
+    // Scan all current buttons in #leftcontrols and move non-visible ones
+    function scanAndMoveButtons() {
+        var children = leftControls.children;
+        for (var i = 0; i < children.length; i++) {
+            var child = children[i];
+            // Skip non-button elements and the overflow wrap itself
+            if (child.id === 'overflow-menu-wrap') continue;
+            if (!child.classList || (!child.classList.contains('btn') && child.tagName !== 'BUTTON')) continue;
+            if (keepVisible[child.id]) continue;
+
+            moveButtonToOverflow(child);
+        }
+    }
+
+    // Run initial scan
+    scanAndMoveButtons();
+
+    // Watch for buttons added later by external scripts (e.g. NND toggle)
+    var controlsObserver = new MutationObserver(function(mutations) {
+        for (var i = 0; i < mutations.length; i++) {
+            var added = mutations[i].addedNodes;
+            for (var j = 0; j < added.length; j++) {
+                var node = added[j];
+                if (node.nodeType !== 1) continue;
+                if (node.id === 'overflow-menu-wrap') continue;
+                if (node.classList && (node.classList.contains('btn') || node.tagName === 'BUTTON')) {
+                    if (!keepVisible[node.id]) {
+                        // Small delay so the button fully initializes
+                        setTimeout(function(n) { moveButtonToOverflow(n); }, 100, node);
+                    }
+                }
+            }
+        }
     });
+    controlsObserver.observe(leftControls, { childList: true });
+
+    // Also retry after a delay to catch any Cytube-native buttons that appear late
+    setTimeout(scanAndMoveButtons, 2000);
+    setTimeout(scanAndMoveButtons, 5000);
 })();
 
 // Helper to add a button to the overflow menu (used by later-initialized features)
