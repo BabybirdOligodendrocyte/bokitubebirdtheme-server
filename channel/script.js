@@ -8507,7 +8507,7 @@ var DEFAULT_BUDDY_SETTINGS = {
 var BUDDY_SIZES = {
     small: 17,
     medium: 24,
-    large: 32
+    large: 27
 };
 
 // Idle style animations
@@ -12627,9 +12627,6 @@ function applyArtifactToBuddy(username, artifact) {
     showSpeechBubble(b, speech, 'excited');
     showExpression(b, '✨');
 
-    // Show toast notification
-    showArtifactToast(username, artifact);
-
     console.log('[Artifacts]', username, 'found', artifact.name, '(' + artifact.rarity + ')');
 }
 
@@ -15633,11 +15630,18 @@ function clearDrawingSession() {
     // Broadcast clear
     broadcastDrawingClear();
 
-    // Clear local canvas
+    // Clear local canvas (own strokes)
     var canvas = document.getElementById('drawing-canvas');
     if (canvas) {
         var ctx = canvas.getContext('2d');
         ctx.clearRect(0, 0, canvas.width, canvas.height);
+    }
+
+    // Clear receiver canvas (other users' strokes)
+    var receiverCanvas = document.getElementById('drawing-receiver-canvas');
+    if (receiverCanvas) {
+        var rctx = receiverCanvas.getContext('2d');
+        rctx.clearRect(0, 0, receiverCanvas.width, receiverCanvas.height);
     }
 
     drawingState.sessionActive = false;
@@ -15934,3 +15938,93 @@ function initDrawingSystem() {
 $(document).ready(function() {
     setTimeout(initDrawingSystem, 2000);
 });
+
+/* ========== CONNECTION MESSAGE FILTER ========== */
+// Only show connect/disconnect messages if the disconnect lasted > 15 seconds
+// Suppresses brief reconnect flicker from quick network hiccups
+
+(function initConnectionMessageFilter() {
+    var DISCONNECT_THRESHOLD = 15000; // 15 seconds
+    var pendingDisconnects = {}; // username -> { element, timeout, timestamp }
+
+    function extractUsernameFromMsg(el) {
+        var text = el.textContent || '';
+        // Cytube format: "username disconnected." or "username connected."
+        var match = text.match(/^(.+?)\s+(disconnected|connected)/);
+        return match ? match[1].trim() : null;
+    }
+
+    function setupObserver() {
+        var msgBuffer = document.getElementById('messagebuffer');
+        if (!msgBuffer) {
+            setTimeout(setupObserver, 1000);
+            return;
+        }
+
+        var observer = new MutationObserver(function(mutations) {
+            for (var i = 0; i < mutations.length; i++) {
+                var added = mutations[i].addedNodes;
+                for (var j = 0; j < added.length; j++) {
+                    var node = added[j];
+                    if (!node.classList) continue;
+
+                    if (node.classList.contains('server-msg-disconnect')) {
+                        handleDisconnect(node);
+                    } else if (node.classList.contains('server-msg-reconnect')) {
+                        handleReconnect(node);
+                    }
+                }
+            }
+        });
+
+        observer.observe(msgBuffer, { childList: true });
+        console.log('[ConnFilter] Connection message filter initialized');
+    }
+
+    function handleDisconnect(el) {
+        var username = extractUsernameFromMsg(el);
+        if (!username) return;
+
+        // Hide immediately
+        el.style.display = 'none';
+
+        // Clear any existing pending disconnect for this user
+        if (pendingDisconnects[username]) {
+            clearTimeout(pendingDisconnects[username].timeout);
+        }
+
+        // Store pending with 15 second reveal timer
+        pendingDisconnects[username] = {
+            element: el,
+            timestamp: Date.now(),
+            timeout: setTimeout(function() {
+                // Disconnect lasted > 15 seconds - show the message
+                el.style.display = '';
+                delete pendingDisconnects[username];
+                console.log('[ConnFilter] Showing disconnect for', username, '(lasted >15s)');
+            }, DISCONNECT_THRESHOLD)
+        };
+
+        console.log('[ConnFilter] Disconnect hidden for', username, '(waiting 15s)');
+    }
+
+    function handleReconnect(el) {
+        var username = extractUsernameFromMsg(el);
+        if (!username) return;
+
+        var pending = pendingDisconnects[username];
+        if (pending) {
+            // Reconnected within 15 seconds - suppress both messages
+            clearTimeout(pending.timeout);
+            if (pending.element && pending.element.parentNode) {
+                pending.element.remove();
+            }
+            el.remove();
+            delete pendingDisconnects[username];
+            console.log('[ConnFilter] Suppressed short disconnect for', username);
+        }
+        // If no pending disconnect, show reconnect normally (disconnect was already shown after 15s)
+    }
+
+    setupObserver();
+})();
