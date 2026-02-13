@@ -7839,6 +7839,1023 @@ function initSubtitleSystem() {
 
 /* ========== END SUBTITLE SYSTEM ========== */
 
+/* ========== PLAYLIST SRT SUBTITLE SYSTEM ========== */
+/* Attach .srt subtitle files to playlist items for time-synced display */
+/* Subtitles are broadcast to all viewers via Pusher */
+
+var SRT_SUBTITLE_CONFIG = {
+    pollInterval: 250,       // Check video time every 250ms
+    chunkSize: 8000,         // Max Pusher event payload per chunk (bytes)
+    maxFileSize: 512000,     // Max .srt file size (500KB)
+    storageKey: 'playlistSrtSubtitles'
+};
+
+// State
+var srtSubtitles = {};           // mediaKey -> [{start, end, text}]
+var activeSrtMediaKey = null;    // Media key of currently playing video
+var srtPollTimer = null;         // Polling interval ID
+var currentSrtCueIndex = -1;     // Index of currently displayed cue
+var srtEnabled = true;           // Global toggle for SRT display
+var srtChunkBuffer = {};         // For reassembling chunked Pusher broadcasts
+
+// ===== SRT PARSER =====
+
+function parseSRT(srtText) {
+    if (!srtText || typeof srtText !== 'string') return [];
+
+    var cues = [];
+    // Normalize line endings
+    var text = srtText.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+    // Split into blocks by double newlines
+    var blocks = text.split(/\n\n+/);
+
+    for (var i = 0; i < blocks.length; i++) {
+        var block = blocks[i].trim();
+        if (!block) continue;
+
+        var lines = block.split('\n');
+        // Need at least 2 lines: timecode + text (sequence number may be absent)
+        if (lines.length < 2) continue;
+
+        // Find the timecode line (contains -->)
+        var timecodeLineIdx = -1;
+        for (var j = 0; j < lines.length; j++) {
+            if (lines[j].indexOf('-->') !== -1) {
+                timecodeLineIdx = j;
+                break;
+            }
+        }
+        if (timecodeLineIdx === -1) continue;
+
+        var timeParts = lines[timecodeLineIdx].split('-->');
+        if (timeParts.length !== 2) continue;
+
+        var startTime = parseSrtTimestamp(timeParts[0].trim());
+        var endTime = parseSrtTimestamp(timeParts[1].trim());
+
+        if (startTime === null || endTime === null) continue;
+
+        // Text is everything after the timecode line
+        var subtitleText = [];
+        for (var k = timecodeLineIdx + 1; k < lines.length; k++) {
+            var line = lines[k].trim();
+            if (line) subtitleText.push(line);
+        }
+
+        if (subtitleText.length === 0) continue;
+
+        cues.push({
+            start: startTime,
+            end: endTime,
+            text: subtitleText.join('\n')
+        });
+    }
+
+    // Sort by start time
+    cues.sort(function(a, b) { return a.start - b.start; });
+
+    return cues;
+}
+
+// Parse SRT timestamp "HH:MM:SS,mmm" or "HH:MM:SS.mmm" to seconds
+function parseSrtTimestamp(ts) {
+    // Handle both comma and period as ms separator
+    ts = ts.replace(',', '.');
+    // Remove any position/styling data after the timestamp
+    ts = ts.split(' ')[0];
+
+    var parts = ts.split(':');
+    if (parts.length !== 3) return null;
+
+    var hours = parseInt(parts[0], 10);
+    var minutes = parseInt(parts[1], 10);
+    var secParts = parts[2].split('.');
+    var seconds = parseInt(secParts[0], 10);
+    var ms = secParts.length > 1 ? parseInt(secParts[1], 10) : 0;
+
+    if (isNaN(hours) || isNaN(minutes) || isNaN(seconds) || isNaN(ms)) return null;
+
+    return hours * 3600 + minutes * 60 + seconds + ms / 1000;
+}
+
+// ===== TIME-SYNCED DISPLAY ENGINE =====
+
+function startSrtSync() {
+    stopSrtSync(); // Clear any existing timer
+
+    if (!activeSrtMediaKey || !srtSubtitles[activeSrtMediaKey]) return;
+    if (!srtEnabled) return;
+
+    currentSrtCueIndex = -1;
+    console.log('[SRT] Starting sync for:', activeSrtMediaKey, '(' + srtSubtitles[activeSrtMediaKey].length + ' cues)');
+
+    srtPollTimer = setInterval(function() {
+        pollSrtTime();
+    }, SRT_SUBTITLE_CONFIG.pollInterval);
+}
+
+function stopSrtSync() {
+    if (srtPollTimer) {
+        clearInterval(srtPollTimer);
+        srtPollTimer = null;
+    }
+    currentSrtCueIndex = -1;
+    hideSrtSubtitle();
+}
+
+function pollSrtTime() {
+    if (!activeSrtMediaKey || !srtSubtitles[activeSrtMediaKey]) {
+        stopSrtSync();
+        return;
+    }
+
+    // Get current playback time from Cytube's PLAYER
+    if (typeof PLAYER === 'undefined' || !PLAYER) return;
+
+    var currentTime = null;
+
+    // Cytube PLAYER.getTime() uses callback in some versions, returns directly in others
+    if (typeof PLAYER.getTime === 'function') {
+        try {
+            var result = PLAYER.getTime(function(t) {
+                currentTime = t;
+            });
+            // Some implementations return the value directly
+            if (typeof result === 'number') {
+                currentTime = result;
+            }
+        } catch (e) {
+            return;
+        }
+    } else if (PLAYER.currentTime !== undefined) {
+        currentTime = PLAYER.currentTime;
+    }
+
+    if (currentTime === null || typeof currentTime !== 'number') return;
+
+    var cues = srtSubtitles[activeSrtMediaKey];
+    var foundIndex = -1;
+
+    // Binary search for active cue
+    var low = 0, high = cues.length - 1;
+    while (low <= high) {
+        var mid = Math.floor((low + high) / 2);
+        if (currentTime < cues[mid].start) {
+            high = mid - 1;
+        } else if (currentTime > cues[mid].end) {
+            low = mid + 1;
+        } else {
+            foundIndex = mid;
+            break;
+        }
+    }
+
+    if (foundIndex !== currentSrtCueIndex) {
+        currentSrtCueIndex = foundIndex;
+        if (foundIndex >= 0) {
+            displaySrtSubtitle(cues[foundIndex].text);
+        } else {
+            hideSrtSubtitle();
+        }
+    }
+}
+
+function displaySrtSubtitle(text) {
+    var overlay = createSubtitleOverlay();
+    if (!overlay) return;
+
+    var el = overlay.querySelector('.srt-subtitle-msg');
+    if (!el) {
+        el = document.createElement('div');
+        el.className = 'subtitle-msg srt-subtitle-msg visible';
+        overlay.appendChild(el);
+    }
+
+    // Convert newlines to <br> for multi-line subtitles, escape HTML first
+    var safeText = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    el.innerHTML = safeText.replace(/\n/g, '<br>');
+    el.classList.add('visible');
+    el.classList.remove('fading');
+}
+
+function hideSrtSubtitle() {
+    var overlay = document.getElementById('subtitle-overlay');
+    if (!overlay) return;
+
+    var el = overlay.querySelector('.srt-subtitle-msg');
+    if (el) {
+        el.classList.remove('visible');
+        el.classList.add('fading');
+        setTimeout(function() {
+            if (el.parentNode) el.remove();
+        }, 300);
+    }
+}
+
+// ===== STORAGE =====
+
+function saveSrtSubtitles() {
+    try {
+        localStorage.setItem(SRT_SUBTITLE_CONFIG.storageKey, JSON.stringify(srtSubtitles));
+    } catch (e) {
+        console.warn('[SRT] Failed to save to localStorage:', e);
+    }
+}
+
+function loadSrtSubtitles() {
+    try {
+        var saved = localStorage.getItem(SRT_SUBTITLE_CONFIG.storageKey);
+        if (saved) {
+            srtSubtitles = JSON.parse(saved);
+        }
+    } catch (e) {
+        srtSubtitles = {};
+    }
+}
+
+// ===== MEDIA CHANGE DETECTION =====
+
+function getCurrentMediaKey() {
+    var activeEntry = document.querySelector('.queue_entry.queue_active');
+    if (activeEntry) {
+        return getMediaKeyFromEntry(activeEntry);
+    }
+    return null;
+}
+
+function onMediaChange() {
+    stopSrtSync();
+
+    var mediaKey = getCurrentMediaKey();
+    activeSrtMediaKey = mediaKey;
+
+    // Update the video button state
+    updateSrtVideoButton();
+
+    if (mediaKey && srtSubtitles[mediaKey] && srtEnabled) {
+        // Small delay for player to initialize
+        setTimeout(function() {
+            startSrtSync();
+        }, 500);
+    }
+}
+
+// ===== POPUP UI =====
+
+var currentSrtPopupKey = null;
+
+function createSrtPopup() {
+    if (document.getElementById('srt-popup-overlay')) return;
+
+    var overlay = document.createElement('div');
+    overlay.id = 'srt-popup-overlay';
+    overlay.onclick = function(e) {
+        if (e.target === overlay) closeSrtPopup();
+    };
+
+    overlay.innerHTML = [
+        '<div id="srt-popup">',
+        '  <div id="srt-popup-header">',
+        '    <span>Attach Subtitles (.srt)</span>',
+        '    <button id="srt-popup-close" onclick="closeSrtPopup()">&times;</button>',
+        '  </div>',
+        '  <div id="srt-popup-body">',
+        '    <div id="srt-popup-video-title"></div>',
+        '    <label>Upload .srt file</label>',
+        '    <input type="file" id="srt-file-input" accept=".srt,.txt" />',
+        '    <label style="margin-top:12px">Or paste .srt content</label>',
+        '    <textarea id="srt-text-input" placeholder="1\n00:00:01,000 --> 00:00:04,000\nFirst subtitle line\n\n2\n00:00:05,000 --> 00:00:08,000\nSecond subtitle line" rows="8"></textarea>',
+        '    <div id="srt-popup-info"></div>',
+        '    <div id="srt-popup-actions">',
+        '      <button id="srt-apply-btn" onclick="applySrtFromPopup()">Apply Subtitles</button>',
+        '      <button id="srt-remove-btn" onclick="removeSrtFromPopup()">Remove</button>',
+        '      <button id="srt-cancel-btn" onclick="closeSrtPopup()">Cancel</button>',
+        '    </div>',
+        '    <div id="srt-popup-status"></div>',
+        '  </div>',
+        '</div>'
+    ].join('\n');
+
+    document.body.appendChild(overlay);
+}
+
+function openSrtPopup(mediaKey, videoTitle) {
+    createSrtPopup();
+
+    currentSrtPopupKey = mediaKey;
+
+    var overlay = document.getElementById('srt-popup-overlay');
+    overlay.classList.add('visible');
+
+    // Show video title
+    var titleEl = document.getElementById('srt-popup-video-title');
+    if (titleEl) {
+        titleEl.textContent = videoTitle || mediaKey || 'Unknown video';
+    }
+
+    // Clear inputs
+    var fileInput = document.getElementById('srt-file-input');
+    if (fileInput) fileInput.value = '';
+    var textInput = document.getElementById('srt-text-input');
+    if (textInput) textInput.value = '';
+
+    // Show info about existing subtitles
+    var infoEl = document.getElementById('srt-popup-info');
+    if (infoEl) {
+        if (srtSubtitles[mediaKey]) {
+            infoEl.textContent = 'Current: ' + srtSubtitles[mediaKey].length + ' subtitle cues loaded';
+            infoEl.style.color = '#8f8';
+        } else {
+            infoEl.textContent = 'No subtitles attached to this video';
+            infoEl.style.color = '#aaa';
+        }
+    }
+
+    // Clear status
+    var status = document.getElementById('srt-popup-status');
+    if (status) {
+        status.textContent = '';
+        status.className = '';
+    }
+}
+
+function closeSrtPopup() {
+    var overlay = document.getElementById('srt-popup-overlay');
+    if (overlay) overlay.classList.remove('visible');
+    currentSrtPopupKey = null;
+}
+
+function showSrtStatus(msg, type) {
+    var status = document.getElementById('srt-popup-status');
+    if (!status) return;
+    status.textContent = msg;
+    status.className = 'srt-status-' + type;
+}
+
+function applySrtFromPopup() {
+    if (!currentSrtPopupKey) return;
+
+    var fileInput = document.getElementById('srt-file-input');
+    var textInput = document.getElementById('srt-text-input');
+
+    // Prefer file if selected
+    if (fileInput && fileInput.files && fileInput.files.length > 0) {
+        var file = fileInput.files[0];
+        if (file.size > SRT_SUBTITLE_CONFIG.maxFileSize) {
+            showSrtStatus('File too large (max 500KB)', 'error');
+            return;
+        }
+        var reader = new FileReader();
+        reader.onload = function(e) {
+            processAndApplySrt(e.target.result);
+        };
+        reader.onerror = function() {
+            showSrtStatus('Failed to read file', 'error');
+        };
+        reader.readAsText(file);
+    } else if (textInput && textInput.value.trim()) {
+        processAndApplySrt(textInput.value);
+    } else {
+        showSrtStatus('Upload a file or paste .srt content', 'error');
+    }
+}
+
+function processAndApplySrt(srtText) {
+    var cues = parseSRT(srtText);
+
+    if (cues.length === 0) {
+        showSrtStatus('No valid subtitle cues found. Check the .srt format.', 'error');
+        return;
+    }
+
+    // Store subtitles
+    srtSubtitles[currentSrtPopupKey] = cues;
+    saveSrtSubtitles();
+
+    showSrtStatus('Loaded ' + cues.length + ' subtitle cues', 'success');
+
+    // Update info
+    var infoEl = document.getElementById('srt-popup-info');
+    if (infoEl) {
+        infoEl.textContent = 'Current: ' + cues.length + ' subtitle cues loaded';
+        infoEl.style.color = '#8f8';
+    }
+
+    // Broadcast via Pusher to other viewers
+    broadcastSrtSubtitles(currentSrtPopupKey, cues);
+
+    // If this is the currently playing video, start sync
+    if (currentSrtPopupKey === activeSrtMediaKey) {
+        startSrtSync();
+    }
+
+    // Update button states
+    updateAllSrtButtonStates();
+    updateSrtVideoButton();
+
+    setTimeout(closeSrtPopup, 1200);
+}
+
+function removeSrtFromPopup() {
+    if (!currentSrtPopupKey) return;
+
+    delete srtSubtitles[currentSrtPopupKey];
+    saveSrtSubtitles();
+
+    // Stop sync if currently playing
+    if (currentSrtPopupKey === activeSrtMediaKey) {
+        stopSrtSync();
+    }
+
+    // Broadcast removal via Pusher
+    broadcastSrtRemoval(currentSrtPopupKey);
+
+    showSrtStatus('Subtitles removed', 'success');
+
+    var infoEl = document.getElementById('srt-popup-info');
+    if (infoEl) {
+        infoEl.textContent = 'No subtitles attached to this video';
+        infoEl.style.color = '#aaa';
+    }
+
+    updateAllSrtButtonStates();
+    updateSrtVideoButton();
+
+    setTimeout(closeSrtPopup, 800);
+}
+
+// ===== VIDEO PLAYER BUTTON =====
+
+function addSrtVideoButton() {
+    if (document.getElementById('srt-video-btn')) return;
+
+    var videoContainer = document.getElementById('video-container');
+    if (!videoContainer) videoContainer = document.getElementById('videowrap');
+    if (!videoContainer) return;
+
+    var btn = document.createElement('button');
+    btn.id = 'srt-video-btn';
+    btn.title = 'Subtitles (.srt)';
+    btn.textContent = 'CC';
+
+    btn.addEventListener('click', function(e) {
+        e.stopPropagation();
+        var mediaKey = getCurrentMediaKey();
+        if (!mediaKey) {
+            showSubtitleToast('No video currently playing');
+            return;
+        }
+        var activeEntry = document.querySelector('.queue_entry.queue_active');
+        var title = '';
+        if (activeEntry) {
+            var titleEl = activeEntry.querySelector('.qe_title');
+            title = titleEl ? titleEl.textContent : '';
+        }
+        openSrtPopup(mediaKey, title);
+    });
+
+    videoContainer.style.position = 'relative';
+    videoContainer.appendChild(btn);
+
+    updateSrtVideoButton();
+}
+
+function updateSrtVideoButton() {
+    var btn = document.getElementById('srt-video-btn');
+    if (!btn) return;
+
+    var mediaKey = getCurrentMediaKey();
+    if (mediaKey && srtSubtitles[mediaKey]) {
+        btn.classList.add('srt-active');
+        btn.title = 'Subtitles active (' + srtSubtitles[mediaKey].length + ' cues)';
+    } else {
+        btn.classList.remove('srt-active');
+        btn.title = 'Subtitles (.srt)';
+    }
+}
+
+// ===== PLAYLIST ENTRY BUTTONS =====
+
+function addSrtButton(entryElement) {
+    if (!entryElement) return;
+    if (entryElement.querySelector('.srt-btn')) return;
+
+    var btn = document.createElement('button');
+    btn.className = 'srt-btn';
+    btn.textContent = 'CC';
+    btn.title = 'Attach subtitles (.srt)';
+
+    btn.addEventListener('click', function(e) {
+        e.stopPropagation();
+        e.preventDefault();
+
+        var mediaKey = getMediaKeyFromEntry(entryElement);
+        if (!mediaKey) return;
+
+        var titleEl = entryElement.querySelector('.qe_title');
+        var title = titleEl ? titleEl.textContent : '';
+        openSrtPopup(mediaKey, title);
+    });
+
+    entryElement.appendChild(btn);
+
+    // Update state
+    updateSrtButtonState(entryElement);
+}
+
+function updateSrtButtonState(entryElement) {
+    var btn = entryElement.querySelector('.srt-btn');
+    if (!btn) return;
+
+    var mediaKey = getMediaKeyFromEntry(entryElement);
+    if (mediaKey && srtSubtitles[mediaKey]) {
+        btn.classList.add('srt-has-subs');
+        btn.title = 'Subtitles loaded (' + srtSubtitles[mediaKey].length + ' cues)';
+    } else {
+        btn.classList.remove('srt-has-subs');
+        btn.title = 'Attach subtitles (.srt)';
+    }
+}
+
+function addAllSrtButtons() {
+    var entries = document.querySelectorAll('#queue .queue_entry');
+    entries.forEach(function(entry) {
+        addSrtButton(entry);
+    });
+}
+
+function updateAllSrtButtonStates() {
+    var entries = document.querySelectorAll('#queue .queue_entry');
+    entries.forEach(function(entry) {
+        updateSrtButtonState(entry);
+    });
+}
+
+// ===== PUSHER BROADCAST =====
+
+function broadcastSrtSubtitles(mediaKey, cues) {
+    if (!pusherEnabled || !pusherChannel) {
+        console.log('[SRT] Pusher not available, subtitles stored locally only');
+        return;
+    }
+
+    var payload = JSON.stringify(cues);
+    var chunkSize = SRT_SUBTITLE_CONFIG.chunkSize;
+    var totalChunks = Math.ceil(payload.length / chunkSize);
+    var sessionId = mediaKey + '_' + Date.now();
+
+    console.log('[SRT] Broadcasting subtitles:', cues.length, 'cues in', totalChunks, 'chunk(s)');
+
+    for (var i = 0; i < totalChunks; i++) {
+        var chunk = payload.substring(i * chunkSize, (i + 1) * chunkSize);
+        try {
+            pusherChannel.trigger('client-srt-subtitle', {
+                from: getMyUsername(),
+                mediaKey: mediaKey,
+                sessionId: sessionId,
+                chunkIndex: i,
+                totalChunks: totalChunks,
+                data: chunk
+            });
+        } catch (e) {
+            console.warn('[SRT] Failed to broadcast chunk', i, ':', e);
+        }
+    }
+}
+
+function broadcastSrtRemoval(mediaKey) {
+    if (!pusherEnabled || !pusherChannel) return;
+
+    try {
+        pusherChannel.trigger('client-srt-remove', {
+            from: getMyUsername(),
+            mediaKey: mediaKey
+        });
+    } catch (e) {
+        console.warn('[SRT] Failed to broadcast removal:', e);
+    }
+}
+
+function handleSrtBroadcast(data) {
+    if (!data || !data.mediaKey || !data.sessionId) return;
+
+    var sessionId = data.sessionId;
+
+    // Initialize buffer for this session
+    if (!srtChunkBuffer[sessionId]) {
+        srtChunkBuffer[sessionId] = {
+            mediaKey: data.mediaKey,
+            totalChunks: data.totalChunks,
+            chunks: {},
+            received: 0,
+            timestamp: Date.now()
+        };
+    }
+
+    var buffer = srtChunkBuffer[sessionId];
+    buffer.chunks[data.chunkIndex] = data.data;
+    buffer.received++;
+
+    // Check if we have all chunks
+    if (buffer.received === buffer.totalChunks) {
+        // Reassemble
+        var fullPayload = '';
+        for (var i = 0; i < buffer.totalChunks; i++) {
+            fullPayload += buffer.chunks[i];
+        }
+
+        try {
+            var cues = JSON.parse(fullPayload);
+            srtSubtitles[buffer.mediaKey] = cues;
+            saveSrtSubtitles();
+
+            console.log('[SRT] Received subtitles from', data.from, ':', cues.length, 'cues for', buffer.mediaKey);
+
+            // If this is the current video, start sync
+            if (buffer.mediaKey === activeSrtMediaKey && srtEnabled) {
+                startSrtSync();
+            }
+
+            updateAllSrtButtonStates();
+            updateSrtVideoButton();
+        } catch (e) {
+            console.warn('[SRT] Failed to parse received subtitle data:', e);
+        }
+
+        // Clean up buffer
+        delete srtChunkBuffer[sessionId];
+    }
+
+    // Clean up stale buffers (older than 30 seconds)
+    var now = Date.now();
+    for (var sid in srtChunkBuffer) {
+        if (now - srtChunkBuffer[sid].timestamp > 30000) {
+            delete srtChunkBuffer[sid];
+        }
+    }
+}
+
+function handleSrtRemoval(data) {
+    if (!data || !data.mediaKey) return;
+
+    delete srtSubtitles[data.mediaKey];
+    saveSrtSubtitles();
+
+    if (data.mediaKey === activeSrtMediaKey) {
+        stopSrtSync();
+    }
+
+    updateAllSrtButtonStates();
+    updateSrtVideoButton();
+
+    console.log('[SRT] Subtitles removed by', data.from, 'for', data.mediaKey);
+}
+
+// ===== PUSHER LISTENER SETUP =====
+
+function initSrtPusher() {
+    if (!pusherEnabled || !pusherChannel) return false;
+
+    pusherChannel.bind('client-srt-subtitle', function(data) {
+        if (data.from && data.from !== getMyUsername()) {
+            handleSrtBroadcast(data);
+        }
+    });
+
+    pusherChannel.bind('client-srt-remove', function(data) {
+        if (data.from && data.from !== getMyUsername()) {
+            handleSrtRemoval(data);
+        }
+    });
+
+    console.log('[SRT] Pusher listeners initialized');
+    return true;
+}
+
+// ===== CSS INJECTION =====
+
+(function injectSrtCSS() {
+    var style = document.createElement('style');
+    style.id = 'srt-subtitle-styles';
+    style.textContent = `
+        /* SRT Video Button */
+        #srt-video-btn {
+            position: absolute;
+            bottom: 12px;
+            right: 12px;
+            z-index: 9999;
+            background: rgba(0, 0, 0, 0.7);
+            color: #ccc;
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            border-radius: 4px;
+            padding: 4px 8px;
+            font-size: 12px;
+            font-weight: bold;
+            font-family: monospace;
+            cursor: pointer;
+            transition: all 0.2s;
+            letter-spacing: 1px;
+        }
+        #srt-video-btn:hover {
+            background: rgba(0, 0, 0, 0.9);
+            color: #fff;
+            border-color: rgba(255, 255, 255, 0.6);
+        }
+        #srt-video-btn.srt-active {
+            background: rgba(40, 120, 40, 0.8);
+            color: #fff;
+            border-color: #4a7;
+        }
+        #srt-video-btn.srt-active:hover {
+            background: rgba(40, 120, 40, 0.95);
+        }
+
+        /* Playlist Entry SRT Button */
+        .queue_entry .srt-btn {
+            display: none;
+            position: absolute;
+            right: 36px;
+            top: 50%;
+            transform: translateY(-50%);
+            background: rgba(80, 80, 80, 0.8);
+            border: none;
+            border-radius: 3px;
+            color: #ccc;
+            font-size: 10px;
+            font-weight: bold;
+            font-family: monospace;
+            padding: 2px 5px;
+            cursor: pointer;
+            z-index: 10;
+            transition: all 0.2s;
+            letter-spacing: 0.5px;
+        }
+        .queue_entry:hover .srt-btn {
+            display: block;
+        }
+        .queue_entry .srt-btn:hover {
+            background: rgba(120, 120, 120, 0.9);
+            color: #fff;
+        }
+        .queue_entry .srt-btn.srt-has-subs {
+            display: block;
+            background: rgba(40, 100, 40, 0.8);
+            color: #8f8;
+        }
+        .queue_entry .srt-btn.srt-has-subs:hover {
+            background: rgba(40, 120, 40, 0.95);
+            color: #fff;
+        }
+
+        /* SRT Popup Overlay */
+        #srt-popup-overlay {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0, 0, 0, 0.7);
+            z-index: 999999;
+            align-items: center;
+            justify-content: center;
+        }
+        #srt-popup-overlay.visible {
+            display: flex !important;
+        }
+
+        /* SRT Popup */
+        #srt-popup {
+            background: #1e1e24;
+            border: 2px solid #555;
+            border-radius: 12px;
+            padding: 0;
+            width: 460px;
+            max-width: 92vw;
+            max-height: 85vh;
+            overflow-y: auto;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.9);
+        }
+        #srt-popup-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 14px 18px;
+            background: #2d2d35;
+            border-radius: 10px 10px 0 0;
+            position: sticky;
+            top: 0;
+            z-index: 1;
+        }
+        #srt-popup-header span {
+            color: #fff;
+            font-weight: bold;
+            font-size: 15px;
+        }
+        #srt-popup-close {
+            background: #e44;
+            border: none;
+            color: #fff;
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            font-size: 18px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        #srt-popup-close:hover { background: #f66; }
+        #srt-popup-body {
+            padding: 16px 18px;
+        }
+        #srt-popup-body label {
+            display: block;
+            color: #aaa;
+            font-size: 11px;
+            margin-bottom: 5px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        #srt-popup-video-title {
+            color: #ddd;
+            font-size: 13px;
+            margin-bottom: 14px;
+            padding: 8px 10px;
+            background: #252530;
+            border-radius: 6px;
+            word-break: break-word;
+            border-left: 3px solid #8F6409;
+        }
+        #srt-file-input {
+            width: 100%;
+            padding: 8px;
+            background: #333;
+            border: 1px solid #555;
+            border-radius: 6px;
+            color: #fff;
+            font-size: 13px;
+            box-sizing: border-box;
+            margin-bottom: 4px;
+            cursor: pointer;
+        }
+        #srt-file-input::file-selector-button {
+            background: #444;
+            color: #fff;
+            border: 1px solid #666;
+            border-radius: 4px;
+            padding: 4px 10px;
+            margin-right: 10px;
+            cursor: pointer;
+        }
+        #srt-file-input::file-selector-button:hover {
+            background: #555;
+        }
+        #srt-text-input {
+            width: 100%;
+            padding: 10px;
+            background: #2a2a32;
+            border: 1px solid #555;
+            border-radius: 6px;
+            color: #ccc;
+            font-size: 12px;
+            font-family: 'Courier New', monospace;
+            box-sizing: border-box;
+            resize: vertical;
+            line-height: 1.5;
+        }
+        #srt-text-input:focus {
+            outline: none;
+            border-color: #888;
+        }
+        #srt-popup-info {
+            font-size: 12px;
+            margin: 10px 0;
+            padding: 6px 8px;
+            background: #252530;
+            border-radius: 4px;
+        }
+        #srt-popup-actions {
+            display: flex;
+            gap: 8px;
+            margin-top: 12px;
+        }
+        #srt-popup-actions button {
+            flex: 1;
+            padding: 10px;
+            border: none;
+            border-radius: 6px;
+            font-size: 13px;
+            cursor: pointer;
+            transition: all 0.15s;
+            font-weight: 500;
+        }
+        #srt-apply-btn { background: #4a7; color: #fff; }
+        #srt-apply-btn:hover { background: #5b8; }
+        #srt-remove-btn { background: #744; color: #fff; }
+        #srt-remove-btn:hover { background: #855; }
+        #srt-cancel-btn { background: #444; color: #fff; }
+        #srt-cancel-btn:hover { background: #555; }
+        #srt-popup-status {
+            margin-top: 8px;
+            padding: 6px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            text-align: center;
+        }
+        .srt-status-success { background: rgba(100,200,100,0.15); color: #8f8; }
+        .srt-status-error { background: rgba(200,100,100,0.15); color: #f88; }
+        .srt-status-info { background: rgba(100,100,200,0.15); color: #88f; }
+
+        /* SRT subtitle message - inherits from .subtitle-msg but stays persistent */
+        .srt-subtitle-msg {
+            transition: opacity 200ms ease-in-out !important;
+        }
+
+        /* Mobile adjustments */
+        @media (max-width: 768px) {
+            #srt-video-btn {
+                bottom: 8px;
+                right: 8px;
+                padding: 3px 6px;
+                font-size: 10px;
+            }
+            #srt-popup {
+                width: 95vw;
+            }
+        }
+    `;
+    document.head.appendChild(style);
+})();
+
+// ===== INITIALIZATION =====
+
+function initSrtSubtitleSystem() {
+    // Load saved subtitles
+    loadSrtSubtitles();
+
+    // Add video player button
+    addSrtVideoButton();
+
+    // Add buttons to existing playlist entries
+    addAllSrtButtons();
+
+    // Watch for new playlist entries
+    var queue = document.getElementById('queue');
+    if (queue) {
+        var srtObserver = new MutationObserver(function(mutations) {
+            mutations.forEach(function(mutation) {
+                mutation.addedNodes.forEach(function(node) {
+                    if (node.nodeType === 1 && node.classList && node.classList.contains('queue_entry')) {
+                        addSrtButton(node);
+                    }
+                });
+            });
+        });
+        srtObserver.observe(queue, { childList: true });
+        if (typeof _bokiCleanup !== 'undefined') {
+            _bokiCleanup.registerObserver('srtPlaylistObserver', srtObserver);
+        }
+    }
+
+    // Listen for media changes
+    if (typeof socket !== 'undefined') {
+        socket.on('changeMedia', function() {
+            setTimeout(onMediaChange, 400);
+        });
+        socket.on('setCurrent', function() {
+            setTimeout(onMediaChange, 400);
+        });
+    }
+
+    // Initial check for currently playing video
+    setTimeout(onMediaChange, 1000);
+
+    // Try to init Pusher listeners
+    if (!initSrtPusher()) {
+        var srtPusherCheck = setInterval(function() {
+            if (initSrtPusher()) {
+                clearInterval(srtPusherCheck);
+            }
+        }, 1000);
+        setTimeout(function() {
+            clearInterval(srtPusherCheck);
+        }, 30000);
+    }
+
+    console.log('[SRT] Playlist subtitle system initialized (' + Object.keys(srtSubtitles).length + ' videos with subtitles)');
+}
+
+// Expose functions globally
+window.openSrtPopup = openSrtPopup;
+window.closeSrtPopup = closeSrtPopup;
+window.applySrtFromPopup = applySrtFromPopup;
+window.removeSrtFromPopup = removeSrtFromPopup;
+
+// Initialize when ready
+$(document).ready(function() {
+    setTimeout(initSrtSubtitleSystem, 1500);
+});
+
+/* ========== END PLAYLIST SRT SUBTITLE SYSTEM ========== */
+
 // Pool of FUN but LEGIBLE animation effects
 var SCREENSPAM_EFFECTS = [
     {
