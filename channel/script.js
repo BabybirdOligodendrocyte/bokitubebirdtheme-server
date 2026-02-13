@@ -4036,6 +4036,11 @@ $('#newpollbtn').prependTo($("#leftcontrols"));
         #overflow-menu-dropdown .overflow-item.srt-active {
             color: #8f8;
         }
+        /* Force-hide buttons that were moved to overflow */
+        .overflow-hidden-btn,
+        #leftcontrols .overflow-hidden-btn {
+            display: none !important;
+        }
     `;
     document.head.appendChild(overflowStyle);
 
@@ -4140,20 +4145,34 @@ $('#newpollbtn').prependTo($("#leftcontrols"));
         });
 
         dropdown.appendChild(item);
-        btn.style.display = 'none';
+
+        // Force hide with both inline style and CSS class (belt and suspenders)
+        btn.style.setProperty('display', 'none', 'important');
+        btn.classList.add('overflow-hidden-btn');
     }
 
-    // Scan all current buttons in #leftcontrols and move non-visible ones
+    // Scan all children of #leftcontrols and move non-visible ones
     function scanAndMoveButtons() {
         var children = leftControls.children;
         for (var i = 0; i < children.length; i++) {
             var child = children[i];
-            // Skip non-button elements and the overflow wrap itself
             if (child.id === 'overflow-menu-wrap') continue;
-            if (!child.classList || (!child.classList.contains('btn') && child.tagName !== 'BUTTON')) continue;
             if (keepVisible[child.id]) continue;
 
+            // Accept any element that looks like a button
+            var isButton = (child.tagName === 'BUTTON') ||
+                           (child.classList && child.classList.contains('btn')) ||
+                           (child.tagName === 'A' && child.classList && child.classList.contains('btn'));
+            if (!isButton) continue;
+
             moveButtonToOverflow(child);
+        }
+
+        // Also explicitly target known IDs that may use non-standard elements
+        var explicitIds = ['newpollbtn', 'voteskip', 'afk-btn', 'clear-btn'];
+        for (var j = 0; j < explicitIds.length; j++) {
+            var el = document.getElementById(explicitIds[j]);
+            if (el) moveButtonToOverflow(el);
         }
     }
 
