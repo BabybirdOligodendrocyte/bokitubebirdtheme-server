@@ -3955,6 +3955,7 @@ $('#newpollbtn').prependTo($("#leftcontrols"));
 /* Overflow: Poll, Skip, AFK, Clear, Settings, CC, NND, etc.           */
 
 (function initOverflowMenu() {
+  try {
     var leftControls = document.getElementById('leftcontrols');
     if (!leftControls) return;
 
@@ -4201,6 +4202,9 @@ $('#newpollbtn').prependTo($("#leftcontrols"));
     // Also retry after a delay to catch any Cytube-native buttons that appear late
     setTimeout(scanAndMoveButtons, 2000);
     setTimeout(scanAndMoveButtons, 5000);
+  } catch (e) {
+    console.error('[OverflowMenu] Init error (non-fatal):', e);
+  }
 })();
 
 // Helper to add a button to the overflow menu (used by later-initialized features)
@@ -8680,7 +8684,9 @@ function broadcastSrtSubtitles(mediaKey, cues) {
 
     console.log('[SRT] Broadcasting subtitles:', cues.length, 'cues in', totalChunks, 'chunk(s)');
 
-    for (var i = 0; i < totalChunks; i++) {
+    // Send chunks with 150ms delay between each to avoid Pusher rate limits
+    function sendChunk(i) {
+        if (i >= totalChunks) return;
         var chunk = payload.substring(i * chunkSize, (i + 1) * chunkSize);
         try {
             pusherChannel.trigger('client-srt-subtitle', {
@@ -8694,7 +8700,11 @@ function broadcastSrtSubtitles(mediaKey, cues) {
         } catch (e) {
             console.warn('[SRT] Failed to broadcast chunk', i, ':', e);
         }
+        if (i + 1 < totalChunks) {
+            setTimeout(function() { sendChunk(i + 1); }, 150);
+        }
     }
+    sendChunk(0);
 }
 
 function broadcastSrtRemoval(mediaKey) {
@@ -9085,9 +9095,15 @@ window.closeSrtPopup = closeSrtPopup;
 window.applySrtFromPopup = applySrtFromPopup;
 window.removeSrtFromPopup = removeSrtFromPopup;
 
-// Initialize when ready
+// Initialize when ready (wrapped in try-catch to prevent crashing buddy system init)
 $(document).ready(function() {
-    setTimeout(initSrtSubtitleSystem, 1500);
+    setTimeout(function() {
+        try {
+            initSrtSubtitleSystem();
+        } catch (e) {
+            console.error('[SRT] Init error (non-fatal):', e);
+        }
+    }, 1500);
 });
 
 /* ========== END PLAYLIST SRT SUBTITLE SYSTEM ========== */
@@ -9839,10 +9855,15 @@ function decodeBuddySettings(encoded) {
 }
 
 // ========== PUSHER INITIALIZATION ==========
+var pusherRetryCount = 0;
+var PUSHER_MAX_RETRIES = 3;
+var PUSHER_RETRY_DELAYS = [3000, 8000, 20000]; // Exponential backoff
+
 function initPusher() {
     // Check if Pusher config is set
     if (typeof PUSHER_KEY === 'undefined' || typeof PUSHER_CLUSTER === 'undefined') {
-        console.log('[Pusher] Not configured - using chat fallback');
+        console.log('[Pusher] Not configured - PUSHER_KEY and PUSHER_CLUSTER must be set in channel External JS');
+        console.log('[Pusher] Buddy sync, drawing, and SRT broadcast require Pusher');
         return;
     }
 
@@ -9852,6 +9873,15 @@ function initPusher() {
         script.src = 'https://js.pusher.com/8.2.0/pusher.min.js';
         script.onload = function() {
             connectPusher();
+        };
+        script.onerror = function() {
+            console.error('[Pusher] Failed to load SDK from CDN - all real-time sync disabled');
+            if (pusherRetryCount < PUSHER_MAX_RETRIES) {
+                var delay = PUSHER_RETRY_DELAYS[pusherRetryCount] || 20000;
+                pusherRetryCount++;
+                console.log('[Pusher] Retrying SDK load in', delay / 1000, 's (attempt', pusherRetryCount + '/' + PUSHER_MAX_RETRIES + ')');
+                setTimeout(initPusher, delay);
+            }
         };
         document.head.appendChild(script);
     } else {
@@ -9894,32 +9924,62 @@ function connectPusher() {
         });
 
         pusherChannel.bind('pusher:subscription_error', function(err) {
-            console.log('[Pusher] Subscription error:', err, '- buddy sync requires Pusher, interactions will be local-only');
+            console.error('[Pusher] Subscription error:', err);
+            console.error('[Pusher] Auth endpoint:', typeof PUSHER_AUTH_ENDPOINT !== 'undefined' ? PUSHER_AUTH_ENDPOINT : 'NOT SET');
             pusherEnabled = false;
+
+            // Retry subscription with backoff
+            if (pusherRetryCount < PUSHER_MAX_RETRIES) {
+                var delay = PUSHER_RETRY_DELAYS[pusherRetryCount] || 20000;
+                pusherRetryCount++;
+                console.log('[Pusher] Retrying connection in', delay / 1000, 's (attempt', pusherRetryCount + '/' + PUSHER_MAX_RETRIES + ')');
+                setTimeout(function() {
+                    console.log('[Pusher] Reconnecting...');
+                    pusherChannel = pusherClient.subscribe('presence-' + (window.CHANNEL ? window.CHANNEL.name : 'buddy-sync'));
+                }, delay);
+            } else {
+                console.error('[Pusher] All retry attempts exhausted. Buddy sync, drawing, and SRT broadcast will not work.');
+                console.error('[Pusher] Check: 1) PUSHER_AUTH_ENDPOINT is reachable  2) Pusher app credentials are valid  3) Client events are enabled in Pusher dashboard');
+            }
+        });
+
+        // Monitor connection state changes
+        pusherClient.connection.bind('state_change', function(states) {
+            console.log('[Pusher] Connection:', states.previous, '->', states.current);
+            if (states.current === 'disconnected' || states.current === 'failed') {
+                pusherEnabled = false;
+            }
+        });
+
+        pusherClient.connection.bind('connected', function() {
+            console.log('[Pusher] Connection established (socket_id:', pusherClient.connection.socket_id + ')');
         });
 
         // When a new user joins, re-broadcast our settings so they see our customizations
+        // Optimized: coalesce multiple joins into a single broadcast using a debounce timer
+        var memberJoinBroadcastTimer = null;
         pusherChannel.bind('pusher:member_added', function(member) {
             console.log('[Pusher] New member joined:', member.id);
-            // Random delay (100-1500ms) to prevent all users broadcasting at once
-            var delay = 100 + Math.random() * 1400;
-            setTimeout(function() {
-                // Skip the debounce check for this broadcast
+            // Coalesce: if multiple members join rapidly, only broadcast once
+            if (memberJoinBroadcastTimer) clearTimeout(memberJoinBroadcastTimer);
+            memberJoinBroadcastTimer = setTimeout(function() {
+                memberJoinBroadcastTimer = null;
                 lastSettingsBroadcast = 0;
                 broadcastMyBuddySettings();
-            }, delay);
+            }, 1000 + Math.random() * 1500); // 1-2.5s delay, coalesced
         });
 
         // Listen for settings requests from new users
+        // Optimized: coalesce with same timer as member_added
         pusherChannel.bind('client-request-settings', function(data) {
             if (data.username && data.username !== getMyUsername()) {
                 console.log('[Pusher] Settings requested by:', data.username);
-                // Random delay to prevent flood
-                var delay = 100 + Math.random() * 1000;
-                setTimeout(function() {
+                if (memberJoinBroadcastTimer) clearTimeout(memberJoinBroadcastTimer);
+                memberJoinBroadcastTimer = setTimeout(function() {
+                    memberJoinBroadcastTimer = null;
                     lastSettingsBroadcast = 0;
                     broadcastMyBuddySettings();
-                }, delay);
+                }, 500 + Math.random() * 1000);
             }
         });
 
@@ -9937,24 +9997,23 @@ function connectPusher() {
             }
         });
 
-        // Listen for position correction snapshots from master
+        // Listen for position correction snapshots from master (also carries piggybacked speech)
         pusherChannel.bind('client-buddy-positions', function(data) {
             if (data.from && data.from !== getMyUsername()) {
                 handlePositionCorrection(data.positions, data.ts);
+                // Handle piggybacked speech broadcasts
+                if (data.speech && Array.isArray(data.speech)) {
+                    for (var i = 0; i < data.speech.length; i++) {
+                        handlePusherBuddySpeech(data.speech[i]);
+                    }
+                }
             }
         });
 
-        // Listen for speech bubble sync (so all clients see same speech at same time)
+        // Listen for speech bubble sync (legacy - kept for backward compat)
         pusherChannel.bind('client-buddy-speech', function(data) {
             if (data.from && data.from !== getMyUsername()) {
                 handlePusherBuddySpeech(data);
-            }
-        });
-
-        // Listen for visual state sync (animations, expressions, facing)
-        pusherChannel.bind('client-buddy-visual', function(data) {
-            if (data.from && data.from !== getMyUsername()) {
-                handlePusherBuddyVisual(data);
             }
         });
 
@@ -10060,44 +10119,16 @@ function handlePusherBuddySpeech(data) {
 }
 
 // Broadcast a speech bubble via Pusher for sync
+// Optimized: queues speech to piggyback on next position broadcast instead of separate message
 function broadcastSpeech(username, text, type, expr) {
     if (!pusherEnabled || !pusherChannel) return;
-    try {
-        pusherChannel.trigger('client-buddy-speech', {
-            from: getMyUsername(),
-            username: username,
-            text: text,
-            type: type || '',
-            expr: expr || null
-        });
-    } catch (e) { /* Pusher rate limit */ }
-}
-
-// Handle synced visual state (animation class, facing, expressions)
-function handlePusherBuddyVisual(data) {
-    if (!data.buddies) return;
-    Object.keys(data.buddies).forEach(function(name) {
-        var b = buddyCharacters[name];
-        if (!b) return;
-        var vis = data.buddies[name];
-        if (vis.anim) setAnim(b, vis.anim);
-        if (vis.face !== undefined) {
-            if (vis.face) b.element.classList.add('face-left');
-            else b.element.classList.remove('face-left');
-        }
-        if (vis.expr) showExpression(b, vis.expr);
+    // Queue speech to piggyback on next position broadcast (saves a separate Pusher message)
+    pendingSpeechBroadcasts.push({
+        username: username,
+        text: text,
+        type: type || '',
+        expr: expr || null
     });
-}
-
-// Broadcast visual state changes via Pusher
-function broadcastVisualState(buddyVisuals) {
-    if (!pusherEnabled || !pusherChannel) return;
-    try {
-        pusherChannel.trigger('client-buddy-visual', {
-            from: getMyUsername(),
-            buddies: buddyVisuals
-        });
-    } catch (e) { /* Pusher rate limit */ }
 }
 
 // Broadcast my settings via Pusher (preferred) or chat fallback
@@ -10379,46 +10410,87 @@ function handleSyncedHuntEnd(extra) {
 
 // ===== POSITION CORRECTION SYSTEM =====
 var lastPositionBroadcast = 0;
-var POSITION_BROADCAST_INTERVAL = 2000; // Master broadcasts every 2 seconds for tighter sync
+var POSITION_BROADCAST_IDLE_INTERVAL = 5000;   // 5s when no buddies are actively interacting
+var POSITION_BROADCAST_ACTIVE_INTERVAL = 2000; // 2s during active interactions/movement
 var POSITION_LERP_DURATION = 400; // Smooth correction over 400ms
 var SYNC_SEED_EPOCH = 5000; // Shared seed rotation period (must be same on all clients)
+var lastBroadcastPositions = {}; // Cache last broadcast for delta detection
+var POSITION_DELTA_THRESHOLD = 0.005; // Min normalized movement to include in broadcast
+var pendingSpeechBroadcasts = []; // Queued speech to piggyback on position broadcasts
 
 // Master broadcasts all buddy positions as NORMALIZED coordinates (0-1)
 // This ensures positions map correctly across different screen sizes
+// Optimized: adaptive interval (2s active / 5s idle), delta compression, speech piggybacking
 function broadcastPositionCorrection() {
     if (!isInteractionMaster()) return;
     if (!pusherEnabled || !pusherChannel) return; // Positions only via Pusher (too large for chat)
 
     var now = Date.now();
-    if (now - lastPositionBroadcast < POSITION_BROADCAST_INTERVAL) return;
-    lastPositionBroadcast = now;
+
+    // Adaptive interval: use shorter interval if any buddy is interacting or moving fast
+    var anyActive = false;
+    var names = Object.keys(buddyCharacters);
+    for (var i = 0; i < names.length; i++) {
+        var b = buddyCharacters[names[i]];
+        if (b && (b.interacting || Math.abs(b.vx) > 0.5 || Math.abs(b.vy || 0) > 0.5)) {
+            anyActive = true;
+            break;
+        }
+    }
+    var interval = anyActive ? POSITION_BROADCAST_ACTIVE_INTERVAL : POSITION_BROADCAST_IDLE_INTERVAL;
+    if (now - lastPositionBroadcast < interval) return;
 
     var zone = getBuddyZone();
     var zoneW = Math.max(1, zone.right - zone.left);
     var zoneH = Math.max(1, zone.absoluteBottom - zone.top);
 
     var positions = {};
-    var names = Object.keys(buddyCharacters);
     var syncSeedBase = Math.floor(now / SYNC_SEED_EPOCH);
+    var hasChanges = false;
 
     for (var i = 0; i < names.length; i++) {
         var b = buddyCharacters[names[i]];
         if (!b) continue;
         // Normalized format: "nx,ny,state,vx,vy" where nx/ny are 0-1 ratios
-        var nx = ((b.x - zone.left) / zoneW).toFixed(4);
-        var ny = ((b.y - zone.top) / zoneH).toFixed(4);
-        positions[names[i]] = nx + ',' + ny + ',' + b.state + ',' + b.vx.toFixed(2) + ',' + (b.vy || 0).toFixed(2);
+        var nx = (b.x - zone.left) / zoneW;
+        var ny = (b.y - zone.top) / zoneH;
+
+        // Delta compression: only include positions that changed significantly
+        var lastPos = lastBroadcastPositions[names[i]];
+        if (lastPos && Math.abs(nx - lastPos.nx) < POSITION_DELTA_THRESHOLD &&
+            Math.abs(ny - lastPos.ny) < POSITION_DELTA_THRESHOLD &&
+            b.state === lastPos.state) {
+            continue; // Skip unchanged buddy
+        }
+
+        positions[names[i]] = nx.toFixed(4) + ',' + ny.toFixed(4) + ',' + b.state + ',' + b.vx.toFixed(2) + ',' + (b.vy || 0).toFixed(2);
+        lastBroadcastPositions[names[i]] = { nx: nx, ny: ny, state: b.state };
+        hasChanges = true;
+
         // Re-seed own RNG to match what receivers will get
         var syncSeed = hashUsername(names[i]) + syncSeedBase;
         b.moveRng = createSeededRandom(syncSeed);
     }
 
+    // Skip broadcast if nothing changed AND no pending speech
+    if (!hasChanges && pendingSpeechBroadcasts.length === 0) return;
+
+    lastPositionBroadcast = now;
+
+    var payload = {
+        from: getMyUsername(),
+        positions: positions,
+        ts: now
+    };
+
+    // Piggyback pending speech broadcasts to avoid separate messages
+    if (pendingSpeechBroadcasts.length > 0) {
+        payload.speech = pendingSpeechBroadcasts;
+        pendingSpeechBroadcasts = [];
+    }
+
     try {
-        pusherChannel.trigger('client-buddy-positions', {
-            from: getMyUsername(),
-            positions: positions,
-            ts: now // timestamp for latency detection
-        });
+        pusherChannel.trigger('client-buddy-positions', payload);
     } catch (e) {
         // Pusher rate limit or error - skip this cycle
     }
@@ -16218,7 +16290,8 @@ var buddyDragState = {};
 var _dragBroadcastTimers = {};
 function canBroadcastDrag(buddyName) {
     var now = Date.now();
-    if (!_dragBroadcastTimers[buddyName] || now - _dragBroadcastTimers[buddyName] >= 66) {
+    // Throttle drag broadcasts to ~10 FPS (100ms) - was 15 FPS (66ms)
+    if (!_dragBroadcastTimers[buddyName] || now - _dragBroadcastTimers[buddyName] >= 100) {
         _dragBroadcastTimers[buddyName] = now;
         return true;
     }
@@ -17365,6 +17438,8 @@ function onDrawingMouseDown(e) {
 }
 
 // Handle mouse move for drawing
+var DRAW_MIN_POINT_DISTANCE = 0.005; // Min normalized distance between points (reduces payload size)
+
 function onDrawingMouseMove(e) {
     if (!drawingState.isDrawing || !drawingState.keysHeld) return;
 
@@ -17374,6 +17449,27 @@ function onDrawingMouseMove(e) {
     if (!coords) return;
 
     var lastCoords = drawingState.currentStroke[drawingState.currentStroke.length - 1];
+
+    // Downsample: skip points too close together (reduces Pusher payload by ~50-70%)
+    var dx = coords.x - lastCoords.x;
+    var dy = coords.y - lastCoords.y;
+    if (Math.abs(dx) < DRAW_MIN_POINT_DISTANCE && Math.abs(dy) < DRAW_MIN_POINT_DISTANCE) {
+        // Still draw locally for smooth visuals, just don't record the point for broadcast
+        var canvas = document.getElementById('drawing-canvas');
+        if (canvas) {
+            var ctx = canvas.getContext('2d');
+            var absSize = DRAW_BRUSH_SIZES[drawingSettings.brushSize] * canvas.height;
+            ctx.strokeStyle = drawingSettings.brushColor;
+            ctx.lineWidth = absSize;
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+            ctx.beginPath();
+            ctx.moveTo(lastCoords.x * canvas.width, lastCoords.y * canvas.height);
+            ctx.lineTo(coords.x * canvas.width, coords.y * canvas.height);
+            ctx.stroke();
+        }
+        return;
+    }
 
     var canvas = document.getElementById('drawing-canvas');
     if (!canvas) return;
