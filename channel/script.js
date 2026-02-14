@@ -9778,15 +9778,20 @@ var IDLE_STYLES = {
 
 // Get current user's username
 function getMyUsername() {
+    // Primary: Cytube CLIENT object (set after joining channel)
     if (typeof CLIENT !== 'undefined' && CLIENT.name) {
+        // Cache it for faster fallback next time
+        try { localStorage.setItem('cytube_username', CLIENT.name); } catch(e) {}
         return CLIENT.name;
     }
-    // Fallback: try to get from userlist
-    var myName = $('#userlist .userlist_item.userlist_owner span').first().text().trim();
-    if (!myName) {
-        myName = localStorage.getItem('cytube_username') || null;
+    // Fallback 1: Cytube USEROPTS
+    if (typeof USEROPTS !== 'undefined' && USEROPTS.name) {
+        return USEROPTS.name;
     }
-    return myName;
+    // Fallback 2: localStorage (cached from previous session)
+    var cached = localStorage.getItem('cytube_username');
+    if (cached) return cached;
+    return null;
 }
 
 // Load my settings from localStorage
@@ -9862,10 +9867,20 @@ function initSync() {
     }
 }
 
+var syncUsernameRetries = 0;
+var SYNC_USERNAME_MAX_RETRIES = 30; // Give up after 30 seconds
+
 function connectWebSocket() {
     var username = getMyUsername();
     if (!username) {
-        console.log('[Sync] Waiting for username...');
+        syncUsernameRetries++;
+        if (syncUsernameRetries > SYNC_USERNAME_MAX_RETRIES) {
+            console.log('[Sync] Could not find username after ' + SYNC_USERNAME_MAX_RETRIES + 's. Are you logged in? WebSocket sync disabled.');
+            return;
+        }
+        if (syncUsernameRetries <= 3 || syncUsernameRetries % 10 === 0) {
+            console.log('[Sync] Waiting for username... (' + syncUsernameRetries + '/' + SYNC_USERNAME_MAX_RETRIES + ')');
+        }
         setTimeout(connectWebSocket, 1000);
         return;
     }
