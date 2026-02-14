@@ -378,7 +378,7 @@ var BokiTheme = (function() {
             getAll: function() { return typeof buddyCharacters !== 'undefined' ? buddyCharacters : {}; },
             getSettings: function() { return typeof myBuddySettings !== 'undefined' ? myBuddySettings : null; },
             getSprites: function() { return typeof BUDDY_SPRITES !== 'undefined' ? BUDDY_SPRITES : []; },
-            isPusherEnabled: function() { return typeof pusherEnabled !== 'undefined' ? pusherEnabled : false; }
+            isSyncEnabled: function() { return typeof syncEnabled !== 'undefined' ? syncEnabled : false; }
         },
 
         // User management
@@ -602,7 +602,7 @@ var BokiTheme = (function() {
                     ignoredUsers: ignoredUsers.length,
                     buddyCount: typeof buddyCharacters !== 'undefined' ? Object.keys(buddyCharacters).length : 0,
                     activeArtifacts: typeof buddyArtifacts !== 'undefined' ? Object.keys(buddyArtifacts).length : 0,
-                    pusherEnabled: typeof pusherEnabled !== 'undefined' ? pusherEnabled : false,
+                    syncEnabled: typeof syncEnabled !== 'undefined' ? syncEnabled : false,
                     memory: BokiTheme.Memory.getStats(),
                     settings: {
                         emoteSize: emoteSize,
@@ -8669,11 +8669,11 @@ function updateAllSrtButtonStates() {
     });
 }
 
-// ===== PUSHER BROADCAST =====
+// ===== WEBSOCKET BROADCAST =====
 
 function broadcastSrtSubtitles(mediaKey, cues) {
-    if (!pusherEnabled || !pusherChannel) {
-        console.log('[SRT] Pusher not available, subtitles stored locally only');
+    if (!syncEnabled) {
+        console.log('[SRT] Sync not available, subtitles stored locally only');
         return;
     }
 
@@ -8688,18 +8688,14 @@ function broadcastSrtSubtitles(mediaKey, cues) {
     function sendChunk(i) {
         if (i >= totalChunks) return;
         var chunk = payload.substring(i * chunkSize, (i + 1) * chunkSize);
-        try {
-            pusherChannel.trigger('client-srt-subtitle', {
-                from: getMyUsername(),
-                mediaKey: mediaKey,
-                sessionId: sessionId,
-                chunkIndex: i,
-                totalChunks: totalChunks,
-                data: chunk
-            });
-        } catch (e) {
-            console.warn('[SRT] Failed to broadcast chunk', i, ':', e);
-        }
+        wsSend('srt-subtitle', {
+            from: getMyUsername(),
+            mediaKey: mediaKey,
+            sessionId: sessionId,
+            chunkIndex: i,
+            totalChunks: totalChunks,
+            data: chunk
+        });
         if (i + 1 < totalChunks) {
             setTimeout(function() { sendChunk(i + 1); }, 150);
         }
@@ -8708,16 +8704,12 @@ function broadcastSrtSubtitles(mediaKey, cues) {
 }
 
 function broadcastSrtRemoval(mediaKey) {
-    if (!pusherEnabled || !pusherChannel) return;
+    if (!syncEnabled) return;
 
-    try {
-        pusherChannel.trigger('client-srt-remove', {
-            from: getMyUsername(),
-            mediaKey: mediaKey
-        });
-    } catch (e) {
-        console.warn('[SRT] Failed to broadcast removal:', e);
-    }
+    wsSend('srt-remove', {
+        from: getMyUsername(),
+        mediaKey: mediaKey
+    });
 }
 
 function handleSrtBroadcast(data) {
@@ -8795,24 +8787,12 @@ function handleSrtRemoval(data) {
     console.log('[SRT] Subtitles removed by', data.from, 'for', data.mediaKey);
 }
 
-// ===== PUSHER LISTENER SETUP =====
+// ===== SYNC LISTENER SETUP =====
 
-function initSrtPusher() {
-    if (!pusherEnabled || !pusherChannel) return false;
-
-    pusherChannel.bind('client-srt-subtitle', function(data) {
-        if (data.from && data.from !== getMyUsername()) {
-            handleSrtBroadcast(data);
-        }
-    });
-
-    pusherChannel.bind('client-srt-remove', function(data) {
-        if (data.from && data.from !== getMyUsername()) {
-            handleSrtRemoval(data);
-        }
-    });
-
-    console.log('[SRT] Pusher listeners initialized');
+// Check if SRT sync is ready (listeners are centralized in connectWebSocket)
+function initSrtSync() {
+    if (!syncEnabled) return false;
+    console.log('[SRT] Sync listeners active (via central message router)');
     return true;
 }
 
@@ -9074,15 +9054,15 @@ function initSrtSubtitleSystem() {
     // Initial check for currently playing video
     setTimeout(onMediaChange, 1000);
 
-    // Try to init Pusher listeners
-    if (!initSrtPusher()) {
-        var srtPusherCheck = setInterval(function() {
-            if (initSrtPusher()) {
-                clearInterval(srtPusherCheck);
+    // Try to init sync listeners (may need to wait for WebSocket connection)
+    if (!initSrtSync()) {
+        var srtSyncCheck = setInterval(function() {
+            if (initSrtSync()) {
+                clearInterval(srtSyncCheck);
             }
         }, 1000);
         setTimeout(function() {
-            clearInterval(srtPusherCheck);
+            clearInterval(srtSyncCheck);
         }, 30000);
     }
 
@@ -9726,14 +9706,13 @@ function truncateForSync(str, maxLen) {
     return str.length > maxLen ? str.substring(0, maxLen) : str;
 }
 
-// ========== PUSHER CONFIGURATION ==========
-// Set these in your channel's External JS to enable Pusher sync (prevents chat flooding)
-// var PUSHER_KEY = 'your-pusher-key';
-// var PUSHER_CLUSTER = 'your-cluster';
-// var PUSHER_AUTH_ENDPOINT = 'https://your-worker.workers.dev/pusher/auth';
-var pusherClient = null;
-var pusherChannel = null;
-var pusherEnabled = false;
+// ========== WEBSOCKET SYNC CONFIGURATION ==========
+// Set SYNC_WS_URL in your channel's External JS to enable WebSocket sync
+// var SYNC_WS_URL = 'https://buddy-sync.yourname.workers.dev';
+// (Legacy Pusher config still works as fallback: PUSHER_KEY, PUSHER_CLUSTER, PUSHER_AUTH_ENDPOINT)
+var syncWebSocket = null;
+var syncEnabled = false;
+var syncMemberCount = 1; // Track connected members for adaptive throttling
 
 // ========== BUDDY SETTINGS SCHEMA ==========
 var DEFAULT_BUDDY_SETTINGS = {
@@ -9854,191 +9833,198 @@ function decodeBuddySettings(encoded) {
     }
 }
 
-// ========== PUSHER INITIALIZATION ==========
-var pusherRetryCount = 0;
-var PUSHER_MAX_RETRIES = 3;
-var PUSHER_RETRY_DELAYS = [3000, 8000, 20000]; // Exponential backoff
+// ========== WEBSOCKET SYNC INITIALIZATION ==========
+var syncRetryCount = 0;
+var SYNC_MAX_RETRIES = 5;
+var SYNC_RETRY_DELAYS = [1000, 3000, 8000, 15000, 30000];
+var memberJoinBroadcastTimer = null;
 
-function initPusher() {
-    // Check if Pusher config is set
-    if (typeof PUSHER_KEY === 'undefined' || typeof PUSHER_CLUSTER === 'undefined') {
-        console.log('[Pusher] Not configured - PUSHER_KEY and PUSHER_CLUSTER must be set in channel External JS');
-        console.log('[Pusher] Buddy sync, drawing, and SRT broadcast require Pusher');
-        return;
-    }
-
-    // Load Pusher SDK if not already loaded
-    if (typeof Pusher === 'undefined') {
-        var script = document.createElement('script');
-        script.src = 'https://js.pusher.com/8.2.0/pusher.min.js';
-        script.onload = function() {
-            connectPusher();
-        };
-        script.onerror = function() {
-            console.error('[Pusher] Failed to load SDK from CDN - all real-time sync disabled');
-            if (pusherRetryCount < PUSHER_MAX_RETRIES) {
-                var delay = PUSHER_RETRY_DELAYS[pusherRetryCount] || 20000;
-                pusherRetryCount++;
-                console.log('[Pusher] Retrying SDK load in', delay / 1000, 's (attempt', pusherRetryCount + '/' + PUSHER_MAX_RETRIES + ')');
-                setTimeout(initPusher, delay);
-            }
-        };
-        document.head.appendChild(script);
-    } else {
-        connectPusher();
+// Send a message via WebSocket (replaces pusherChannel.trigger)
+function wsSend(type, data) {
+    if (!syncEnabled || !syncWebSocket || syncWebSocket.readyState !== WebSocket.OPEN) return false;
+    try {
+        data.type = type;
+        syncWebSocket.send(JSON.stringify(data));
+        return true;
+    } catch (e) {
+        console.log('[Sync] Send failed:', e);
+        return false;
     }
 }
 
-function connectPusher() {
-    try {
-        var authEndpoint = typeof PUSHER_AUTH_ENDPOINT !== 'undefined' ? PUSHER_AUTH_ENDPOINT : null;
+function initSync() {
+    if (typeof SYNC_WS_URL !== 'undefined' && SYNC_WS_URL) {
+        console.log('[Sync] Using WebSocket sync (Cloudflare DO)');
+        connectWebSocket();
+    } else {
+        console.log('[Sync] SYNC_WS_URL not configured');
+        console.log('[Sync] Buddy sync, drawing, and SRT broadcast require WebSocket sync');
+    }
+}
 
-        pusherClient = new Pusher(PUSHER_KEY, {
-            cluster: PUSHER_CLUSTER,
-            authEndpoint: authEndpoint,
-            auth: {
-                params: { username: getMyUsername() || 'anonymous' }
-            }
-        });
+function connectWebSocket() {
+    var username = getMyUsername();
+    if (!username) {
+        console.log('[Sync] Waiting for username...');
+        setTimeout(connectWebSocket, 1000);
+        return;
+    }
 
-        // Get channel name from Cytube room or use default
-        var roomName = window.CHANNEL ? window.CHANNEL.name : 'buddy-sync';
-        pusherChannel = pusherClient.subscribe('presence-' + roomName);
+    var roomName = window.CHANNEL ? window.CHANNEL.name : 'default';
+    // Convert https:// to wss:// and http:// to ws://
+    var wsUrl = SYNC_WS_URL.replace(/^https:/, 'wss:').replace(/^http:/, 'ws:');
+    wsUrl += '/ws/' + encodeURIComponent(roomName) + '?username=' + encodeURIComponent(username);
 
-        pusherChannel.bind('pusher:subscription_succeeded', function() {
-            console.log('[Pusher] Connected to channel');
-            pusherEnabled = true;
-            // Broadcast our settings once connected
-            setTimeout(broadcastMyBuddySettings, 500);
-            // Request other users' settings after a delay (in case member_added doesn't fire)
-            setTimeout(function() {
-                console.log('[Pusher] Requesting settings from other users');
-                try {
-                    pusherChannel.trigger('client-request-settings', {
-                        username: getMyUsername()
-                    });
-                } catch (e) {
-                    console.log('[Pusher] Request settings trigger failed:', e);
-                }
-            }, 1000);
-        });
+    console.log('[Sync] Connecting to', wsUrl);
+    syncWebSocket = new WebSocket(wsUrl);
 
-        pusherChannel.bind('pusher:subscription_error', function(err) {
-            console.error('[Pusher] Subscription error:', err);
-            console.error('[Pusher] Auth endpoint:', typeof PUSHER_AUTH_ENDPOINT !== 'undefined' ? PUSHER_AUTH_ENDPOINT : 'NOT SET');
-            pusherEnabled = false;
+    syncWebSocket.onopen = function() {
+        console.log('[Sync] WebSocket connected');
+        // Don't set syncEnabled here - wait for 'connected' message from server
+    };
 
-            // Retry subscription with backoff
-            if (pusherRetryCount < PUSHER_MAX_RETRIES) {
-                var delay = PUSHER_RETRY_DELAYS[pusherRetryCount] || 20000;
-                pusherRetryCount++;
-                console.log('[Pusher] Retrying connection in', delay / 1000, 's (attempt', pusherRetryCount + '/' + PUSHER_MAX_RETRIES + ')');
+    syncWebSocket.onmessage = function(event) {
+        var msg;
+        try { msg = JSON.parse(event.data); } catch (e) { return; }
+
+        var type = msg.type;
+        var myName = getMyUsername();
+
+        switch (type) {
+            // ===== Server-originated events =====
+            case 'connected':
+                console.log('[Sync] Connected to room, members:', msg.members);
+                syncEnabled = true;
+                syncRetryCount = 0;
+                syncMemberCount = (msg.members ? msg.members.length : 0) + 1;
+                // Broadcast our settings to existing members
+                setTimeout(broadcastMyBuddySettings, 500);
+                // Request settings from others
                 setTimeout(function() {
-                    console.log('[Pusher] Reconnecting...');
-                    pusherChannel = pusherClient.subscribe('presence-' + (window.CHANNEL ? window.CHANNEL.name : 'buddy-sync'));
-                }, delay);
-            } else {
-                console.error('[Pusher] All retry attempts exhausted. Buddy sync, drawing, and SRT broadcast will not work.');
-                console.error('[Pusher] Check: 1) PUSHER_AUTH_ENDPOINT is reachable  2) Pusher app credentials are valid  3) Client events are enabled in Pusher dashboard');
-            }
-        });
+                    wsSend('request-settings', { username: getMyUsername() });
+                }, 1000);
+                break;
 
-        // Monitor connection state changes
-        pusherClient.connection.bind('state_change', function(states) {
-            console.log('[Pusher] Connection:', states.previous, '->', states.current);
-            if (states.current === 'disconnected' || states.current === 'failed') {
-                pusherEnabled = false;
-            }
-        });
-
-        pusherClient.connection.bind('connected', function() {
-            console.log('[Pusher] Connection established (socket_id:', pusherClient.connection.socket_id + ')');
-        });
-
-        // When a new user joins, re-broadcast our settings so they see our customizations
-        // Optimized: coalesce multiple joins into a single broadcast using a debounce timer
-        var memberJoinBroadcastTimer = null;
-        pusherChannel.bind('pusher:member_added', function(member) {
-            console.log('[Pusher] New member joined:', member.id);
-            // Coalesce: if multiple members join rapidly, only broadcast once
-            if (memberJoinBroadcastTimer) clearTimeout(memberJoinBroadcastTimer);
-            memberJoinBroadcastTimer = setTimeout(function() {
-                memberJoinBroadcastTimer = null;
-                lastSettingsBroadcast = 0;
-                broadcastMyBuddySettings();
-            }, 1000 + Math.random() * 1500); // 1-2.5s delay, coalesced
-        });
-
-        // Listen for settings requests from new users
-        // Optimized: coalesce with same timer as member_added
-        pusherChannel.bind('client-request-settings', function(data) {
-            if (data.username && data.username !== getMyUsername()) {
-                console.log('[Pusher] Settings requested by:', data.username);
+            case 'member-added':
+                console.log('[Sync] Member joined:', msg.username);
+                syncMemberCount++;
+                // Coalesce: if multiple members join rapidly, only broadcast once
                 if (memberJoinBroadcastTimer) clearTimeout(memberJoinBroadcastTimer);
                 memberJoinBroadcastTimer = setTimeout(function() {
                     memberJoinBroadcastTimer = null;
                     lastSettingsBroadcast = 0;
                     broadcastMyBuddySettings();
-                }, 500 + Math.random() * 1000);
-            }
-        });
+                }, 1000 + Math.random() * 1500);
+                break;
 
-        // Listen for buddy settings
-        pusherChannel.bind('client-buddy-settings', function(data) {
-            if (data.username && data.username !== getMyUsername()) {
-                handlePusherBuddySettings(data);
-            }
-        });
+            case 'member-removed':
+                console.log('[Sync] Member left:', msg.username);
+                syncMemberCount = Math.max(1, syncMemberCount - 1);
+                break;
 
-        // Listen for buddy interactions
-        pusherChannel.bind('client-buddy-action', function(data) {
-            if (data.user1 && data.user1 !== getMyUsername()) {
-                handlePusherBuddyAction(data);
-            }
-        });
+            // ===== Client-relayed events =====
+            case 'request-settings':
+                if (msg.username && msg.username !== myName) {
+                    console.log('[Sync] Settings requested by:', msg.username);
+                    if (memberJoinBroadcastTimer) clearTimeout(memberJoinBroadcastTimer);
+                    memberJoinBroadcastTimer = setTimeout(function() {
+                        memberJoinBroadcastTimer = null;
+                        lastSettingsBroadcast = 0;
+                        broadcastMyBuddySettings();
+                    }, 500 + Math.random() * 1000);
+                }
+                break;
 
-        // Listen for position correction snapshots from master (also carries piggybacked speech)
-        pusherChannel.bind('client-buddy-positions', function(data) {
-            if (data.from && data.from !== getMyUsername()) {
-                handlePositionCorrection(data.positions, data.ts);
-                // Handle piggybacked speech broadcasts
-                if (data.speech && Array.isArray(data.speech)) {
-                    for (var i = 0; i < data.speech.length; i++) {
-                        handlePusherBuddySpeech(data.speech[i]);
+            case 'buddy-settings':
+                if (msg.username && msg.username !== myName) {
+                    handlePusherBuddySettings(msg);
+                }
+                break;
+
+            case 'buddy-action':
+                if (msg.user1 && msg.user1 !== myName) {
+                    handlePusherBuddyAction(msg);
+                }
+                break;
+
+            case 'buddy-positions':
+                if (msg.from && msg.from !== myName) {
+                    handlePositionCorrection(msg.positions, msg.ts);
+                    // Handle piggybacked speech broadcasts
+                    if (msg.speech && Array.isArray(msg.speech)) {
+                        for (var i = 0; i < msg.speech.length; i++) {
+                            handlePusherBuddySpeech(msg.speech[i]);
+                        }
                     }
                 }
-            }
-        });
+                break;
 
-        // Listen for speech bubble sync (legacy - kept for backward compat)
-        pusherChannel.bind('client-buddy-speech', function(data) {
-            if (data.from && data.from !== getMyUsername()) {
-                handlePusherBuddySpeech(data);
-            }
-        });
+            case 'buddy-speech':
+                if (msg.from && msg.from !== myName) {
+                    handlePusherBuddySpeech(msg);
+                }
+                break;
 
-        // Listen for buddy drag events
-        pusherChannel.bind('client-buddy-drag-start', function(data) {
-            if (data.dragger && data.dragger !== getMyUsername()) {
-                handlePusherDragStart(data);
-            }
-        });
-        pusherChannel.bind('client-buddy-drag-move', function(data) {
-            if (data.dragger && data.dragger !== getMyUsername()) {
-                handlePusherDragMove(data);
-            }
-        });
-        pusherChannel.bind('client-buddy-drag-end', function(data) {
-            if (data.dragger && data.dragger !== getMyUsername()) {
-                handlePusherDragEnd(data);
-            }
-        });
+            case 'drag-start':
+                if (msg.dragger && msg.dragger !== myName) {
+                    handlePusherDragStart(msg);
+                }
+                break;
 
-        console.log('[Pusher] Initialized');
-    } catch (e) {
-        console.log('[Pusher] Init error:', e);
-        pusherEnabled = false;
-    }
+            case 'drag-move':
+                if (msg.dragger && msg.dragger !== myName) {
+                    handlePusherDragMove(msg);
+                }
+                break;
+
+            case 'drag-end':
+                if (msg.dragger && msg.dragger !== myName) {
+                    handlePusherDragEnd(msg);
+                }
+                break;
+
+            case 'draw-stroke':
+                handleReceivedStroke(msg);
+                break;
+
+            case 'draw-clear':
+                handleReceivedClear(msg);
+                break;
+
+            case 'srt-subtitle':
+                if (msg.from && msg.from !== myName) {
+                    handleSrtBroadcast(msg);
+                }
+                break;
+
+            case 'srt-remove':
+                if (msg.from && msg.from !== myName) {
+                    handleSrtRemoval(msg);
+                }
+                break;
+        }
+    };
+
+    syncWebSocket.onclose = function(event) {
+        console.log('[Sync] WebSocket closed (code:', event.code + ')');
+        syncEnabled = false;
+        syncWebSocket = null;
+
+        // Reconnect with exponential backoff
+        if (syncRetryCount < SYNC_MAX_RETRIES) {
+            var delay = SYNC_RETRY_DELAYS[syncRetryCount] || 30000;
+            syncRetryCount++;
+            console.log('[Sync] Reconnecting in', delay / 1000, 's (attempt', syncRetryCount + '/' + SYNC_MAX_RETRIES + ')');
+            setTimeout(connectWebSocket, delay);
+        } else {
+            console.error('[Sync] All retry attempts exhausted. Real-time sync disabled.');
+        }
+    };
+
+    syncWebSocket.onerror = function() {
+        console.error('[Sync] WebSocket error');
+        // onclose will fire after this, handling reconnection
+    };
 }
 
 function handlePusherBuddySettings(data) {
@@ -10118,10 +10104,10 @@ function handlePusherBuddySpeech(data) {
     if (data.expr) showExpression(b, data.expr);
 }
 
-// Broadcast a speech bubble via Pusher for sync
+// Broadcast a speech bubble via WebSocket sync
 // Optimized: queues speech to piggyback on next position broadcast instead of separate message
 function broadcastSpeech(username, text, type, expr) {
-    if (!pusherEnabled || !pusherChannel) return;
+    if (!syncEnabled) return;
     // Queue speech to piggyback on next position broadcast (saves a separate Pusher message)
     pendingSpeechBroadcasts.push({
         username: username,
@@ -10147,49 +10133,34 @@ function broadcastMyBuddySettings() {
     }
     lastSettingsBroadcast = now;
 
-    // Pusher-only broadcast (no chat pollution)
-    if (pusherEnabled && pusherChannel) {
-        try {
-            // Full settings object for Pusher - no truncation needed
-            var fullSettings = {
-                // Appearance
-                si: myBuddySettings.spriteIndex,
-                sz: myBuddySettings.size || 'medium',
-                hr: myBuddySettings.hueRotate || 0,
-                st: myBuddySettings.saturation || 100,
-                br: myBuddySettings.brightness || 100,
-                dn: myBuddySettings.displayName || '',
-                gc: myBuddySettings.glowColor || null,
-                gi: myBuddySettings.glowIntensity || 0,
-                cu: myBuddySettings.customSpriteUrl || null,
-
-                // Visual behavior
-                is: myBuddySettings.idleStyle || 'default',
-                ms: myBuddySettings.movementStyle || 'default',
-                el: myBuddySettings.energyLevel || 1.0,
-
-                // All phrases (no truncation over Pusher)
-                cp: myBuddySettings.catchphrase || null,
-                gr: myBuddySettings.greeting || null,
-                vl: myBuddySettings.victoryLine || null,
-                dl: myBuddySettings.defeatLine || null,
-                ll: myBuddySettings.loveLine || null,
-                ph: myBuddySettings.customPhrases || []
-            };
-
-            pusherChannel.trigger('client-buddy-settings', {
-                username: myName,
-                ...fullSettings
-            });
-            console.log('[Pusher] Broadcast sent for', myName, '(full settings)');
-            return;
-        } catch (e) {
-            console.log('[Pusher] Trigger failed:', e);
-        }
+    // WebSocket broadcast
+    if (syncEnabled) {
+        wsSend('buddy-settings', {
+            username: myName,
+            si: myBuddySettings.spriteIndex,
+            sz: myBuddySettings.size || 'medium',
+            hr: myBuddySettings.hueRotate || 0,
+            st: myBuddySettings.saturation || 100,
+            br: myBuddySettings.brightness || 100,
+            dn: myBuddySettings.displayName || '',
+            gc: myBuddySettings.glowColor || null,
+            gi: myBuddySettings.glowIntensity || 0,
+            cu: myBuddySettings.customSpriteUrl || null,
+            is: myBuddySettings.idleStyle || 'default',
+            ms: myBuddySettings.movementStyle || 'default',
+            el: myBuddySettings.energyLevel || 1.0,
+            cp: myBuddySettings.catchphrase || null,
+            gr: myBuddySettings.greeting || null,
+            vl: myBuddySettings.victoryLine || null,
+            dl: myBuddySettings.defeatLine || null,
+            ll: myBuddySettings.loveLine || null,
+            ph: myBuddySettings.customPhrases || []
+        });
+        console.log('[Sync] Settings broadcast for', myName);
+        return;
     }
 
-    // No chat fallback - Pusher is required for buddy sync
-    console.log('[BuddySync] Pusher not available - settings not broadcast');
+    console.log('[Sync] Not connected - settings not broadcast');
 }
 
 // Send a ONE-TIME minimal BSET via chat ONLY on self-rejoin so visual sprites
@@ -10227,7 +10198,7 @@ function broadcastRejoinVisual() {
 
 // Broadcast an interaction for sync via Pusher (normalized positions for cross-screen consistency)
 function broadcastInteraction(user1, user2, interactionType, seed) {
-    if (!pusherEnabled || !pusherChannel) return; // Pusher required
+    if (!syncEnabled) return;
 
     var b1 = buddyCharacters[user1];
     var b2 = buddyCharacters[user2];
@@ -10238,39 +10209,31 @@ function broadcastInteraction(user1, user2, interactionType, seed) {
     var npos1 = b1 ? ((b1.x - zone.left) / zoneW).toFixed(4) + ',' + ((b1.y - zone.top) / zoneH).toFixed(4) : '0.5,0.5';
     var npos2 = b2 ? ((b2.x - zone.left) / zoneW).toFixed(4) + ',' + ((b2.y - zone.top) / zoneH).toFixed(4) : '0.5,0.5';
 
-    try {
-        pusherChannel.trigger('client-buddy-action', {
-            user1: user1,
-            user2: user2,
-            action: interactionType,
-            seed: seed,
-            pos1: npos1,
-            pos2: npos2,
-            normalized: true
-        });
-    } catch (e) {
-        console.log('[Pusher] Action trigger failed:', e);
-    }
+    wsSend('buddy-action', {
+        user1: user1,
+        user2: user2,
+        action: interactionType,
+        seed: seed,
+        pos1: npos1,
+        pos2: npos2,
+        normalized: true
+    });
 }
 
-// Broadcast an advanced action via Pusher only (group, hunt, job, evolve, physics, rel)
+// Broadcast an advanced action (group, hunt, job, evolve, physics, rel)
 function broadcastAdvancedAction(actionType, extraData) {
-    if (!pusherEnabled || !pusherChannel) return; // Pusher required
+    if (!syncEnabled) return;
 
     var myName = getMyUsername();
     if (!myName) return;
 
-    try {
-        pusherChannel.trigger('client-buddy-action', {
-            user1: myName,
-            user2: extraData.user2 || '',
-            action: actionType,
-            seed: extraData.seed || Math.floor(Math.random() * 1000000),
-            extra: extraData
-        });
-    } catch (e) {
-        console.log('[Pusher] Advanced action trigger failed:', e);
-    }
+    wsSend('buddy-action', {
+        user1: myName,
+        user2: extraData.user2 || '',
+        action: actionType,
+        seed: extraData.seed || Math.floor(Math.random() * 1000000),
+        extra: extraData
+    });
 }
 
 // Handle incoming advanced actions (from Pusher or parsed chat)
@@ -10423,7 +10386,7 @@ var pendingSpeechBroadcasts = []; // Queued speech to piggyback on position broa
 // Optimized: adaptive interval (2s active / 5s idle), delta compression, speech piggybacking
 function broadcastPositionCorrection() {
     if (!isInteractionMaster()) return;
-    if (!pusherEnabled || !pusherChannel) return; // Positions only via Pusher (too large for chat)
+    if (!syncEnabled) return;
 
     var now = Date.now();
 
@@ -10489,11 +10452,7 @@ function broadcastPositionCorrection() {
         pendingSpeechBroadcasts = [];
     }
 
-    try {
-        pusherChannel.trigger('client-buddy-positions', payload);
-    } catch (e) {
-        // Pusher rate limit or error - skip this cycle
-    }
+    wsSend('buddy-positions', payload);
 }
 
 // Receive position correction from master and set lerp targets
@@ -11398,7 +11357,7 @@ function initConnectedBuddies() {
     buddiesInitialized = true;
 
     injectBuddyStyles();
-    initPusher();             // Try Pusher first (no chat pollution)
+    initSync();               // WebSocket sync (Cloudflare DO)
     initBuddySyncListener();  // Fallback chat-based sync system
 
     setTimeout(function() {
@@ -11435,18 +11394,18 @@ function initConnectedBuddies() {
 
             var myName = getMyUsername();
 
-            // If WE just reconnected, re-broadcast settings via Pusher + send ONE chat BSET for visual restore
+            // If WE just reconnected, re-broadcast settings via WebSocket + send ONE chat BSET for visual restore
             if (data.name === myName && myBuddySettings) {
                 console.log('[BuddySync] Self rejoin detected');
                 setTimeout(function() {
                     lastSettingsBroadcast = 0;
-                    broadcastMyBuddySettings();   // Pusher (full settings)
+                    broadcastMyBuddySettings();   // WebSocket (full settings)
                     broadcastRejoinVisual();       // Chat (minimal visual only, one-time)
                 }, 2000);
                 return;
             }
 
-            // Other user joins: Pusher handles via member_added event, no chat broadcast needed
+            // Other user joins: WebSocket handles via member-added event, no chat broadcast needed
         });
         socket.on('userLeave', function(data) { if (data.name) removeBuddy(data.name); });
         socket.on('userlist', function() { setTimeout(syncBuddiesWithUserlist, 500); });
@@ -16344,47 +16303,41 @@ function getBuddyPixelSize(b) {
     return b.element.offsetWidth || parseFloat(b.element.style.fontSize) || 24;
 }
 
-// Broadcast drag events via Pusher
+// Broadcast drag events via WebSocket
 function broadcastDragStart(buddyName) {
-    if (!pusherEnabled || !pusherChannel) return;
+    if (!syncEnabled) return;
     var zone = getBuddyZone();
     var b = buddyCharacters[buddyName];
     if (!b) return;
     var zoneW = Math.max(1, zone.right - zone.left);
     var zoneH = Math.max(1, zone.absoluteBottom - zone.top);
-    try {
-        pusherChannel.trigger('client-buddy-drag-start', {
-            target: buddyName,
-            dragger: getMyUsername(),
-            x: ((b.x - zone.left) / zoneW).toFixed(4),
-            y: ((b.y - zone.top) / zoneH).toFixed(4)
-        });
-    } catch (e) { /* Pusher rate limit */ }
+    wsSend('drag-start', {
+        target: buddyName,
+        dragger: getMyUsername(),
+        x: ((b.x - zone.left) / zoneW).toFixed(4),
+        y: ((b.y - zone.top) / zoneH).toFixed(4)
+    });
 }
 
 function broadcastDragMove(buddyName, nx, ny) {
-    if (!pusherEnabled || !pusherChannel) return;
+    if (!syncEnabled) return;
     if (!canBroadcastDrag(buddyName)) return;
-    try {
-        pusherChannel.trigger('client-buddy-drag-move', {
-            target: buddyName,
-            dragger: getMyUsername(),
-            x: nx.toFixed(4),
-            y: ny.toFixed(4)
-        });
-    } catch (e) { /* Pusher rate limit */ }
+    wsSend('drag-move', {
+        target: buddyName,
+        dragger: getMyUsername(),
+        x: nx.toFixed(4),
+        y: ny.toFixed(4)
+    });
 }
 
 function broadcastDragEnd(buddyName, nx, ny) {
-    if (!pusherEnabled || !pusherChannel) return;
-    try {
-        pusherChannel.trigger('client-buddy-drag-end', {
-            target: buddyName,
-            dragger: getMyUsername(),
-            x: nx.toFixed(4),
-            y: ny.toFixed(4)
-        });
-    } catch (e) { /* Pusher rate limit */ }
+    if (!syncEnabled) return;
+    wsSend('drag-end', {
+        target: buddyName,
+        dragger: getMyUsername(),
+        x: nx.toFixed(4),
+        y: ny.toFixed(4)
+    });
     delete _dragBroadcastTimers[buddyName];
 }
 
@@ -17202,8 +17155,8 @@ function toggleDrawingOverlay() {
 
 // Open drawing settings popup
 function openDrawingSettingsPopup() {
-    if (!pusherEnabled) {
-        alert('Drawing requires Pusher to be configured. Please set up Pusher in channel settings.');
+    if (!syncEnabled) {
+        alert('Drawing requires WebSocket sync to be configured. Set SYNC_WS_URL in channel settings.');
         return;
     }
     createDrawingSettingsPopup();
@@ -17548,40 +17501,32 @@ function onDrawingKeyUp(e) {
     }
 }
 
-// ========== PUSHER BROADCAST (Drawing) ==========
+// ========== WEBSOCKET BROADCAST (Drawing) ==========
 
 // Broadcast a stroke to all users
 function broadcastStroke(strokeData) {
-    if (!pusherEnabled || !pusherChannel) {
-        console.log('[Drawing] Pusher not available');
+    if (!syncEnabled) {
+        console.log('[Drawing] Sync not available');
         return;
     }
 
-    try {
-        pusherChannel.trigger('client-draw-stroke', {
-            username: getMyUsername(),
-            sessionId: drawingState.sessionId,
-            stroke: strokeData
-        });
-        console.log('[Drawing] Stroke broadcast, points:', strokeData.points.length);
-    } catch (e) {
-        console.log('[Drawing] Stroke broadcast failed:', e);
-    }
+    wsSend('draw-stroke', {
+        username: getMyUsername(),
+        sessionId: drawingState.sessionId,
+        stroke: strokeData
+    });
+    console.log('[Drawing] Stroke broadcast, points:', strokeData.points.length);
 }
 
 // Broadcast clear command
 function broadcastDrawingClear() {
-    if (!pusherEnabled || !pusherChannel) return;
+    if (!syncEnabled) return;
 
-    try {
-        pusherChannel.trigger('client-draw-clear', {
-            username: getMyUsername(),
-            sessionId: drawingState.sessionId
-        });
-        console.log('[Drawing] Clear broadcast');
-    } catch (e) {
-        console.log('[Drawing] Clear broadcast failed:', e);
-    }
+    wsSend('draw-clear', {
+        username: getMyUsername(),
+        sessionId: drawingState.sessionId
+    });
+    console.log('[Drawing] Clear broadcast');
 }
 
 // Handle received stroke from another user
@@ -17642,24 +17587,13 @@ function handleReceivedClear(data) {
     console.log('[Drawing] Received clear from', data.username);
 }
 
-// Initialize drawing system Pusher listeners
-function initDrawingPusher() {
-    if (!pusherEnabled || !pusherChannel) {
-        console.log('[Drawing] Waiting for Pusher...');
+// Check if drawing sync is ready (listeners are centralized in connectWebSocket)
+function initDrawingSync() {
+    if (!syncEnabled) {
+        console.log('[Drawing] Waiting for sync...');
         return false;
     }
-
-    // Bind stroke listener
-    pusherChannel.bind('client-draw-stroke', function(data) {
-        handleReceivedStroke(data);
-    });
-
-    // Bind clear listener
-    pusherChannel.bind('client-draw-clear', function(data) {
-        handleReceivedClear(data);
-    });
-
-    console.log('[Drawing] Pusher listeners initialized');
+    console.log('[Drawing] Sync listeners active (via central message router)');
     return true;
 }
 
@@ -17681,11 +17615,10 @@ function initDrawingSystem() {
         resizeReceiverCanvas();
     });
 
-    // Try to init Pusher listeners (may need to wait)
-    if (!initDrawingPusher()) {
-        // Retry after Pusher connects
+    // Try to init sync listeners (may need to wait for WebSocket connection)
+    if (!initDrawingSync()) {
         var checkInterval = setInterval(function() {
-            if (initDrawingPusher()) {
+            if (initDrawingSync()) {
                 clearInterval(checkInterval);
             }
         }, 1000);
