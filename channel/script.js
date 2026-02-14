@@ -9778,15 +9778,30 @@ var IDLE_STYLES = {
 
 // Get current user's username
 function getMyUsername() {
+    // Primary: Cytube CLIENT object (set after joining channel)
     if (typeof CLIENT !== 'undefined' && CLIENT.name) {
+        // Cache it for faster fallback next time
+        try { localStorage.setItem('cytube_username', CLIENT.name); } catch(e) {}
         return CLIENT.name;
     }
-    // Fallback: try to get from userlist
-    var myName = $('#userlist .userlist_item.userlist_owner span').first().text().trim();
-    if (!myName) {
-        myName = localStorage.getItem('cytube_username') || null;
+    // Fallback 1: Cytube USEROPTS
+    if (typeof USEROPTS !== 'undefined' && USEROPTS.name) {
+        return USEROPTS.name;
     }
-    return myName;
+    // Fallback 2: localStorage (cached from previous session)
+    var cached = localStorage.getItem('cytube_username');
+    if (cached) return cached;
+    return null;
+}
+
+// Generate or retrieve a persistent guest ID for WebSocket sync
+function getGuestSyncName() {
+    var guestId = localStorage.getItem('cytube_guest_sync_id');
+    if (!guestId) {
+        guestId = 'guest_' + Math.random().toString(36).substring(2, 8);
+        try { localStorage.setItem('cytube_guest_sync_id', guestId); } catch(e) {}
+    }
+    return guestId;
 }
 
 // Load my settings from localStorage
@@ -9862,12 +9877,24 @@ function initSync() {
     }
 }
 
+var syncUsernameRetries = 0;
+var SYNC_USERNAME_MAX_RETRIES = 30; // Give up after 30 seconds
+
 function connectWebSocket() {
     var username = getMyUsername();
     if (!username) {
-        console.log('[Sync] Waiting for username...');
-        setTimeout(connectWebSocket, 1000);
-        return;
+        syncUsernameRetries++;
+        // Wait up to 10 seconds for a real login, then connect as guest
+        if (syncUsernameRetries > 10) {
+            username = getGuestSyncName();
+            console.log('[Sync] No login detected, connecting as guest:', username);
+        } else {
+            if (syncUsernameRetries <= 3) {
+                console.log('[Sync] Waiting for username... (' + syncUsernameRetries + '/10)');
+            }
+            setTimeout(connectWebSocket, 1000);
+            return;
+        }
     }
 
     var roomName = window.CHANNEL ? window.CHANNEL.name : 'default';
