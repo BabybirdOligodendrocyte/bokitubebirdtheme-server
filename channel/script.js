@@ -9849,10 +9849,11 @@ function stripToPlainText(msg) {
     msg = msg.replace(/<[^>]*>/g, '');
     // Remove zero-width characters
     msg = msg.replace(/[\u200B\u200C\u200D\uFEFF]/g, '');
-    // Remove hidden sync markers (BSET, BACT, SCREENSPAM)
+    // Remove hidden sync/command markers
     msg = msg.replace(/BSET:.*?:BSET/g, '');
     msg = msg.replace(/BACT:.*?:BACT/g, '');
-    msg = msg.replace(/SCREENSPAM:.*?:SCREENSPAM/g, '');
+    msg = msg.replace(/SCREENSPAM2?:.*?:SCREENSPAM2?/g, '');
+    msg = msg.replace(/SUBTITLE:.*?:SUBTITLE/g, '');
     // Collapse whitespace
     msg = msg.replace(/\s+/g, ' ').trim();
     return msg;
@@ -9959,7 +9960,17 @@ function attemptJsonBinWrite(messages, newCount, retryNum) {
 BokiChatDispatcher.register('speechCollection', function(data) {
     if (!data || !data.msg || !data.username) return false;
     // Skip system/action messages
-    if (data.meta && (data.meta.addClass === 'shout' || data.meta.addClass === 'server-whisper')) return false;
+    if (data.meta && (data.meta.addClass === 'shout' || data.meta.addClass === 'server-whisper' || data.meta.addClass === 'action')) return false;
+
+    var rawMsg = data.msg;
+
+    // Skip hidden command messages (all use zero-width characters as markers)
+    // Catches: BSET, BACT, SCREENSPAM, SCREENSPAM2, SUBTITLE, and any future hidden format
+    if (/[\u200B\u200C\u200D\uFEFF]/.test(rawMsg)) return false;
+
+    // Skip any message starting with / or ! (commands like /afk, /clear, /me, !command, etc.)
+    // Check raw HTML — commands sent to server appear as plain text in data.msg
+    if (/^\/|^!/.test(rawMsg)) return false;
 
     // Use DOM parsing to extract ONLY the actual message text
     var tmp = document.createElement('div');
