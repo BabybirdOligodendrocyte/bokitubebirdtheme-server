@@ -8726,9 +8726,21 @@ function updateAllSrtButtonStates() {
 
 // ===== WEBSOCKET BROADCAST =====
 
-function broadcastSrtSubtitles(mediaKey, cues) {
+function broadcastSrtSubtitles(mediaKey, cues, _retryCount) {
+    var retryCount = _retryCount || 0;
+    var MAX_RETRIES = 3;
+
     if (!syncEnabled) {
-        console.log('[SRT] Sync not available, subtitles stored locally only');
+        // Retry: sync may still be connecting
+        if (retryCount < MAX_RETRIES) {
+            console.log('[SRT] Sync not ready, retrying broadcast in 2s (attempt', (retryCount + 1) + '/' + MAX_RETRIES + ')');
+            setTimeout(function() {
+                broadcastSrtSubtitles(mediaKey, cues, retryCount + 1);
+            }, 2000);
+            return;
+        }
+        console.warn('[SRT] Sync not available after', MAX_RETRIES, 'retries — subtitles stored locally only');
+        showSrtSyncStatus('Subtitles saved locally (sync unavailable)');
         return;
     }
 
@@ -8736,14 +8748,25 @@ function broadcastSrtSubtitles(mediaKey, cues) {
     var chunkSize = SRT_SUBTITLE_CONFIG.chunkSize;
     var totalChunks = Math.ceil(payload.length / chunkSize);
     var sessionId = mediaKey + '_' + Date.now();
+    var failedChunks = 0;
 
     console.log('[SRT] Broadcasting subtitles:', cues.length, 'cues in', totalChunks, 'chunk(s)');
 
-    // Send chunks with 150ms delay between each to avoid Pusher rate limits
+    // Send chunks with 150ms delay between each to avoid rate limits
     function sendChunk(i) {
-        if (i >= totalChunks) return;
+        if (i >= totalChunks) {
+            // All chunks sent — report status
+            if (failedChunks > 0) {
+                console.warn('[SRT] Broadcast completed with', failedChunks, 'failed chunk(s)');
+                showSrtSyncStatus('Sync partial — ' + failedChunks + ' chunk(s) failed');
+            } else {
+                console.log('[SRT] Broadcast complete:', totalChunks, 'chunk(s) sent');
+                showSrtSyncStatus('Synced to all viewers');
+            }
+            return;
+        }
         var chunk = payload.substring(i * chunkSize, (i + 1) * chunkSize);
-        wsSend('srt-subtitle', {
+        var sent = wsSend('srt-subtitle', {
             from: getMyUsername(),
             mediaKey: mediaKey,
             sessionId: sessionId,
@@ -8751,11 +8774,30 @@ function broadcastSrtSubtitles(mediaKey, cues) {
             totalChunks: totalChunks,
             data: chunk
         });
+        if (!sent) {
+            failedChunks++;
+            console.warn('[SRT] Failed to send chunk', i, '/', totalChunks);
+        }
         if (i + 1 < totalChunks) {
             setTimeout(function() { sendChunk(i + 1); }, 150);
+        } else {
+            // Schedule final status report
+            setTimeout(function() { sendChunk(totalChunks); }, 50);
         }
     }
     sendChunk(0);
+}
+
+// Show SRT sync status briefly as a toast
+function showSrtSyncStatus(msg) {
+    // Update popup status if open
+    var status = document.getElementById('srt-popup-status');
+    if (status) {
+        status.textContent = msg;
+        status.className = msg.indexOf('unavailable') !== -1 || msg.indexOf('failed') !== -1
+            ? 'srt-status-error' : 'srt-status-success';
+    }
+    console.log('[SRT]', msg);
 }
 
 function broadcastSrtRemoval(mediaKey) {
@@ -8765,6 +8807,53 @@ function broadcastSrtRemoval(mediaKey) {
         from: getMyUsername(),
         mediaKey: mediaKey
     });
+}
+
+// Broadcast ALL loaded SRT subtitles to peers (used on member-join, request-settings)
+function broadcastAllSrtSubtitles() {
+    if (!syncEnabled) return;
+
+    var keys = Object.keys(srtSubtitles);
+    if (keys.length === 0) return;
+
+    console.log('[SRT] Re-broadcasting', keys.length, 'subtitle set(s) to peers');
+    var delay = 0;
+    for (var k = 0; k < keys.length; k++) {
+        (function(mediaKey) {
+            setTimeout(function() {
+                broadcastSrtSubtitles(mediaKey, srtSubtitles[mediaKey]);
+            }, delay);
+        })(keys[k]);
+        delay += 300; // Stagger broadcasts to avoid flooding
+    }
+}
+
+// Request SRT subtitle data from peers (sent on connect)
+function requestSrtFromPeers() {
+    if (!syncEnabled) return;
+
+    wsSend('srt-request', {
+        from: getMyUsername()
+    });
+}
+
+// Handle incoming SRT data request from a peer
+function handleSrtRequest(data) {
+    if (!data || !data.from) return;
+
+    var keys = Object.keys(srtSubtitles);
+    if (keys.length === 0) return;
+
+    console.log('[SRT] Peer', data.from, 'requested SRT data, sending', keys.length, 'set(s)');
+    var delay = 200;
+    for (var k = 0; k < keys.length; k++) {
+        (function(mediaKey) {
+            setTimeout(function() {
+                broadcastSrtSubtitles(mediaKey, srtSubtitles[mediaKey]);
+            }, delay);
+        })(keys[k]);
+        delay += 300;
+    }
 }
 
 function handleSrtBroadcast(data) {
@@ -10356,6 +10445,10 @@ function connectWebSocket() {
                 setTimeout(function() {
                     wsSend('request-settings', { username: getMyUsername() });
                 }, 4000);
+                // Request SRT subtitles from peers (in case others have them loaded)
+                setTimeout(function() {
+                    if (typeof requestSrtFromPeers === 'function') requestSrtFromPeers();
+                }, 2500);
                 break;
 
             case 'member-added':
@@ -10367,6 +10460,8 @@ function connectWebSocket() {
                     memberJoinBroadcastTimer = null;
                     lastSettingsBroadcast = 0;
                     broadcastMyBuddySettings();
+                    // Also share SRT subtitles with the new joiner
+                    if (typeof broadcastAllSrtSubtitles === 'function') broadcastAllSrtSubtitles();
                 }, 1000 + Math.random() * 1500);
                 break;
 
@@ -10462,6 +10557,12 @@ function connectWebSocket() {
             case 'srt-remove':
                 if (msg.from && msg.from !== myName) {
                     handleSrtRemoval(msg);
+                }
+                break;
+
+            case 'srt-request':
+                if (msg.from && msg.from !== myName) {
+                    if (typeof handleSrtRequest === 'function') handleSrtRequest(msg);
                 }
                 break;
         }
