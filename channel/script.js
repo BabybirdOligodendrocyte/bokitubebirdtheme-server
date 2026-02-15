@@ -685,17 +685,944 @@ var BokiTheme = (function() {
 // Expose globally
 window.BokiTheme = BokiTheme;
 
-// Central registry for cleanup of intervals and observers
+/* ========== BOKI STATE STORE ========== */
+/* Centralized reactive state management - replaces scattered global variables */
+/* Usage: BokiState.set('emoteSize', 'large') → triggers all subscribers */
+
+var BokiState = (function() {
+    var _store = {};
+    var _listeners = {};
+    var _batching = false;
+    var _pendingNotifications = {};
+
+    function get(key) {
+        return _store[key];
+    }
+
+    function set(key, value) {
+        var old = _store[key];
+        if (old === value) return; // Skip no-op updates
+        _store[key] = value;
+
+        if (_batching) {
+            _pendingNotifications[key] = { value: value, old: old };
+        } else {
+            _notify(key, value, old);
+        }
+    }
+
+    function _notify(key, value, old) {
+        if (_listeners[key]) {
+            for (var i = 0; i < _listeners[key].length; i++) {
+                try {
+                    _listeners[key][i](value, old);
+                } catch (e) {
+                    console.error('[BokiState] Subscriber error for "' + key + '":', e);
+                }
+            }
+        }
+        // Wildcard listeners
+        if (_listeners['*']) {
+            for (var j = 0; j < _listeners['*'].length; j++) {
+                try {
+                    _listeners['*'][j](key, value, old);
+                } catch (e) {
+                    console.error('[BokiState] Wildcard subscriber error:', e);
+                }
+            }
+        }
+    }
+
+    // Subscribe to state changes. Returns unsubscribe function.
+    function subscribe(key, fn) {
+        if (!_listeners[key]) _listeners[key] = [];
+        _listeners[key].push(fn);
+        return function unsubscribe() {
+            var idx = _listeners[key].indexOf(fn);
+            if (idx !== -1) _listeners[key].splice(idx, 1);
+        };
+    }
+
+    // Batch multiple state changes, notify once at end
+    function batch(fn) {
+        _batching = true;
+        _pendingNotifications = {};
+        try {
+            fn();
+        } finally {
+            _batching = false;
+            Object.keys(_pendingNotifications).forEach(function(key) {
+                var n = _pendingNotifications[key];
+                _notify(key, n.value, n.old);
+            });
+            _pendingNotifications = {};
+        }
+    }
+
+    // Get multiple keys as object
+    function getMany(keys) {
+        var result = {};
+        for (var i = 0; i < keys.length; i++) {
+            result[keys[i]] = _store[keys[i]];
+        }
+        return result;
+    }
+
+    // Initialize from localStorage with defaults
+    function initFromStorage(key, storageKey, fallback) {
+        try {
+            var raw = localStorage.getItem(storageKey);
+            _store[key] = raw !== null ? JSON.parse(raw) : fallback;
+        } catch (e) {
+            _store[key] = fallback;
+        }
+    }
+
+    // Persist to localStorage on change
+    function persist(key, storageKey) {
+        subscribe(key, function(value) {
+            try {
+                localStorage.setItem(storageKey, JSON.stringify(value));
+            } catch (e) {
+                console.error('[BokiState] Failed to persist "' + key + '":', e);
+            }
+        });
+    }
+
+    // Get all keys (for debugging)
+    function keys() {
+        return Object.keys(_store);
+    }
+
+    // Snapshot entire store (for debugging)
+    function snapshot() {
+        return JSON.parse(JSON.stringify(_store));
+    }
+
+    return {
+        get: get,
+        set: set,
+        subscribe: subscribe,
+        batch: batch,
+        getMany: getMany,
+        initFromStorage: initFromStorage,
+        persist: persist,
+        keys: keys,
+        snapshot: snapshot
+    };
+})();
+
+window.BokiState = BokiState;
+
+/* ========== BOKI LIFECYCLE MANAGER ========== */
+/* Tracks ALL timers, observers, and listeners for guaranteed cleanup */
+/* Replaces scattered setInterval/MutationObserver/addEventListener calls */
+
+var BokiLifecycle = (function() {
+    var _intervals = {};
+    var _timeouts = {};
+    var _observers = {};
+    var _listeners = [];
+    var _rafIds = {};
+    var _nextListenerId = 0;
+
+    // Tracked setInterval - automatically cleaned up on page unload
+    function managedInterval(name, fn, ms) {
+        // Clear existing interval with same name
+        if (_intervals[name]) {
+            clearInterval(_intervals[name].id);
+        }
+        var id = setInterval(fn, ms);
+        _intervals[name] = { id: id, fn: fn, ms: ms, created: Date.now() };
+        return id;
+    }
+
+    // Tracked setTimeout - automatically cleaned up
+    function managedTimeout(name, fn, ms) {
+        if (_timeouts[name]) {
+            clearTimeout(_timeouts[name].id);
+        }
+        var id = setTimeout(function() {
+            delete _timeouts[name];
+            fn();
+        }, ms);
+        _timeouts[name] = { id: id, created: Date.now() };
+        return id;
+    }
+
+    // Tracked MutationObserver
+    function managedObserve(name, target, config, callback) {
+        // Disconnect existing observer with same name
+        if (_observers[name]) {
+            _observers[name].observer.disconnect();
+        }
+        var observer = new MutationObserver(callback);
+        observer.observe(target, config);
+        _observers[name] = { observer: observer, target: target, created: Date.now() };
+        return observer;
+    }
+
+    // Tracked addEventListener - returns unlisten function
+    function managedListen(target, event, handler, options) {
+        var id = _nextListenerId++;
+        target.addEventListener(event, handler, options);
+        _listeners.push({
+            id: id,
+            target: target,
+            event: event,
+            handler: handler,
+            options: options,
+            created: Date.now()
+        });
+        return function unlisten() {
+            target.removeEventListener(event, handler, options);
+            _listeners = _listeners.filter(function(l) { return l.id !== id; });
+        };
+    }
+
+    // Tracked requestAnimationFrame
+    function managedRAF(name, fn) {
+        if (_rafIds[name]) {
+            cancelAnimationFrame(_rafIds[name]);
+        }
+        _rafIds[name] = requestAnimationFrame(function(ts) {
+            delete _rafIds[name];
+            fn(ts);
+        });
+        return _rafIds[name];
+    }
+
+    // Tracked requestAnimationFrame loop (self-repeating)
+    function managedRAFLoop(name, fn) {
+        function loop(ts) {
+            if (!_rafIds[name] && _rafIds[name] !== 0) return; // cancelled
+            fn(ts);
+            _rafIds[name] = requestAnimationFrame(loop);
+        }
+        _rafIds[name] = requestAnimationFrame(loop);
+        return function cancel() {
+            if (_rafIds[name]) {
+                cancelAnimationFrame(_rafIds[name]);
+                delete _rafIds[name];
+            }
+        };
+    }
+
+    // Clear specific resource
+    function clear(name) {
+        if (_intervals[name]) {
+            clearInterval(_intervals[name].id);
+            delete _intervals[name];
+        }
+        if (_timeouts[name]) {
+            clearTimeout(_timeouts[name].id);
+            delete _timeouts[name];
+        }
+        if (_observers[name]) {
+            _observers[name].observer.disconnect();
+            delete _observers[name];
+        }
+        if (_rafIds[name]) {
+            cancelAnimationFrame(_rafIds[name]);
+            delete _rafIds[name];
+        }
+    }
+
+    // Clean up everything
+    function cleanupAll() {
+        Object.keys(_intervals).forEach(function(k) {
+            clearInterval(_intervals[k].id);
+        });
+        Object.keys(_timeouts).forEach(function(k) {
+            clearTimeout(_timeouts[k].id);
+        });
+        Object.keys(_observers).forEach(function(k) {
+            _observers[k].observer.disconnect();
+        });
+        _listeners.forEach(function(l) {
+            l.target.removeEventListener(l.event, l.handler, l.options);
+        });
+        Object.keys(_rafIds).forEach(function(k) {
+            cancelAnimationFrame(_rafIds[k]);
+        });
+
+        _intervals = {};
+        _timeouts = {};
+        _observers = {};
+        _listeners = [];
+        _rafIds = {};
+    }
+
+    // Get stats for diagnostics
+    function getStats() {
+        return {
+            intervals: Object.keys(_intervals).length,
+            timeouts: Object.keys(_timeouts).length,
+            observers: Object.keys(_observers).length,
+            listeners: _listeners.length,
+            rafs: Object.keys(_rafIds).length,
+            details: {
+                intervals: Object.keys(_intervals),
+                observers: Object.keys(_observers),
+                rafs: Object.keys(_rafIds)
+            }
+        };
+    }
+
+    // Auto-cleanup on page unload
+    window.addEventListener('beforeunload', cleanupAll);
+
+    return {
+        setInterval: managedInterval,
+        setTimeout: managedTimeout,
+        observe: managedObserve,
+        listen: managedListen,
+        raf: managedRAF,
+        rafLoop: managedRAFLoop,
+        clear: clear,
+        cleanupAll: cleanupAll,
+        getStats: getStats
+    };
+})();
+
+window.BokiLifecycle = BokiLifecycle;
+
+/* ========== BOKI EVENT DELEGATION ========== */
+/* Reduces hundreds of per-element listeners to a handful of delegated handlers */
+/* Usage: BokiEvents.delegate('#emote-grid', 'click', '[data-emote]', handler) */
+
+var BokiEvents = (function() {
+    var _delegations = {};
+    var _nextId = 0;
+
+    // Delegate events from a container to matching child elements
+    // Returns a remove function
+    function delegate(containerSelector, eventType, childSelector, handler) {
+        var id = _nextId++;
+        var container = typeof containerSelector === 'string'
+            ? document.querySelector(containerSelector)
+            : containerSelector;
+
+        if (!container) {
+            // Container not yet in DOM - defer until it appears
+            var checkInterval = setInterval(function() {
+                container = typeof containerSelector === 'string'
+                    ? document.querySelector(containerSelector)
+                    : containerSelector;
+                if (container) {
+                    clearInterval(checkInterval);
+                    _attach(id, container, eventType, childSelector, handler);
+                }
+            }, 500);
+
+            // Auto-cancel after 30 seconds
+            setTimeout(function() { clearInterval(checkInterval); }, 30000);
+            return function() { clearInterval(checkInterval); };
+        }
+
+        return _attach(id, container, eventType, childSelector, handler);
+    }
+
+    function _attach(id, container, eventType, childSelector, handler) {
+        var delegatedHandler = function(e) {
+            var target = e.target.closest(childSelector);
+            if (target && container.contains(target)) {
+                handler.call(target, e, target);
+            }
+        };
+
+        container.addEventListener(eventType, delegatedHandler);
+
+        _delegations[id] = {
+            container: container,
+            eventType: eventType,
+            handler: delegatedHandler
+        };
+
+        return function remove() {
+            if (_delegations[id]) {
+                _delegations[id].container.removeEventListener(
+                    _delegations[id].eventType,
+                    _delegations[id].handler
+                );
+                delete _delegations[id];
+            }
+        };
+    }
+
+    // Throttle a function (useful for scroll, resize, mousemove)
+    function throttle(fn, ms) {
+        var lastCall = 0;
+        var timer = null;
+        return function() {
+            var now = Date.now();
+            var args = arguments;
+            var context = this;
+            if (now - lastCall >= ms) {
+                lastCall = now;
+                fn.apply(context, args);
+            } else if (!timer) {
+                timer = setTimeout(function() {
+                    lastCall = Date.now();
+                    timer = null;
+                    fn.apply(context, args);
+                }, ms - (now - lastCall));
+            }
+        };
+    }
+
+    // Debounce a function
+    function debounce(fn, ms) {
+        var timer = null;
+        return function() {
+            var args = arguments;
+            var context = this;
+            if (timer) clearTimeout(timer);
+            timer = setTimeout(function() {
+                timer = null;
+                fn.apply(context, args);
+            }, ms);
+        };
+    }
+
+    // Get active delegation count (for diagnostics)
+    function getStats() {
+        return {
+            activeDelegations: Object.keys(_delegations).length
+        };
+    }
+
+    return {
+        delegate: delegate,
+        throttle: throttle,
+        debounce: debounce,
+        getStats: getStats
+    };
+})();
+
+window.BokiEvents = BokiEvents;
+
+/* ========== BOKI DOM POOL ========== */
+/* Recycles DOM elements instead of create/destroy cycles */
+/* Critical for chat messages that are constantly added and removed */
+
+var BokiDOMPool = (function() {
+    var _pools = {};
+
+    function getPool(tag) {
+        if (!_pools[tag]) _pools[tag] = [];
+        return _pools[tag];
+    }
+
+    // Get a recycled element or create a new one
+    function acquire(tag, className) {
+        var pool = getPool(tag);
+        var el;
+        if (pool.length > 0) {
+            el = pool.pop();
+            el.className = className || '';
+            el.innerHTML = '';
+            el.removeAttribute('style');
+        } else {
+            el = document.createElement(tag);
+            if (className) el.className = className;
+        }
+        return el;
+    }
+
+    // Return an element to the pool for reuse
+    function release(el) {
+        if (!el || !el.tagName) return;
+        var tag = el.tagName.toLowerCase();
+        var pool = getPool(tag);
+        if (pool.length < 100) { // Cap pool size
+            // Clean up event listeners by cloning without them
+            el.innerHTML = '';
+            el.removeAttribute('style');
+            el.className = '';
+            pool.push(el);
+        }
+    }
+
+    function getStats() {
+        var stats = {};
+        Object.keys(_pools).forEach(function(tag) {
+            stats[tag] = _pools[tag].length;
+        });
+        return stats;
+    }
+
+    return {
+        acquire: acquire,
+        release: release,
+        getStats: getStats
+    };
+})();
+
+window.BokiDOMPool = BokiDOMPool;
+
+/* ========== BOKI VIRTUAL SCROLL ========== */
+/* Manages chat message buffer with automatic pruning and scroll-back loading */
+/* Keeps DOM bounded while preserving full message history in memory */
+
+var BokiVirtualScroll = (function() {
+    var _messageHistory = [];   // Full history (lightweight objects)
+    var _maxDOMNodes = 300;     // Max messages in DOM at once
+    var _maxHistory = 2000;     // Max messages in memory
+    var _container = null;
+    var _isUserScrolledUp = false;
+    var _pruneScheduled = false;
+
+    function init(containerId) {
+        _container = document.getElementById(containerId);
+        if (!_container) return;
+
+        // Detect when user scrolls up (to avoid auto-scroll interference)
+        BokiLifecycle.listen(_container, 'scroll', BokiEvents.throttle(function() {
+            var threshold = 50;
+            _isUserScrolledUp = (_container.scrollTop + _container.clientHeight) <
+                (_container.scrollHeight - threshold);
+        }, 100));
+    }
+
+    // Record a message and prune DOM if needed
+    function recordMessage(msgElement) {
+        if (!_container) return;
+
+        // Store lightweight reference
+        _messageHistory.push({
+            html: msgElement.outerHTML,
+            timestamp: Date.now(),
+            username: (msgElement.querySelector('.username') || {}).textContent || '',
+            id: msgElement.id || ''
+        });
+
+        // Trim history if exceeding max
+        if (_messageHistory.length > _maxHistory) {
+            _messageHistory = _messageHistory.slice(_messageHistory.length - _maxHistory);
+        }
+
+        // Schedule DOM pruning (batched to avoid multiple prunes per tick)
+        if (!_pruneScheduled) {
+            _pruneScheduled = true;
+            requestAnimationFrame(function() {
+                _pruneScheduled = false;
+                _pruneDOMNodes();
+            });
+        }
+    }
+
+    function _pruneDOMNodes() {
+        if (!_container) return;
+
+        var nodes = _container.querySelectorAll(':scope > div');
+        if (nodes.length <= _maxDOMNodes) return;
+
+        var toRemove = nodes.length - _maxDOMNodes;
+        for (var i = 0; i < toRemove; i++) {
+            BokiDOMPool.release(nodes[i]);
+            nodes[i].remove();
+        }
+    }
+
+    // Auto-scroll to bottom (unless user scrolled up)
+    function scrollToBottom() {
+        if (!_container || _isUserScrolledUp) return;
+        _container.scrollTop = _container.scrollHeight;
+    }
+
+    function isScrolledUp() {
+        return _isUserScrolledUp;
+    }
+
+    function getHistoryCount() {
+        return _messageHistory.length;
+    }
+
+    function getDOMNodeCount() {
+        return _container ? _container.querySelectorAll(':scope > div').length : 0;
+    }
+
+    function setMaxDOMNodes(n) {
+        _maxDOMNodes = n;
+    }
+
+    function getStats() {
+        return {
+            historyCount: _messageHistory.length,
+            domNodeCount: getDOMNodeCount(),
+            maxDOMNodes: _maxDOMNodes,
+            maxHistory: _maxHistory,
+            userScrolledUp: _isUserScrolledUp
+        };
+    }
+
+    return {
+        init: init,
+        recordMessage: recordMessage,
+        scrollToBottom: scrollToBottom,
+        isScrolledUp: isScrolledUp,
+        getHistoryCount: getHistoryCount,
+        getDOMNodeCount: getDOMNodeCount,
+        setMaxDOMNodes: setMaxDOMNodes,
+        getStats: getStats
+    };
+})();
+
+window.BokiVirtualScroll = BokiVirtualScroll;
+
+/* ========== BOKI COMPONENT SYSTEM ========== */
+/* Lightweight component abstraction for popups and panels */
+/* Provides lifecycle hooks, automatic event cleanup, and state management */
+
+var BokiComponent = (function() {
+    var _components = {};
+
+    function define(config) {
+        var comp = {
+            id: config.id,
+            _mounted: false,
+            _element: null,
+            _overlay: null,
+            _eventCleanup: [],
+            _state: Object.assign({}, config.state || {}),
+
+            getState: function(key) {
+                return key ? this._state[key] : Object.assign({}, this._state);
+            },
+
+            setState: function(updates) {
+                Object.assign(this._state, updates);
+                if (this._mounted && config.onUpdate) {
+                    config.onUpdate.call(this, this._state);
+                }
+            },
+
+            mount: function(parentEl) {
+                if (this._mounted) return;
+
+                // Create overlay if configured
+                if (config.overlay !== false) {
+                    this._overlay = document.createElement('div');
+                    this._overlay.id = this.id + '-overlay';
+                    this._overlay.className = 'boki-overlay';
+                    var self = this;
+                    this._overlay.addEventListener('click', function(e) {
+                        if (e.target === self._overlay) self.unmount();
+                    });
+                    document.body.appendChild(this._overlay);
+                }
+
+                // Create element
+                this._element = document.createElement('div');
+                this._element.id = this.id;
+                if (config.className) this._element.className = config.className;
+
+                // Render template
+                if (config.template) {
+                    this._element.innerHTML = config.template.call(this, this._state);
+                }
+
+                // Attach to DOM
+                var target = this._overlay || parentEl || document.body;
+                target.appendChild(this._element);
+
+                // Register delegated events
+                if (config.events) {
+                    var self = this;
+                    Object.keys(config.events).forEach(function(key) {
+                        var parts = key.split(' ');
+                        var eventType = parts[0];
+                        var selector = parts.slice(1).join(' ');
+                        var handlerName = config.events[key];
+                        var handler = typeof handlerName === 'function'
+                            ? handlerName
+                            : config[handlerName];
+
+                        if (!handler) return;
+
+                        var cleanup;
+                        if (selector) {
+                            cleanup = BokiEvents.delegate(
+                                self._element, eventType, selector,
+                                handler.bind(self)
+                            );
+                        } else {
+                            self._element.addEventListener(eventType, handler.bind(self));
+                            cleanup = function() {
+                                self._element.removeEventListener(eventType, handler.bind(self));
+                            };
+                        }
+                        self._eventCleanup.push(cleanup);
+                    });
+                }
+
+                this._mounted = true;
+
+                // Show overlay with animation
+                if (this._overlay) {
+                    requestAnimationFrame(function() {
+                        self._overlay.classList.add('visible');
+                    });
+                }
+
+                // Lifecycle hook
+                if (config.onMount) config.onMount.call(this);
+            },
+
+            unmount: function() {
+                if (!this._mounted) return;
+
+                // Lifecycle hook
+                if (config.onUnmount) config.onUnmount.call(this);
+
+                // Clean up all registered events
+                this._eventCleanup.forEach(function(fn) { fn(); });
+                this._eventCleanup = [];
+
+                // Remove from DOM
+                if (this._element && this._element.parentNode) {
+                    this._element.parentNode.removeChild(this._element);
+                }
+                if (this._overlay && this._overlay.parentNode) {
+                    this._overlay.parentNode.removeChild(this._overlay);
+                }
+
+                this._element = null;
+                this._overlay = null;
+                this._mounted = false;
+            },
+
+            isMounted: function() {
+                return this._mounted;
+            },
+
+            toggle: function() {
+                if (this._mounted) {
+                    this.unmount();
+                } else {
+                    this.mount();
+                }
+            },
+
+            // Re-render the template (preserves events)
+            render: function() {
+                if (!this._mounted || !this._element || !config.template) return;
+                this._element.innerHTML = config.template.call(this, this._state);
+            },
+
+            // Get a child element
+            query: function(selector) {
+                return this._element ? this._element.querySelector(selector) : null;
+            },
+
+            queryAll: function(selector) {
+                return this._element ? this._element.querySelectorAll(selector) : [];
+            }
+        };
+
+        _components[config.id] = comp;
+        return comp;
+    }
+
+    function get(id) {
+        return _components[id];
+    }
+
+    function getAll() {
+        return Object.keys(_components);
+    }
+
+    return {
+        define: define,
+        get: get,
+        getAll: getAll
+    };
+})();
+
+window.BokiComponent = BokiComponent;
+
+/* ========== BOKI SPATIAL HASH ========== */
+/* O(1) proximity queries for buddy system - replaces O(N²) all-pairs check */
+
+var BokiSpatialHash = (function() {
+    var _cellSize = 80;
+    var _cells = {};
+
+    function _key(x, y) {
+        return Math.floor(x / _cellSize) + ',' + Math.floor(y / _cellSize);
+    }
+
+    function clear() {
+        _cells = {};
+    }
+
+    function insert(id, x, y, data) {
+        var key = _key(x, y);
+        if (!_cells[key]) _cells[key] = [];
+        _cells[key].push({ id: id, x: x, y: y, data: data });
+    }
+
+    // Query all entities within radius of (x, y)
+    function queryRadius(x, y, radius) {
+        var results = [];
+        var minCx = Math.floor((x - radius) / _cellSize);
+        var maxCx = Math.floor((x + radius) / _cellSize);
+        var minCy = Math.floor((y - radius) / _cellSize);
+        var maxCy = Math.floor((y + radius) / _cellSize);
+        var r2 = radius * radius;
+
+        for (var cx = minCx; cx <= maxCx; cx++) {
+            for (var cy = minCy; cy <= maxCy; cy++) {
+                var cell = _cells[cx + ',' + cy];
+                if (!cell) continue;
+                for (var i = 0; i < cell.length; i++) {
+                    var e = cell[i];
+                    var dx = e.x - x;
+                    var dy = e.y - y;
+                    if (dx * dx + dy * dy <= r2) {
+                        results.push(e);
+                    }
+                }
+            }
+        }
+        return results;
+    }
+
+    function setCellSize(size) {
+        _cellSize = size;
+    }
+
+    return {
+        clear: clear,
+        insert: insert,
+        queryRadius: queryRadius,
+        setCellSize: setCellSize
+    };
+})();
+
+window.BokiSpatialHash = BokiSpatialHash;
+
+/* ========== BOKI PERFORMANCE MONITOR ========== */
+/* Built-in diagnostics for FPS, memory, and resource tracking */
+
+var BokiPerf = (function() {
+    var _frameCount = 0;
+    var _lastFPSTime = 0;
+    var _currentFPS = 0;
+    var _monitoring = false;
+    var _metrics = {};
+
+    function startMonitoring() {
+        if (_monitoring) return;
+        _monitoring = true;
+        _lastFPSTime = performance.now();
+        _fpsLoop();
+    }
+
+    function _fpsLoop() {
+        if (!_monitoring) return;
+        _frameCount++;
+        var now = performance.now();
+        if (now - _lastFPSTime >= 1000) {
+            _currentFPS = _frameCount;
+            _frameCount = 0;
+            _lastFPSTime = now;
+        }
+        requestAnimationFrame(_fpsLoop);
+    }
+
+    function stopMonitoring() {
+        _monitoring = false;
+    }
+
+    // Time a named operation
+    function time(name) {
+        _metrics[name] = performance.now();
+    }
+
+    function timeEnd(name) {
+        if (_metrics[name]) {
+            var elapsed = performance.now() - _metrics[name];
+            delete _metrics[name];
+            return elapsed;
+        }
+        return 0;
+    }
+
+    // Get comprehensive performance report
+    function getReport() {
+        var msgBuffer = document.getElementById('messagebuffer');
+        var domNodeCount = document.querySelectorAll('*').length;
+
+        return {
+            fps: _currentFPS,
+            domNodes: domNodeCount,
+            chatMessages: msgBuffer ? msgBuffer.querySelectorAll(':scope > div').length : 0,
+            lifecycle: BokiLifecycle.getStats(),
+            events: BokiEvents.getStats(),
+            domPool: BokiDOMPool.getStats(),
+            virtualScroll: BokiVirtualScroll.getStats(),
+            components: BokiComponent.getAll(),
+            state: {
+                keys: BokiState.keys().length,
+                allKeys: BokiState.keys()
+            },
+            memory: typeof performance.memory !== 'undefined' ? {
+                usedJSHeap: (performance.memory.usedJSHeapSize / 1048576).toFixed(1) + ' MB',
+                totalJSHeap: (performance.memory.totalJSHeapSize / 1048576).toFixed(1) + ' MB'
+            } : 'unavailable (non-Chrome)',
+            timestamp: new Date().toISOString()
+        };
+    }
+
+    // Log a concise summary to console
+    function logSummary() {
+        var r = getReport();
+        console.log(
+            '[BokiPerf] FPS:', r.fps,
+            '| DOM:', r.domNodes,
+            '| Chat:', r.chatMessages,
+            '| Timers:', r.lifecycle.intervals,
+            '| Observers:', r.lifecycle.observers,
+            '| Listeners:', r.lifecycle.listeners,
+            '| Components:', r.components.length
+        );
+    }
+
+    return {
+        startMonitoring: startMonitoring,
+        stopMonitoring: stopMonitoring,
+        time: time,
+        timeEnd: timeEnd,
+        getReport: getReport,
+        logSummary: logSummary,
+        getFPS: function() { return _currentFPS; }
+    };
+})();
+
+window.BokiPerf = BokiPerf;
+
+// Backward-compatible alias for _bokiCleanup
 var _bokiCleanup = {
     intervals: {},
     observers: {},
-    registerInterval: function(name, id) { this.intervals[name] = id; },
-    registerObserver: function(name, obs) { this.observers[name] = obs; },
+    registerInterval: function(name, id) {
+        this.intervals[name] = id;
+        // Also register with new lifecycle manager
+        BokiLifecycle.setInterval(name, function() {}, 0);
+        BokiLifecycle.clear(name);
+    },
+    registerObserver: function(name, obs) {
+        this.observers[name] = obs;
+    },
     clearInterval: function(name) {
         if (this.intervals[name]) { clearInterval(this.intervals[name]); delete this.intervals[name]; }
+        BokiLifecycle.clear(name);
     },
     disconnectObserver: function(name) {
         if (this.observers[name]) { this.observers[name].disconnect(); delete this.observers[name]; }
+        BokiLifecycle.clear(name);
     },
     disconnectAll: function() {
         var self = this;
@@ -706,6 +1633,77 @@ var _bokiCleanup = {
     }
 };
 window._bokiCleanup = _bokiCleanup;
+
+/* ========== WIRE NEW INFRASTRUCTURE INTO BOKITHEME API ========== */
+/* Exposes all new modules through the existing BokiTheme namespace */
+
+BokiTheme.State = BokiState;
+BokiTheme.Lifecycle = BokiLifecycle;
+BokiTheme.Events = BokiEvents;
+BokiTheme.DOMPool = BokiDOMPool;
+BokiTheme.VirtualScroll = BokiVirtualScroll;
+BokiTheme.Component = BokiComponent;
+BokiTheme.SpatialHash = BokiSpatialHash;
+BokiTheme.Perf = BokiPerf;
+
+// Update version to reflect redesign
+BokiTheme.version = '3.0.0';
+
+// Enhanced Debug.getState to include new infrastructure stats
+var _origGetState = BokiTheme.Debug.getState;
+BokiTheme.Debug.getState = function() {
+    var base = _origGetState();
+    base.version = '3.0.0';
+    base.infrastructure = {
+        state: { keys: BokiState.keys().length },
+        lifecycle: BokiLifecycle.getStats(),
+        events: BokiEvents.getStats(),
+        domPool: BokiDOMPool.getStats(),
+        virtualScroll: BokiVirtualScroll.getStats(),
+        components: BokiComponent.getAll(),
+        perf: BokiPerf.getReport()
+    };
+    return base;
+};
+
+// Initialize VirtualScroll for the chat buffer when DOM is ready
+(function() {
+    function initVS() {
+        var mb = document.getElementById('messagebuffer');
+        if (mb) {
+            BokiVirtualScroll.init('messagebuffer');
+            console.log('[BokiTheme] VirtualScroll initialized for messagebuffer');
+
+            // Watch for new messages and record them
+            BokiLifecycle.observe('virtualscroll-chat', mb,
+                { childList: true },
+                function(mutations) {
+                    for (var i = 0; i < mutations.length; i++) {
+                        var added = mutations[i].addedNodes;
+                        for (var j = 0; j < added.length; j++) {
+                            if (added[j].nodeType === 1) {
+                                BokiVirtualScroll.recordMessage(added[j]);
+                            }
+                        }
+                    }
+                }
+            );
+        } else {
+            setTimeout(initVS, 500);
+        }
+    }
+    initVS();
+})();
+
+// Start performance monitoring (lightweight - just FPS counter)
+BokiPerf.startMonitoring();
+
+// Start auto-cleanup with lifecycle-managed interval
+BokiLifecycle.setInterval('memory-cleanup', function() {
+    BokiTheme.Memory.runCleanup();
+}, BokiTheme.Memory.config.cleanupInterval);
+
+console.log('[BokiTheme] v3.0.0 infrastructure loaded: State, Lifecycle, Events, DOMPool, VirtualScroll, Component, SpatialHash, Perf');
 
 /* ========== POPUP SYSTEM ========== */
 var emoteFavorites = BokiTheme.Safe.getStorage('emoteFavorites', []);

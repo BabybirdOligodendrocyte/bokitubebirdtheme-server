@@ -1,3 +1,70 @@
+/* ========== BOKITHEME CSS ARCHITECTURE (2026 Redesign) ========== */
+/* Uses CSS Layers for clean specificity management */
+/* Uses CSS Containment for rendering performance */
+/* Uses Custom Properties for full theme control */
+
+/* ========== EXTENDED THEME VARIABLES ========== */
+/* These extend the channel-level :root variables with component-level tokens */
+:root {
+    /* Scrollbar tokens (consolidated from 5 separate scrollbar style blocks) */
+    --scrollbar-width: 8px;
+    --scrollbar-thumb: #686868;
+    --scrollbar-thumb-hover: #555;
+    --scrollbar-track: var(--primarycolor, #000);
+    --scrollbar-corner: rgba(26,26,26,1);
+
+    /* Surface tokens */
+    --surface-primary: rgba(30, 30, 35, 0.95);
+    --surface-overlay: rgba(0, 0, 0, 0.7);
+    --surface-hover: rgba(255, 255, 255, 0.1);
+    --surface-active: rgba(255, 255, 255, 0.15);
+    --surface-glass: rgba(0, 0, 0, 0.67);
+
+    /* Border tokens */
+    --border-subtle: rgba(255, 255, 255, 0.2);
+    --border-radius-sm: 4px;
+    --border-radius-md: 8px;
+    --border-radius-lg: 12px;
+    --border-radius-xl: 16px;
+
+    /* Spacing tokens */
+    --space-xs: 3px;
+    --space-sm: 6px;
+    --space-md: 10px;
+    --space-lg: 15px;
+    --space-xl: 20px;
+
+    /* Shadow tokens */
+    --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.2);
+    --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.3);
+    --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.4);
+    --shadow-glass: 0 4px 30px rgba(0, 0, 0, 0.1);
+
+    /* Transition tokens */
+    --transition-fast: 75ms cubic-bezier(.4,0,.2,1);
+    --transition-normal: 200ms cubic-bezier(.4,0,.2,1);
+    --transition-slow: 300ms cubic-bezier(.4,0,.2,1);
+
+    /* Typography tokens */
+    --font-primary: "Quicksand", "Ubuntu", Verdana, Tahoma, sans-serif;
+    --font-size-xs: 11px;
+    --font-size-sm: 12px;
+    --font-size-md: 14px;
+    --font-size-lg: 18px;
+
+    /* Z-index scale (single source of truth) */
+    --z-base: 1;
+    --z-dropdown: 99;
+    --z-sticky: 100;
+    --z-fixed: 1000;
+    --z-modal-backdrop: 1020;
+    --z-modal: 1039;
+    --z-popup: 2000;
+    --z-popup-above: 2001;
+    --z-overlay: 3000;
+    --z-critical: 999999;
+}
+
 /* HIDE Name Color button - aggressive CSS */
 .btn-success,
 button.btn-success,
@@ -20,37 +87,92 @@ button[style*="green"],
     pointer-events: none !important;
 }
 
-/* Global scrollbar styling */
+/* Global scrollbar styling - uses theme tokens */
 ::-webkit-scrollbar {
-    width: 8px;
+    width: var(--scrollbar-width);
     height: 3px;
-    border: 0px solid hsl(0,0%,27%);
-    border-top: 0;
-    border-bottom: 0;
+    border: 0;
     display: none;
 }
 
 ::-webkit-scrollbar-corner {
-    background-color: rgba(26,26,26,1);
+    background-color: var(--scrollbar-corner);
 }
 
 ::-webkit-scrollbar-track {
-    border-radius: 4px;
-    background: var(--primarycolor);
+    border-radius: var(--border-radius-sm);
+    background: var(--scrollbar-track);
 }
 
 ::-webkit-scrollbar-thumb {
     border-radius: 10px;
-    background: #686868;
+    background: var(--scrollbar-thumb);
 }
 
 ::-webkit-scrollbar-thumb:hover {
-    background: #555; 
+    background: var(--scrollbar-thumb-hover);
 }
 
 * {
     font-size: 102%;
-    font-family: "Quicksand", "Ubuntu", Verdana, Tahoma, sans-serif;
+    font-family: var(--font-primary);
+}
+
+/* ========== CSS CONTAINMENT FOR PERFORMANCE ========== */
+/* Tells browser these elements are layout-independent, enabling render optimizations */
+
+#messagebuffer {
+    contain: layout style;
+}
+
+#messagebuffer > div {
+    contain: layout style;
+}
+
+/* Off-screen playlist items skip rendering entirely */
+#queue .queue_entry {
+    content-visibility: auto;
+    contain-intrinsic-size: auto 40px;
+}
+
+/* Buddy container is layout-independent */
+.buddy-container {
+    contain: layout;
+}
+
+/* ========== GPU ACCELERATION HINTS ========== */
+/* Pre-promote animated elements to their own compositor layer */
+
+.text-shake, .text-pulse, .text-bounce, .text-wave, .text-flicker, .text-spin {
+    will-change: transform, opacity;
+}
+
+.banner-slideshow > div {
+    will-change: transform;
+}
+
+/* ========== COMPONENT SYSTEM OVERLAY STYLES ========== */
+/* Base styles for BokiComponent overlays */
+
+.boki-overlay {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: 100vw;
+    height: 100vh;
+    background: var(--surface-overlay);
+    z-index: var(--z-critical);
+    margin: 0;
+    padding: 0;
+}
+
+.boki-overlay.visible {
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
 
 #wrap { padding: 0; }
