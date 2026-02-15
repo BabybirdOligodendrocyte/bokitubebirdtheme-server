@@ -8113,8 +8113,9 @@ function initSubtitleReceiver() {
                 // Hide the chat message
                 hideSubtitleMessage();
             }
+            return true; // STOP processing — don't let subtitle reach speech collection
         }
-        return false; // Continue to other handlers
+        return false; // Not a subtitle message, continue to other handlers
     }, 75);
 }
 
@@ -9561,7 +9562,7 @@ function initScreenspamReceiver() {
                 // Hide the chat message
                 hideScreenspamMessage('SCREENSPAM2:');
             }
-            return false;
+            return true; // STOP processing — don't let screenspam reach speech collection
         }
 
         // Check for regular screenspam marker (single effect)
@@ -9581,8 +9582,9 @@ function initScreenspamReceiver() {
                 // Hide the chat message
                 hideScreenspamMessage('SCREENSPAM:');
             }
+            return true; // STOP processing — don't let screenspam reach speech collection
         }
-        return false; // Continue to other handlers (message still needs formatting)
+        return false; // Not a screenspam message, continue to other handlers
     }, 80);
 }
 
@@ -9870,6 +9872,9 @@ function queueMessageForJsonBin(rawMsg) {
 
     // Skip if it looks like a command or system message
     if (clean.charAt(0) === '/' || clean.charAt(0) === '!') return;
+
+    // Skip hidden marker content that survived stripping
+    if (/SCREENSPAM|BSET:|BACT:|SUBTITLE:/.test(clean)) return;
 
     // Skip system-like content (joins, leaves, timestamps, etc.)
     if (/\b(joined|left|disconnected|kicked|banned|aliases:)\b/i.test(clean)) return;
