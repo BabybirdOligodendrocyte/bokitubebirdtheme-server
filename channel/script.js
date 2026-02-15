@@ -3758,18 +3758,18 @@ function applyStyleToMessage() {
     if (msg.startsWith('/')) return;
     // Skip empty
     if (!msg.trim()) return;
-    // Skip if already has tags
-    if (msg.match(/^\[(?:font-\w+|red|blue|green|yellow|orange|pink|lime|aqua|violet|white|silver|brown|b|i|u|s|rainbow|fire|ocean|sunset|neon|forest|gold|ice|glow-\w+|shake|pulse|bounce|wave|flicker|spin)\]/)) return;
-    
+    // Skip if already has tags (includes [uname] to prevent double-wrap from click+submit)
+    if (msg.match(/^\[(?:uname|font-\w+|#[0-9a-fA-F]|red|blue|green|yellow|orange|pink|lime|aqua|violet|white|silver|brown|b|i|u|s|rainbow|fire|ocean|sunset|neon|forest|gold|ice|glow-[\w#][\w]*|shake|pulse|bounce|wave|flicker|spin)\]/)) return;
+
     // Skip if message contains URLs (for GIF embedding to work)
     if (msg.match(/https?:\/\//)) return;
-    
+
     // Check if any style is active
-    var hasStyle = textStyleSettings.color || textStyleSettings.gradient || textStyleSettings.bold || 
+    var hasStyle = textStyleSettings.color || textStyleSettings.gradient || textStyleSettings.bold ||
                    textStyleSettings.italic || textStyleSettings.underline || textStyleSettings.strikethrough ||
                    textStyleSettings.glow || textStyleSettings.animation || textStyleSettings.font;
     if (!hasStyle) return;
-    
+
     // Skip if message contains any emotes (emotes won't render if wrapped in tags)
     if (typeof CHANNEL !== 'undefined' && CHANNEL.emotes && CHANNEL.emotes.length > 0) {
         for (var i = 0; i < CHANNEL.emotes.length; i++) {
@@ -3779,65 +3779,68 @@ function applyStyleToMessage() {
             }
         }
     }
-    
+
+    // Check message length after styling (Cytube truncates >240 chars)
+    var styled = buildStyleTags(msg);
+    if (styled.length > 240) {
+        console.log('[TextStyle] Message too long for styling:', styled.length, '(limit 240). Sending unstyled.');
+        return;
+    }
+
     // Apply tags
-    c.value = buildStyleTags(msg);
+    c.value = styled;
+}
+
+// Combined styling interceptor - applies text styling then username styling in correct order.
+// Uses dedup guard to prevent double-fire when click+submit both trigger on send button.
+var _lastStyledResult = '';
+
+function applyCombinedStyling() {
+    var c = document.getElementById('chatline');
+    if (!c) return;
+    // Skip if value is already the result of a previous styling call (prevents double-fire)
+    if (c.value === _lastStyledResult && _lastStyledResult !== '') return;
+    if (!c.value.trim()) return;
+
+    // Apply text styling first, then username styling (order matters)
+    applyStyleToMessage();
+    applyUsernameTagsToMessage();
+
+    // Record the final styled value so subsequent events in the same cycle are skipped
+    _lastStyledResult = c.value;
 }
 
 function initStyleInterceptor() {
     var chatline = document.getElementById('chatline');
     var form = document.getElementById('formline');
     if (!chatline) return;
-    
-    // Hook into Enter key press
+
+    // Hook into Enter key press (capture phase to run before Cytube's handlers)
     chatline.addEventListener('keydown', function(e) {
         if (e.keyCode === 13 || e.key === 'Enter') {
-            applyStyleToMessage();
+            applyCombinedStyling();
         }
     }, true);
-    
+
     // Also hook into form submit as backup
     if (form) {
         form.addEventListener('submit', function(e) {
-            applyStyleToMessage();
+            applyCombinedStyling();
         }, true);
     }
-    
+
     // Hook into any send button click
     var sendBtn = document.querySelector('#formline button[type="submit"], #formline .btn');
     if (sendBtn) {
         sendBtn.addEventListener('click', function(e) {
-            applyStyleToMessage();
+            applyCombinedStyling();
         }, true);
     }
 }
 
+// initUsernameStyleInterceptor is no longer needed - combined into initStyleInterceptor above
 function initUsernameStyleInterceptor() {
-    var chatline = document.getElementById('chatline');
-    var form = document.getElementById('formline');
-    if (!chatline) return;
-    
-    // Hook into Enter key press - run AFTER text style
-    chatline.addEventListener('keydown', function(e) {
-        if (e.keyCode === 13 || e.key === 'Enter') {
-            applyUsernameTagsToMessage();
-        }
-    }, true);
-    
-    // Also hook into form submit as backup
-    if (form) {
-        form.addEventListener('submit', function(e) {
-            applyUsernameTagsToMessage();
-        }, true);
-    }
-    
-    // Hook into any send button click
-    var sendBtn = document.querySelector('#formline button[type="submit"], #formline .btn');
-    if (sendBtn) {
-        sendBtn.addEventListener('click', function(e) {
-            applyUsernameTagsToMessage();
-        }, true);
-    }
+    // No-op: username styling is now handled by applyCombinedStyling() in initStyleInterceptor
 }
 
 // FILTER INSTRUCTIONS POPUP
