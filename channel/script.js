@@ -12383,25 +12383,44 @@ function observeChatMessages() {
     var observer = new MutationObserver(function(mutations) {
         scanChatForWords();
 
-        // Collect new messages for buddies to quote
+        // Collect new messages for buddies to quote (user messages ONLY)
         mutations.forEach(function(mutation) {
             mutation.addedNodes.forEach(function(node) {
-                if (node.nodeType === 1) {
-                    var msgText = node.textContent || '';
-                    // Extract just the message part (after username)
-                    var colonIdx = msgText.indexOf(':');
-                    if (colonIdx > -1) {
-                        var cleanMsg = msgText.substring(colonIdx + 1).trim();
-                        if (cleanMsg.length > 3 && cleanMsg.length < 80) {
-                            recentChatMessages.push(cleanMsg);
-                            // Keep only last 30 messages
-                            if (recentChatMessages.length > 30) {
-                                recentChatMessages.shift();
-                            }
-                            // Queue pure text for JSONBin storage
-                            queueMessageForJsonBin(cleanMsg);
-                        }
+                if (node.nodeType !== 1) return;
+
+                // MUST have a .username span — this filters out join/leave/system messages
+                var usernameEl = node.querySelector && node.querySelector('.username');
+                if (!usernameEl) return;
+
+                // Skip system/server/poll messages
+                if (node.classList.contains('server-msg') ||
+                    node.classList.contains('poll-notify') ||
+                    node.classList.contains('server-whisper')) return;
+
+                // Extract just the message body text after the username
+                var cleanMsg = '';
+                var foundColon = false;
+                var children = node.childNodes;
+                for (var ci = 0; ci < children.length; ci++) {
+                    var child = children[ci];
+                    // Skip the username element and anything before it
+                    if (child === usernameEl || (child.querySelector && child.querySelector('.username'))) {
+                        foundColon = true;
+                        continue;
                     }
+                    if (foundColon) {
+                        cleanMsg += (child.textContent || '');
+                    }
+                }
+                // Strip leading colon/spaces
+                cleanMsg = cleanMsg.replace(/^[\s:]+/, '').trim();
+
+                if (cleanMsg.length > 3 && cleanMsg.length < 200) {
+                    recentChatMessages.push(cleanMsg);
+                    if (recentChatMessages.length > 30) {
+                        recentChatMessages.shift();
+                    }
+                    queueMessageForJsonBin(cleanMsg);
                 }
             });
         });
