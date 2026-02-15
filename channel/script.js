@@ -9678,7 +9678,6 @@ var jsonBinPendingWrites = [];  // Buffer of new messages to write to JSONBin
 var jsonBinWriteTimer = null;   // Timer for batched writes
 var JSONBIN_REFRESH_MS = 300000; // Refresh every 5 minutes
 var JSONBIN_WRITE_INTERVAL = 60000; // Write buffered messages every 60 seconds
-var JSONBIN_MAX_MESSAGES = 500; // Cap total messages stored in bin
 var customBuddySettings = {};  // Store custom settings received from other users
 var myBuddySettings = null;    // Current user's custom settings
 var lastSettingsBroadcast = 0; // Debounce settings broadcast
@@ -9809,11 +9808,6 @@ function flushJsonBinWrites() {
 
     // Merge pending into cached list
     var merged = jsonBinMessages.concat(jsonBinPendingWrites);
-
-    // Cap at max messages — keep newest, drop oldest
-    if (merged.length > JSONBIN_MAX_MESSAGES) {
-        merged = merged.slice(merged.length - JSONBIN_MAX_MESSAGES);
-    }
 
     var toWrite = jsonBinPendingWrites.length;
     jsonBinPendingWrites = [];
