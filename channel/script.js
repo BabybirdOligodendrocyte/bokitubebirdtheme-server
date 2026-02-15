@@ -9674,7 +9674,11 @@ var chatWordTargets = [];
 var recentChatMessages = [];
 var jsonBinMessages = [];       // Cached messages from JSONBin
 var jsonBinLastFetch = 0;       // Timestamp of last successful fetch
+var jsonBinPendingWrites = [];  // Buffer of new messages to write to JSONBin
+var jsonBinWriteTimer = null;   // Timer for batched writes
 var JSONBIN_REFRESH_MS = 300000; // Refresh every 5 minutes
+var JSONBIN_WRITE_INTERVAL = 60000; // Write buffered messages every 60 seconds
+var JSONBIN_MAX_MESSAGES = 500; // Cap total messages stored in bin
 var customBuddySettings = {};  // Store custom settings received from other users
 var myBuddySettings = null;    // Current user's custom settings
 var lastSettingsBroadcast = 0; // Debounce settings broadcast
@@ -9704,54 +9708,149 @@ function scheduleVisualBroadcast() {
 }
 
 // ========== JSONBIN BUDDY SPEECH SOURCE ==========
-// Fetches pure text messages from a JSONBin for buddy speech bubbles.
-// Configure in Cytube Channel JS:
-//   var JSONBIN_ID = 'your-bin-id';
-//   var JSONBIN_ACCESS_KEY = '$2a...'; // optional if bin is public
+// Auto-collects chat messages and stores pure text in a JSONBin.
+// Buddy speech bubbles pull random messages from the bin.
 //
+// Configure in Cytube Channel JS:
+//   var JSONBIN_SPEECH_BIN_ID = 'your-speech-bin-id';
+//
+// Uses the existing JSONBIN_API_KEY (master key) from the playlist rename system.
 // Bin format: { "messages": ["hello", "lol", "bruh moment", ...] }
 
+function getSpeechBinId() {
+    if (typeof JSONBIN_SPEECH_BIN_ID !== 'undefined' && JSONBIN_SPEECH_BIN_ID) return JSONBIN_SPEECH_BIN_ID;
+    return null;
+}
+
+function getSpeechBinKey() {
+    // Reuse the master key from playlist rename system
+    if (typeof JSONBIN_API_KEY !== 'undefined' && JSONBIN_API_KEY) return JSONBIN_API_KEY;
+    return null;
+}
+
+// Fetch all messages from the speech JSONBin
 function fetchJsonBinMessages() {
-    if (typeof JSONBIN_ID === 'undefined' || !JSONBIN_ID) {
-        console.log('[JSONBin] No JSONBIN_ID configured, buddy speech will use local chat quotes');
+    var binId = getSpeechBinId();
+    var apiKey = getSpeechBinKey();
+    if (!binId || !apiKey) {
+        console.log('[BuddySpeech] No JSONBIN_SPEECH_BIN_ID configured, using local chat quotes');
         return;
     }
 
-    var url = 'https://api.jsonbin.io/v3/b/' + JSONBIN_ID + '/latest';
-    var headers = { 'Content-Type': 'application/json' };
-    if (typeof JSONBIN_ACCESS_KEY !== 'undefined' && JSONBIN_ACCESS_KEY) {
-        headers['X-Access-Key'] = JSONBIN_ACCESS_KEY;
-    }
-
     $.ajax({
-        url: url,
+        url: JSONBIN_BASE_URL + binId + '/latest',
         method: 'GET',
-        headers: headers,
+        headers: { 'X-Master-Key': apiKey },
         success: function(resp) {
             var data = resp && resp.record ? resp.record : resp;
-            if (data && Array.isArray(data.messages) && data.messages.length > 0) {
-                // Filter to pure non-empty strings only
+            if (data && Array.isArray(data.messages)) {
                 jsonBinMessages = data.messages.filter(function(m) {
                     return typeof m === 'string' && m.trim().length > 0;
                 });
                 jsonBinLastFetch = Date.now();
-                console.log('[JSONBin] Loaded ' + jsonBinMessages.length + ' messages for buddy speech');
+                console.log('[BuddySpeech] Loaded ' + jsonBinMessages.length + ' messages from JSONBin');
             } else {
-                console.warn('[JSONBin] Bin has no "messages" array or it is empty');
+                // Bin exists but empty — initialize with empty array
+                jsonBinMessages = [];
+                console.log('[BuddySpeech] Bin is empty, will populate from chat');
             }
         },
         error: function(xhr) {
-            console.error('[JSONBin] Failed to fetch messages:', xhr.status, xhr.statusText);
+            console.error('[BuddySpeech] Failed to fetch:', xhr.status, xhr.statusText);
         }
     });
 }
 
-// Periodically refresh JSONBin messages
+// Strip BBCode tags, HTML, formatting — extract pure text only
+function stripToPlainText(msg) {
+    // Remove BBCode-style tags: [color], [/], [b], [glow-red], [font-comic], etc.
+    msg = msg.replace(/\[[^\]]*\]/g, '');
+    // Remove HTML tags
+    msg = msg.replace(/<[^>]*>/g, '');
+    // Remove zero-width characters
+    msg = msg.replace(/[\u200B\u200C\u200D\uFEFF]/g, '');
+    // Remove hidden sync markers (BSET, BACT, SCREENSPAM)
+    msg = msg.replace(/BSET:.*?:BSET/g, '');
+    msg = msg.replace(/BACT:.*?:BACT/g, '');
+    msg = msg.replace(/SCREENSPAM:.*?:SCREENSPAM/g, '');
+    // Collapse whitespace
+    msg = msg.replace(/\s+/g, ' ').trim();
+    return msg;
+}
+
+// Queue a chat message for writing to JSONBin
+function queueMessageForJsonBin(rawMsg) {
+    if (!getSpeechBinId() || !getSpeechBinKey()) return;
+
+    var clean = stripToPlainText(rawMsg);
+
+    // Skip empty, too short, or too long messages
+    if (clean.length < 3 || clean.length > 200) return;
+
+    // Skip if it looks like a command or system message
+    if (clean.charAt(0) === '/' || clean.charAt(0) === '!') return;
+
+    // Skip if already in cache (dedup)
+    if (jsonBinMessages.indexOf(clean) !== -1) return;
+
+    // Skip if already in pending writes
+    if (jsonBinPendingWrites.indexOf(clean) !== -1) return;
+
+    jsonBinPendingWrites.push(clean);
+}
+
+// Flush pending messages to JSONBin
+function flushJsonBinWrites() {
+    if (jsonBinPendingWrites.length === 0) return;
+
+    var binId = getSpeechBinId();
+    var apiKey = getSpeechBinKey();
+    if (!binId || !apiKey) return;
+
+    // Merge pending into cached list
+    var merged = jsonBinMessages.concat(jsonBinPendingWrites);
+
+    // Cap at max messages — keep newest, drop oldest
+    if (merged.length > JSONBIN_MAX_MESSAGES) {
+        merged = merged.slice(merged.length - JSONBIN_MAX_MESSAGES);
+    }
+
+    var toWrite = jsonBinPendingWrites.length;
+    jsonBinPendingWrites = [];
+
+    $.ajax({
+        url: JSONBIN_BASE_URL + binId,
+        method: 'PUT',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-Master-Key': apiKey
+        },
+        data: JSON.stringify({ messages: merged }),
+        success: function() {
+            jsonBinMessages = merged;
+            console.log('[BuddySpeech] Wrote ' + toWrite + ' new messages (total: ' + merged.length + ')');
+        },
+        error: function(xhr) {
+            console.error('[BuddySpeech] Failed to write:', xhr.status, xhr.statusText);
+            // Re-queue failed messages for next attempt
+            jsonBinPendingWrites = jsonBinPendingWrites.concat(merged.slice(jsonBinMessages.length));
+        }
+    });
+}
+
+// Periodically refresh and flush
 function scheduleJsonBinRefresh() {
-    if (typeof JSONBIN_ID === 'undefined' || !JSONBIN_ID) return;
+    if (!getSpeechBinId()) return;
+
+    // Refresh cache from bin every 5 minutes
     setInterval(function() {
         fetchJsonBinMessages();
     }, JSONBIN_REFRESH_MS);
+
+    // Flush pending writes every 60 seconds
+    jsonBinWriteTimer = setInterval(function() {
+        flushJsonBinWrites();
+    }, JSONBIN_WRITE_INTERVAL);
 }
 
 // Truncate string to max length for BSET messages
@@ -12285,6 +12384,8 @@ function observeChatMessages() {
                             if (recentChatMessages.length > 30) {
                                 recentChatMessages.shift();
                             }
+                            // Queue pure text for JSONBin storage
+                            queueMessageForJsonBin(cleanMsg);
                         }
                     }
                 }
