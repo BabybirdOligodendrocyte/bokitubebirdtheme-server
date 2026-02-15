@@ -618,6 +618,18 @@ var BokiTheme = (function() {
             }
         },
 
+        // Speech bin management (for managing buddy speech messages)
+        Speech: {
+            // Clear all messages from the speech bin
+            clear: function() { clearSpeechBin(); },
+            // Remove messages containing a search string
+            remove: function(text) { removeSpeechMessages(text); },
+            // List all messages in the bin
+            list: function() { listSpeechMessages(); },
+            // Get message count
+            count: function() { return jsonBinMessages.length; }
+        },
+
         // Extension registration (for plugins)
         extend: function(name, extension) {
             if (this[name]) {
@@ -9789,6 +9801,10 @@ function queueMessageForJsonBin(rawMsg) {
     // Skip if it looks like a command or system message
     if (clean.charAt(0) === '/' || clean.charAt(0) === '!') return;
 
+    // Skip system-like content (joins, leaves, timestamps, etc.)
+    if (/\b(joined|left|disconnected|kicked|banned|aliases:)\b/i.test(clean)) return;
+    if (/^\d{1,2}:\d{2}/.test(clean)) return; // Starts with timestamp fragment
+
     // Skip if already in cache (dedup)
     if (jsonBinMessages.indexOf(clean) !== -1) return;
 
@@ -9865,6 +9881,87 @@ function scheduleJsonBinRefresh() {
     jsonBinWriteTimer = setInterval(function() {
         flushJsonBinWrites();
     }, JSONBIN_WRITE_INTERVAL);
+}
+
+// ===== JSONBin Speech Management (console commands) =====
+
+// Clear ALL messages from the speech JSONBin
+function clearSpeechBin() {
+    var binId = getSpeechBinId();
+    var apiKey = getSpeechBinKey();
+    if (!binId || !apiKey) {
+        console.error('[BuddySpeech] No speech bin configured');
+        return;
+    }
+    $.ajax({
+        url: JSONBIN_BASE_URL + binId,
+        method: 'PUT',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-Master-Key': apiKey
+        },
+        data: JSON.stringify({ messages: [] }),
+        success: function() {
+            jsonBinMessages = [];
+            jsonBinPendingWrites = [];
+            console.log('[BuddySpeech] Bin cleared! All messages deleted.');
+        },
+        error: function(xhr) {
+            console.error('[BuddySpeech] Failed to clear bin:', xhr.status, xhr.statusText);
+        }
+    });
+}
+
+// Remove specific messages containing a search string
+function removeSpeechMessages(searchText) {
+    if (!searchText) {
+        console.error('[BuddySpeech] Usage: removeSpeechMessages("text to find")');
+        return;
+    }
+    var binId = getSpeechBinId();
+    var apiKey = getSpeechBinKey();
+    if (!binId || !apiKey) {
+        console.error('[BuddySpeech] No speech bin configured');
+        return;
+    }
+    var searchLower = searchText.toLowerCase();
+    var before = jsonBinMessages.length;
+    var filtered = jsonBinMessages.filter(function(m) {
+        return m.toLowerCase().indexOf(searchLower) === -1;
+    });
+    var removed = before - filtered.length;
+    if (removed === 0) {
+        console.log('[BuddySpeech] No messages found containing "' + searchText + '"');
+        return;
+    }
+    $.ajax({
+        url: JSONBIN_BASE_URL + binId,
+        method: 'PUT',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-Master-Key': apiKey
+        },
+        data: JSON.stringify({ messages: filtered }),
+        success: function() {
+            jsonBinMessages = filtered;
+            console.log('[BuddySpeech] Removed ' + removed + ' messages containing "' + searchText + '" (' + filtered.length + ' remaining)');
+        },
+        error: function(xhr) {
+            console.error('[BuddySpeech] Failed to save:', xhr.status, xhr.statusText);
+        }
+    });
+}
+
+// List all messages currently in the speech bin
+function listSpeechMessages() {
+    if (jsonBinMessages.length === 0) {
+        console.log('[BuddySpeech] Bin is empty (or not loaded yet)');
+        return;
+    }
+    console.log('[BuddySpeech] ' + jsonBinMessages.length + ' messages in bin:');
+    jsonBinMessages.forEach(function(m, i) {
+        console.log('  ' + i + ': "' + m + '"');
+    });
 }
 
 // Truncate string to max length for BSET messages
@@ -12388,7 +12485,7 @@ function observeChatMessages() {
             mutation.addedNodes.forEach(function(node) {
                 if (node.nodeType !== 1) return;
 
-                // MUST have a .username span — this filters out join/leave/system messages
+                // MUST have a .username span — join/leave/system messages don't have one
                 var usernameEl = node.querySelector && node.querySelector('.username');
                 if (!usernameEl) return;
 
@@ -12397,23 +12494,27 @@ function observeChatMessages() {
                     node.classList.contains('poll-notify') ||
                     node.classList.contains('server-whisper')) return;
 
-                // Extract just the message body text after the username
-                var cleanMsg = '';
-                var foundColon = false;
-                var children = node.childNodes;
-                for (var ci = 0; ci < children.length; ci++) {
-                    var child = children[ci];
-                    // Skip the username element and anything before it
-                    if (child === usernameEl || (child.querySelector && child.querySelector('.username'))) {
-                        foundColon = true;
-                        continue;
-                    }
-                    if (foundColon) {
-                        cleanMsg += (child.textContent || '');
-                    }
+                // Get the username text so we can strip it
+                var usernameText = (usernameEl.textContent || '').replace(/[\s:]+$/, '').trim();
+
+                // Get full text content of the message node
+                var fullText = node.textContent || '';
+
+                // Strip timestamp prefix like [12:30:45] or [12:30]
+                fullText = fullText.replace(/^\s*\[?\d{1,2}:\d{2}(:\d{2})?\]?\s*/, '');
+
+                // Strip username prefix (username followed by colon)
+                if (usernameText) {
+                    // Escape special regex chars in username
+                    var escapedName = usernameText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                    fullText = fullText.replace(new RegExp('^\\s*' + escapedName + '\\s*:?\\s*'), '');
                 }
-                // Strip leading colon/spaces
-                cleanMsg = cleanMsg.replace(/^[\s:]+/, '').trim();
+
+                // Run through stripToPlainText to remove BBCode, HTML, zero-width chars, sync markers
+                var cleanMsg = stripToPlainText(fullText);
+
+                // Extra safety: skip anything that looks like a system message
+                if (/\b(joined|left|disconnected|kicked|banned|aliases:|connected)\b/i.test(cleanMsg)) return;
 
                 if (cleanMsg.length > 3 && cleanMsg.length < 200) {
                     recentChatMessages.push(cleanMsg);
