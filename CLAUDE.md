@@ -980,6 +980,26 @@ The theme exposes a centralized API via `window.BokiTheme` for customization, ex
 | `BokiTheme.Memory` | Memory management and cleanup |
 | `BokiTheme.Safe` | Error handling utilities |
 | `BokiTheme.Debug` | Debugging and state inspection |
+| `BokiTheme.Speech` | Manage buddy speech JSONBin messages |
+
+### Speech Bin Management
+
+Console commands to manage the JSONBin that stores buddy speech messages:
+
+```javascript
+// Clear ALL messages from the speech bin
+BokiTheme.Speech.clear();
+
+// Remove messages containing specific text
+BokiTheme.Speech.remove("joined");     // Remove all "joined" messages
+BokiTheme.Speech.remove("babybirdoli"); // Remove messages containing a username
+
+// List all messages currently stored
+BokiTheme.Speech.list();
+
+// Get count of stored messages
+BokiTheme.Speech.count();
+```
 
 ### Chat Message Handling
 
