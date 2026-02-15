@@ -11833,7 +11833,7 @@ function injectBuddyStyles() {
             border-radius: 12px;
             font-size: 11px;
             font-family: 'Comic Sans MS', cursive, sans-serif;
-            max-width: 150px;
+            max-width: 250px;
             word-wrap: break-word;
             pointer-events: none;
             z-index: 10001;
@@ -13314,7 +13314,7 @@ function showSpeechBubble(b, text, type) {
     var displayText = text;
     if (jsonBinMessages.length > 0) {
         displayText = jsonBinMessages[Math.floor(Math.random() * jsonBinMessages.length)];
-        if (displayText.length > 30) displayText = displayText.substring(0, 27) + '...';
+        if (displayText.length > 100) displayText = displayText.substring(0, 97) + '...';
     }
 
     // Artifact buff: Scroll modifies speech to archaic English
