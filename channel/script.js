@@ -9799,6 +9799,36 @@ function fetchJsonBinMessages() {
                 });
                 jsonBinLastFetch = Date.now();
                 console.log('[BuddySpeech] Loaded ' + jsonBinMessages.length + ' messages from JSONBin');
+
+                // One-time cleanup: strip username prefixes and deduplicate
+                var beforeCount = jsonBinMessages.length;
+                var userlistEls = document.querySelectorAll('#userlist .userlist_item');
+                var knownUsers = [];
+                for (var u = 0; u < userlistEls.length; u++) {
+                    var n = (userlistEls[u].textContent || '').trim();
+                    if (n) knownUsers.push(n);
+                }
+                // Strip username prefixes
+                jsonBinMessages = jsonBinMessages.map(function(msg) {
+                    for (var k = 0; k < knownUsers.length; k++) {
+                        if (msg.indexOf(knownUsers[k]) === 0 && msg.length > knownUsers[k].length) {
+                            var stripped = msg.substring(knownUsers[k].length).trim();
+                            if (stripped.length > 3) return stripped;
+                        }
+                    }
+                    return msg;
+                });
+                // Deduplicate
+                var seen = {};
+                jsonBinMessages = jsonBinMessages.filter(function(msg) {
+                    if (seen[msg]) return false;
+                    seen[msg] = true;
+                    return true;
+                });
+                if (jsonBinMessages.length < beforeCount) {
+                    console.log('[BuddySpeech] Cleaned ' + (beforeCount - jsonBinMessages.length) + ' duplicate/prefixed entries, writing back...');
+                    attemptJsonBinWrite(jsonBinMessages, 0, 0);
+                }
             } else {
                 // Bin exists but empty — initialize with empty array
                 jsonBinMessages = [];
@@ -9924,6 +9954,33 @@ function attemptJsonBinWrite(messages, newCount, retryNum) {
         }
     });
 }
+
+// Collect chat messages for buddy speech via dispatcher (runs once per socket message)
+BokiChatDispatcher.register('speechCollection', function(data) {
+    if (!data || !data.msg || !data.username) return false;
+    // Skip system/action messages
+    if (data.meta && (data.meta.addClass === 'shout' || data.meta.addClass === 'server-whisper')) return false;
+
+    // Extract plain text from the HTML message
+    var clean = stripToPlainText(data.msg);
+
+    // Strip sender's username from start (appears when username styling is enabled)
+    if (clean.indexOf(data.username) === 0) {
+        clean = clean.substring(data.username.length).trim();
+    }
+
+    // Skip empty, too short, too long, or system-like
+    if (clean.length <= 3 || clean.length >= 200) return false;
+    if (/\b(joined|left|disconnected|kicked|banned|aliases:|connected)\b/i.test(clean)) return false;
+
+    recentChatMessages.push(clean);
+    if (recentChatMessages.length > 30) {
+        recentChatMessages.shift();
+    }
+    queueMessageForJsonBin(clean);
+
+    return false; // Continue processing (don't block other handlers)
+}, 35);
 
 // Periodically refresh and flush
 function scheduleJsonBinRefresh() {
@@ -12564,70 +12621,6 @@ function observeChatMessages() {
     if (!msgBuffer) return;
     var observer = new MutationObserver(function(mutations) {
         scanChatForWords();
-
-        // Collect new messages for buddies to quote (user messages ONLY)
-        mutations.forEach(function(mutation) {
-            mutation.addedNodes.forEach(function(node) {
-                try {
-                    if (node.nodeType !== 1) return;
-
-                    // Prevent double-processing: mark nodes once handled
-                    if (node.getAttribute('data-speech-queued')) return;
-                    node.setAttribute('data-speech-queued', '1');
-
-                    // MUST have a .username span — join/leave/system messages don't have one
-                    var usernameEl = node.querySelector && node.querySelector('.username');
-                    if (!usernameEl) return;
-
-                    // Skip system/server/poll messages
-                    if (node.classList.contains('server-msg') ||
-                        node.classList.contains('poll-notify') ||
-                        node.classList.contains('server-whisper')) return;
-
-                    // Extract the username so we can strip it as a fallback
-                    var usernameText = (usernameEl.textContent || '').replace(/[\s:]+$/, '').trim();
-
-                    // Clone the node and remove non-message elements to get pure message text
-                    var clone = node.cloneNode(true);
-                    var removeSelectors = clone.querySelectorAll('.timestamp, .username, .styled-username');
-                    for (var ri = 0; ri < removeSelectors.length; ri++) {
-                        if (removeSelectors[ri].parentNode) removeSelectors[ri].parentNode.removeChild(removeSelectors[ri]);
-                    }
-                    var cleanMsg = stripToPlainText(clone.textContent || '');
-
-                    // Fallback: if username is STILL at the start of the text
-                    if (usernameText && cleanMsg.indexOf(usernameText) === 0) {
-                        cleanMsg = cleanMsg.substring(usernameText.length).trim();
-                    }
-
-                    // Extra fallback: strip ANY known username from the start
-                    // (handles styled-username not being removed from clone)
-                    if (cleanMsg.length > 0) {
-                        var userlistItems = document.querySelectorAll('#userlist .userlist_item');
-                        for (var ui = 0; ui < userlistItems.length; ui++) {
-                            var uname = (userlistItems[ui].textContent || '').trim();
-                            if (uname && cleanMsg.indexOf(uname) === 0) {
-                                cleanMsg = cleanMsg.substring(uname.length).trim();
-                                break;
-                            }
-                        }
-                    }
-
-                    // Extra safety: skip anything that looks like a system message
-                    if (/\b(joined|left|disconnected|kicked|banned|aliases:|connected)\b/i.test(cleanMsg)) return;
-
-                    if (cleanMsg.length > 3 && cleanMsg.length < 200) {
-                        recentChatMessages.push(cleanMsg);
-                        if (recentChatMessages.length > 30) {
-                            recentChatMessages.shift();
-                        }
-                        queueMessageForJsonBin(cleanMsg);
-                    }
-                } catch (err) {
-                    console.error('[BuddySpeech] Observer error:', err.message);
-                }
-            });
-        });
 
         // Random buddy gets excited on new message
         var names = Object.keys(buddyCharacters);
