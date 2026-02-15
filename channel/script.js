@@ -9812,6 +9812,15 @@ function flushJsonBinWrites() {
     var toWrite = jsonBinPendingWrites.length;
     jsonBinPendingWrites = [];
 
+    attemptJsonBinWrite(merged, toWrite, 0);
+}
+
+// Attempt to write to JSONBin, deleting random messages on size failure
+function attemptJsonBinWrite(messages, newCount, retryNum) {
+    var binId = getSpeechBinId();
+    var apiKey = getSpeechBinKey();
+    var maxRetries = 20; // Safety limit to prevent infinite loop
+
     $.ajax({
         url: JSONBIN_BASE_URL + binId,
         method: 'PUT',
@@ -9819,15 +9828,26 @@ function flushJsonBinWrites() {
             'Content-Type': 'application/json',
             'X-Master-Key': apiKey
         },
-        data: JSON.stringify({ messages: merged }),
+        data: JSON.stringify({ messages: messages }),
         success: function() {
-            jsonBinMessages = merged;
-            console.log('[BuddySpeech] Wrote ' + toWrite + ' new messages (total: ' + merged.length + ')');
+            jsonBinMessages = messages;
+            console.log('[BuddySpeech] Wrote ' + newCount + ' new messages (total: ' + messages.length + ')');
         },
         error: function(xhr) {
-            console.error('[BuddySpeech] Failed to write:', xhr.status, xhr.statusText);
-            // Re-queue failed messages for next attempt
-            jsonBinPendingWrites = jsonBinPendingWrites.concat(merged.slice(jsonBinMessages.length));
+            // Bin full (413 or 400) — delete random messages and retry
+            if (retryNum < maxRetries && messages.length > newCount) {
+                var deleteCount = Math.max(1, Math.ceil(messages.length * 0.1)); // Remove 10% each retry
+                for (var i = 0; i < deleteCount && messages.length > newCount; i++) {
+                    var randIdx = Math.floor(Math.random() * (messages.length - newCount)); // Only delete old messages, not the new ones
+                    messages.splice(randIdx, 1);
+                }
+                console.log('[BuddySpeech] Bin full, deleted ' + deleteCount + ' random messages, retrying... (' + messages.length + ' remaining)');
+                attemptJsonBinWrite(messages, newCount, retryNum + 1);
+            } else {
+                console.error('[BuddySpeech] Failed to write after retries:', xhr.status, xhr.statusText);
+                // Re-queue the new messages for next flush cycle
+                jsonBinPendingWrites = jsonBinPendingWrites.concat(messages.slice(messages.length - newCount));
+            }
         }
     });
 }
@@ -13101,8 +13121,15 @@ function showSpeechBubble(b, text, type) {
     var existing = document.querySelectorAll('.buddy-speech[data-buddy="' + b.element.id + '"]');
     existing.forEach(function(e) { e.remove(); });
 
+    // Always use a random JSONBin message if available
+    var displayText = text;
+    if (jsonBinMessages.length > 0) {
+        displayText = jsonBinMessages[Math.floor(Math.random() * jsonBinMessages.length)];
+        if (displayText.length > 30) displayText = displayText.substring(0, 27) + '...';
+    }
+
     // Artifact buff: Scroll modifies speech to archaic English
-    var displayText = getArtifactModifiedSpeech(b.username, text);
+    displayText = getArtifactModifiedSpeech(b.username, displayText);
 
     var speech = document.createElement('div');
     speech.className = 'buddy-speech ' + (type || '');
