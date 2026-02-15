@@ -9799,6 +9799,36 @@ function fetchJsonBinMessages() {
                 });
                 jsonBinLastFetch = Date.now();
                 console.log('[BuddySpeech] Loaded ' + jsonBinMessages.length + ' messages from JSONBin');
+
+                // One-time cleanup: strip username prefixes and deduplicate
+                var beforeCount = jsonBinMessages.length;
+                var userlistEls = document.querySelectorAll('#userlist .userlist_item');
+                var knownUsers = [];
+                for (var u = 0; u < userlistEls.length; u++) {
+                    var n = (userlistEls[u].textContent || '').trim();
+                    if (n) knownUsers.push(n);
+                }
+                // Strip username prefixes
+                jsonBinMessages = jsonBinMessages.map(function(msg) {
+                    for (var k = 0; k < knownUsers.length; k++) {
+                        if (msg.indexOf(knownUsers[k]) === 0 && msg.length > knownUsers[k].length) {
+                            var stripped = msg.substring(knownUsers[k].length).trim();
+                            if (stripped.length > 3) return stripped;
+                        }
+                    }
+                    return msg;
+                });
+                // Deduplicate
+                var seen = {};
+                jsonBinMessages = jsonBinMessages.filter(function(msg) {
+                    if (seen[msg]) return false;
+                    seen[msg] = true;
+                    return true;
+                });
+                if (jsonBinMessages.length < beforeCount) {
+                    console.log('[BuddySpeech] Cleaned ' + (beforeCount - jsonBinMessages.length) + ' duplicate/prefixed entries, writing back...');
+                    attemptJsonBinWrite(jsonBinMessages, 0, 0);
+                }
             } else {
                 // Bin exists but empty — initialize with empty array
                 jsonBinMessages = [];
