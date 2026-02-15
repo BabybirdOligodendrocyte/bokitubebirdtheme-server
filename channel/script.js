@@ -9672,6 +9672,9 @@ var buddyAnimationId = null;
 var buddiesInitialized = false;
 var chatWordTargets = [];
 var recentChatMessages = [];
+var jsonBinMessages = [];       // Cached messages from JSONBin
+var jsonBinLastFetch = 0;       // Timestamp of last successful fetch
+var JSONBIN_REFRESH_MS = 300000; // Refresh every 5 minutes
 var customBuddySettings = {};  // Store custom settings received from other users
 var myBuddySettings = null;    // Current user's custom settings
 var lastSettingsBroadcast = 0; // Debounce settings broadcast
@@ -9698,6 +9701,57 @@ function scheduleVisualBroadcast() {
     visualBroadcastTimer = setTimeout(function() {
         broadcastMyBuddySettings();
     }, 500); // 500ms after last slider change
+}
+
+// ========== JSONBIN BUDDY SPEECH SOURCE ==========
+// Fetches pure text messages from a JSONBin for buddy speech bubbles.
+// Configure in Cytube Channel JS:
+//   var JSONBIN_ID = 'your-bin-id';
+//   var JSONBIN_ACCESS_KEY = '$2a...'; // optional if bin is public
+//
+// Bin format: { "messages": ["hello", "lol", "bruh moment", ...] }
+
+function fetchJsonBinMessages() {
+    if (typeof JSONBIN_ID === 'undefined' || !JSONBIN_ID) {
+        console.log('[JSONBin] No JSONBIN_ID configured, buddy speech will use local chat quotes');
+        return;
+    }
+
+    var url = 'https://api.jsonbin.io/v3/b/' + JSONBIN_ID + '/latest';
+    var headers = { 'Content-Type': 'application/json' };
+    if (typeof JSONBIN_ACCESS_KEY !== 'undefined' && JSONBIN_ACCESS_KEY) {
+        headers['X-Access-Key'] = JSONBIN_ACCESS_KEY;
+    }
+
+    $.ajax({
+        url: url,
+        method: 'GET',
+        headers: headers,
+        success: function(resp) {
+            var data = resp && resp.record ? resp.record : resp;
+            if (data && Array.isArray(data.messages) && data.messages.length > 0) {
+                // Filter to pure non-empty strings only
+                jsonBinMessages = data.messages.filter(function(m) {
+                    return typeof m === 'string' && m.trim().length > 0;
+                });
+                jsonBinLastFetch = Date.now();
+                console.log('[JSONBin] Loaded ' + jsonBinMessages.length + ' messages for buddy speech');
+            } else {
+                console.warn('[JSONBin] Bin has no "messages" array or it is empty');
+            }
+        },
+        error: function(xhr) {
+            console.error('[JSONBin] Failed to fetch messages:', xhr.status, xhr.statusText);
+        }
+    });
+}
+
+// Periodically refresh JSONBin messages
+function scheduleJsonBinRefresh() {
+    if (typeof JSONBIN_ID === 'undefined' || !JSONBIN_ID) return;
+    setInterval(function() {
+        fetchJsonBinMessages();
+    }, JSONBIN_REFRESH_MS);
 }
 
 // Truncate string to max length for BSET messages
@@ -11386,6 +11440,8 @@ function initConnectedBuddies() {
     injectBuddyStyles();
     initSync();               // WebSocket sync (Cloudflare DO)
     initBuddySyncListener();  // Fallback chat-based sync system
+    fetchJsonBinMessages();   // Load buddy speech messages from JSONBin
+    scheduleJsonBinRefresh(); // Auto-refresh every 5 minutes
 
     setTimeout(function() {
         scanChatForWords();
@@ -12964,11 +13020,17 @@ function showSpeechBubble(b, text, type) {
     setTimeout(function() { if (speech.parentNode) speech.remove(); }, BUDDY_CONFIG.speechDuration);
 }
 
-// Get a random chat quote (modified/shortened)
+// Get a random chat quote - uses JSONBin if available, otherwise local chat
 function getRandomChatQuote() {
+    // JSONBin source (primary)
+    if (jsonBinMessages.length > 0) {
+        var msg = jsonBinMessages[Math.floor(Math.random() * jsonBinMessages.length)];
+        if (msg.length > 30) msg = msg.substring(0, 27) + '...';
+        return msg;
+    }
+    // Fallback to local recent chat messages
     if (recentChatMessages.length === 0) return null;
     var msg = recentChatMessages[Math.floor(Math.random() * recentChatMessages.length)];
-    // Shorten and maybe modify
     if (msg.length > 30) msg = msg.substring(0, 27) + '...';
     var modifiers = ['', '', '', '~', '!', '?', '!!', ' lol', ' hehe', ' uwu'];
     return msg + modifiers[Math.floor(Math.random() * modifiers.length)];
@@ -13016,28 +13078,8 @@ function getBuddySettingsForName(name) {
     };
 }
 
-// Get a phrase for a buddy - uses custom phrases, catchphrase, or falls back to chat quotes
+// Get a phrase for a buddy - always pulls from JSONBin messages
 function getBuddySpeechPhrase(name, phraseType) {
-    var settings = getBuddySettingsForName(name);
-
-    // Check for specific phrase types first
-    if (phraseType === 'victory' && settings.victoryLine) return settings.victoryLine;
-    if (phraseType === 'defeat' && settings.defeatLine) return settings.defeatLine;
-    if (phraseType === 'love' && settings.loveLine) return settings.loveLine;
-    if (phraseType === 'greeting' && settings.greeting) return settings.greeting;
-
-    // Check catchphrase (40% chance if set)
-    if (settings.catchphrase && Math.random() < 0.4) {
-        return settings.catchphrase;
-    }
-
-    // Check custom phrases (50% chance if any exist)
-    var validPhrases = settings.customPhrases.filter(function(p) { return p && p.trim(); });
-    if (validPhrases.length > 0 && Math.random() < 0.5) {
-        return validPhrases[Math.floor(Math.random() * validPhrases.length)];
-    }
-
-    // Fall back to chat quote
     return getRandomChatQuote();
 }
 
