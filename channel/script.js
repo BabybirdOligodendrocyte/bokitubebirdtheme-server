@@ -9964,31 +9964,35 @@ BokiChatDispatcher.register('speechCollection', function(data) {
 
     var rawMsg = data.msg;
 
-    // Skip hidden command messages (all use zero-width characters as markers)
-    // Catches: BSET, BACT, SCREENSPAM, SCREENSPAM2, SUBTITLE, and any future hidden format
+    // Skip hidden command messages — zero-width chars (may be stripped by Cytube server)
     if (/[\u200B\u200C\u200D\uFEFF]/.test(rawMsg)) return false;
 
+    // Skip hidden sync/command markers by keyword (works even if zero-width chars were stripped)
+    if (/BSET:|BACT:|SCREENSPAM2?:|SUBTITLE:/.test(rawMsg)) return false;
+
     // Skip any message starting with / or ! (commands like /afk, /clear, /me, !command, etc.)
-    // Check raw HTML — commands sent to server appear as plain text in data.msg
     if (/^\/|^!/.test(rawMsg)) return false;
 
     // Use DOM parsing to extract ONLY the actual message text
     var tmp = document.createElement('div');
     tmp.innerHTML = data.msg;
-    // Remove styled-username elements (contains sender's name, not message content)
-    var styledEls = tmp.querySelectorAll('.styled-username');
-    for (var si = 0; si < styledEls.length; si++) {
-        styledEls[si].parentNode.removeChild(styledEls[si]);
+    // Remove ALL username elements — both styled and unstyled
+    var usernameEls = tmp.querySelectorAll('.username, .styled-username');
+    for (var si = 0; si < usernameEls.length; si++) {
+        usernameEls[si].parentNode.removeChild(usernameEls[si]);
     }
-    // Remove images/emotes (no text content to collect)
-    var imgEls = tmp.querySelectorAll('img');
+    // Remove images/emotes/links (no text content to collect)
+    var imgEls = tmp.querySelectorAll('img, a');
     for (var ii = 0; ii < imgEls.length; ii++) {
         imgEls[ii].parentNode.removeChild(imgEls[ii]);
     }
-    // Get remaining text content (message body only, no username, no images)
+    // Get remaining text content (message body only, no username, no images, no links)
     var clean = stripToPlainText(tmp.textContent || '');
 
-    // Fallback: strip username from start (case-insensitive)
+    // Safety net: if extracted text is just the username, skip it
+    if (clean.toLowerCase() === data.username.toLowerCase()) return false;
+
+    // Strip username prefix if still present (case-insensitive)
     if (clean.toLowerCase().indexOf(data.username.toLowerCase()) === 0) {
         clean = clean.substring(data.username.length).trim();
     }
