@@ -378,7 +378,46 @@ var BokiTheme = (function() {
             getAll: function() { return typeof buddyCharacters !== 'undefined' ? buddyCharacters : {}; },
             getSettings: function() { return typeof myBuddySettings !== 'undefined' ? myBuddySettings : null; },
             getSprites: function() { return typeof BUDDY_SPRITES !== 'undefined' ? BUDDY_SPRITES : []; },
-            isSyncEnabled: function() { return typeof syncEnabled !== 'undefined' ? syncEnabled : false; }
+            isSyncEnabled: function() { return typeof syncEnabled !== 'undefined' ? syncEnabled : false; },
+            // Force re-apply all custom settings (for debugging sync issues)
+            reapplyAll: function() {
+                if (typeof customBuddySettings === 'undefined' || typeof buddyCharacters === 'undefined') return;
+                var applied = 0;
+                Object.keys(customBuddySettings).forEach(function(username) {
+                    if (buddyCharacters[username]) {
+                        applyCustomSettingsToBuddy(username);
+                        applied++;
+                    }
+                });
+                console.log('[BokiTheme] Re-applied settings to', applied, 'buddies');
+                return applied;
+            },
+            // Request all other users to re-broadcast their settings
+            requestAll: function() {
+                if (typeof wsSend === 'undefined') return;
+                wsSend('request-settings', { username: getMyUsername() });
+                console.log('[BokiTheme] Sent request-settings to all connected users');
+            },
+            // Diagnose buddy sync state
+            diagnose: function() {
+                console.log('=== BUDDY SYNC DIAGNOSIS ===');
+                console.log('WebSocket connected:', typeof syncEnabled !== 'undefined' ? syncEnabled : false);
+                console.log('My username:', typeof getMyUsername !== 'undefined' ? getMyUsername() : '???');
+                console.log('My settings loaded:', typeof myBuddySettings !== 'undefined' && myBuddySettings !== null);
+                if (typeof myBuddySettings !== 'undefined' && myBuddySettings) {
+                    console.log('  sprite:', myBuddySettings.spriteIndex, 'customUrl:', !!myBuddySettings.customSpriteUrl, 'hue:', myBuddySettings.hueRotate);
+                }
+                console.log('Active buddies:', typeof buddyCharacters !== 'undefined' ? Object.keys(buddyCharacters) : []);
+                console.log('Settings received from:', typeof _settingsReceivedFrom !== 'undefined' ? Object.keys(_settingsReceivedFrom) : []);
+                console.log('Stored custom settings for:');
+                if (typeof customBuddySettings !== 'undefined') {
+                    Object.keys(customBuddySettings).forEach(function(u) {
+                        var s = customBuddySettings[u];
+                        console.log('  ' + u + ': sprite=' + s.spriteIndex + ' customUrl=' + !!s.customSpriteUrl + ' hue=' + s.hueRotate + ' sat=' + s.saturation + ' departed=' + !!s._departedAt);
+                    });
+                }
+                console.log('=== END DIAGNOSIS ===');
+            }
         },
 
         // User management
@@ -10117,6 +10156,8 @@ var syncRetryCount = 0;
 var SYNC_MAX_RETRIES = 5;
 var SYNC_RETRY_DELAYS = [1000, 3000, 8000, 15000, 30000];
 var memberJoinBroadcastTimer = null;
+var _settingsReceivedFrom = {};   // Track which users we've gotten buddy-settings from
+var _settingsRequestedFrom = {};  // Track which users we've already requested settings from
 
 // Send a message via WebSocket (replaces pusherChannel.trigger)
 function wsSend(type, data) {
@@ -10188,12 +10229,19 @@ function connectWebSocket() {
                 syncEnabled = true;
                 syncRetryCount = 0;
                 syncMemberCount = (msg.members ? msg.members.length : 0) + 1;
+                // Reset settings tracking on new connection
+                _settingsReceivedFrom = {};
+                _settingsRequestedFrom = {};
                 // Broadcast our settings to existing members
                 setTimeout(broadcastMyBuddySettings, 500);
                 // Request settings from others
                 setTimeout(function() {
                     wsSend('request-settings', { username: getMyUsername() });
                 }, 1000);
+                // Second request after longer delay as fallback
+                setTimeout(function() {
+                    wsSend('request-settings', { username: getMyUsername() });
+                }, 4000);
                 break;
 
             case 'member-added':
@@ -10246,6 +10294,15 @@ function connectWebSocket() {
                         for (var i = 0; i < msg.speech.length; i++) {
                             handlePusherBuddySpeech(msg.speech[i]);
                         }
+                    }
+                    // Detect missing settings: if we get positions from someone
+                    // but never received their settings, request them now.
+                    // This catches cases where buddy-settings was lost or arrived
+                    // before the buddy element existed with no retry.
+                    if (!_settingsReceivedFrom[msg.from] && !_settingsRequestedFrom[msg.from]) {
+                        _settingsRequestedFrom[msg.from] = true;
+                        console.log('[Sync] Position received from', msg.from, 'but no settings yet — requesting');
+                        wsSend('request-settings', { username: getMyUsername() });
                     }
                 }
                 break;
@@ -10351,11 +10408,10 @@ function handlePusherBuddySettings(data) {
         customPhrases: data.ph || []
     };
     customBuddySettings[data.username] = settings;
-    console.log('[Pusher] Received settings for', data.username, '- hue:', settings.hueRotate, 'glow:', settings.glowColor, 'sprite:', settings.spriteIndex);
-    console.log('[Pusher] Buddy exists for', data.username, '?', !!buddyCharacters[data.username]);
-    console.log('[Pusher] Current buddyCharacters keys:', Object.keys(buddyCharacters));
+    _settingsReceivedFrom[data.username] = true;
+    console.log('[Sync] Received settings for', data.username, '- sprite:', settings.spriteIndex, 'customUrl:', !!settings.customSpriteUrl, 'hue:', settings.hueRotate, 'sat:', settings.saturation, 'glow:', settings.glowColor);
     if (buddyCharacters[data.username]) {
-        console.log('[Pusher] Applying settings to existing buddy:', data.username);
+        console.log('[Sync] Applying settings to existing buddy:', data.username);
         applyCustomSettingsToBuddy(data.username);
     } else {
         console.log('[Pusher] Buddy not found, settings stored for later application');
@@ -11663,15 +11719,26 @@ function initConnectedBuddies() {
     }, 1500);
 
     // Re-apply custom settings after enough time for responses to arrive
-    // This catches late-arriving settings from other users
-    setTimeout(function() {
-        console.log('[BuddySync] Applying late-arriving custom settings...');
-        Object.keys(customBuddySettings).forEach(function(username) {
-            if (buddyCharacters[username]) {
-                applyCustomSettingsToBuddy(username);
+    // Multiple retries at increasing intervals to catch late-arriving settings
+    [3000, 8000, 15000].forEach(function(delay) {
+        setTimeout(function() {
+            var applied = 0;
+            Object.keys(customBuddySettings).forEach(function(username) {
+                if (buddyCharacters[username]) {
+                    applyCustomSettingsToBuddy(username);
+                    applied++;
+                }
+            });
+            if (applied > 0) {
+                console.log('[BuddySync] Applied settings to', applied, 'buddies at T+' + (delay / 1000) + 's');
             }
-        });
-    }, 3000);
+            // If we still haven't received settings from anyone and sync is up, request again
+            if (syncEnabled && Object.keys(_settingsReceivedFrom).length === 0 && Object.keys(buddyCharacters).length > 1) {
+                console.log('[BuddySync] No settings received yet at T+' + (delay / 1000) + 's — re-requesting');
+                wsSend('request-settings', { username: getMyUsername() });
+            }
+        }, delay);
+    });
 
     // Rescan periodically
     var _buddyWordScanIntervalId = setInterval(scanChatForWords, 3000);
