@@ -12571,6 +12571,10 @@ function observeChatMessages() {
                 try {
                     if (node.nodeType !== 1) return;
 
+                    // Prevent double-processing: mark nodes once handled
+                    if (node.getAttribute('data-speech-queued')) return;
+                    node.setAttribute('data-speech-queued', '1');
+
                     // MUST have a .username span — join/leave/system messages don't have one
                     var usernameEl = node.querySelector && node.querySelector('.username');
                     if (!usernameEl) return;
@@ -12594,6 +12598,19 @@ function observeChatMessages() {
                     // Fallback: if username is STILL at the start of the text
                     if (usernameText && cleanMsg.indexOf(usernameText) === 0) {
                         cleanMsg = cleanMsg.substring(usernameText.length).trim();
+                    }
+
+                    // Extra fallback: strip ANY known username from the start
+                    // (handles styled-username not being removed from clone)
+                    if (cleanMsg.length > 0) {
+                        var userlistItems = document.querySelectorAll('#userlist .userlist_item');
+                        for (var ui = 0; ui < userlistItems.length; ui++) {
+                            var uname = (userlistItems[ui].textContent || '').trim();
+                            if (uname && cleanMsg.indexOf(uname) === 0) {
+                                cleanMsg = cleanMsg.substring(uname.length).trim();
+                                break;
+                            }
+                        }
                     }
 
                     // Extra safety: skip anything that looks like a system message
