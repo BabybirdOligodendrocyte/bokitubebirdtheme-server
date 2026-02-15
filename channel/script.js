@@ -9728,7 +9728,7 @@ var jsonBinLastFetch = 0;       // Timestamp of last successful fetch
 var jsonBinPendingWrites = [];  // Buffer of new messages to write to JSONBin
 var jsonBinWriteTimer = null;   // Timer for batched writes
 var JSONBIN_REFRESH_MS = 300000; // Refresh every 5 minutes
-var JSONBIN_WRITE_INTERVAL = 60000; // Write buffered messages every 60 seconds
+var JSONBIN_WRITE_INTERVAL = 30000; // Write buffered messages every 30 seconds
 var customBuddySettings = {};  // Store custom settings received from other users
 var myBuddySettings = null;    // Current user's custom settings
 var lastSettingsBroadcast = 0; // Debounce settings broadcast
@@ -9851,11 +9851,15 @@ function queueMessageForJsonBin(rawMsg) {
     if (jsonBinPendingWrites.indexOf(clean) !== -1) return;
 
     jsonBinPendingWrites.push(clean);
+    console.log('[BuddySpeech] Queued message:', clean, '(pending:', jsonBinPendingWrites.length + ')');
 }
 
 // Flush pending messages to JSONBin
 function flushJsonBinWrites() {
-    if (jsonBinPendingWrites.length === 0) return;
+    if (jsonBinPendingWrites.length === 0) {
+        return;
+    }
+    console.log('[BuddySpeech] Flushing', jsonBinPendingWrites.length, 'pending messages (cache has', jsonBinMessages.length + ')');
 
     var binId = getSpeechBinId();
     var apiKey = getSpeechBinKey();
@@ -12561,14 +12565,22 @@ function observeChatMessages() {
                     node.classList.contains('poll-notify') ||
                     node.classList.contains('server-whisper')) return;
 
+                // Extract the username so we can strip it as a fallback
+                var usernameText = (usernameEl.textContent || '').replace(/[\s:]+$/, '').trim();
+
                 // Clone the node and remove non-message elements to get pure message text
-                // This handles styled usernames (both .username and .styled-username in DOM)
                 var clone = node.cloneNode(true);
                 var removeSelectors = clone.querySelectorAll('.timestamp, .username, .styled-username');
                 for (var ri = 0; ri < removeSelectors.length; ri++) {
-                    removeSelectors[ri].parentNode.removeChild(removeSelectors[ri]);
+                    if (removeSelectors[ri].parentNode) removeSelectors[ri].parentNode.removeChild(removeSelectors[ri]);
                 }
                 var cleanMsg = stripToPlainText(clone.textContent || '');
+
+                // Fallback: if username is STILL at the start of the text
+                // (can happen if styled-username element wasn't found or BBCode wasn't converted)
+                if (usernameText && cleanMsg.indexOf(usernameText) === 0) {
+                    cleanMsg = cleanMsg.substring(usernameText.length).trim();
+                }
 
                 // Extra safety: skip anything that looks like a system message
                 if (/\b(joined|left|disconnected|kicked|banned|aliases:|connected)\b/i.test(cleanMsg)) return;
