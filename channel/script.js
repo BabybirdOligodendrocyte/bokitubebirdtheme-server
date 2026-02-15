@@ -9961,13 +9961,29 @@ BokiChatDispatcher.register('speechCollection', function(data) {
     // Skip system/action messages
     if (data.meta && (data.meta.addClass === 'shout' || data.meta.addClass === 'server-whisper')) return false;
 
-    // Extract plain text from the HTML message
-    var clean = stripToPlainText(data.msg);
+    // Use DOM parsing to extract ONLY the actual message text
+    var tmp = document.createElement('div');
+    tmp.innerHTML = data.msg;
+    // Remove styled-username elements (contains sender's name, not message content)
+    var styledEls = tmp.querySelectorAll('.styled-username');
+    for (var si = 0; si < styledEls.length; si++) {
+        styledEls[si].parentNode.removeChild(styledEls[si]);
+    }
+    // Remove images/emotes (no text content to collect)
+    var imgEls = tmp.querySelectorAll('img');
+    for (var ii = 0; ii < imgEls.length; ii++) {
+        imgEls[ii].parentNode.removeChild(imgEls[ii]);
+    }
+    // Get remaining text content (message body only, no username, no images)
+    var clean = stripToPlainText(tmp.textContent || '');
 
-    // Strip sender's username from start (appears when username styling is enabled)
-    if (clean.indexOf(data.username) === 0) {
+    // Fallback: strip username from start (case-insensitive)
+    if (clean.toLowerCase().indexOf(data.username.toLowerCase()) === 0) {
         clean = clean.substring(data.username.length).trim();
     }
+
+    // Skip if it's just a URL (image links, tenor links, etc.)
+    if (/^https?:\/\/\S+$/i.test(clean)) return false;
 
     // Skip empty, too short, too long, or system-like
     if (clean.length <= 3 || clean.length >= 200) return false;
