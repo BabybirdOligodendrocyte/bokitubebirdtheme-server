@@ -12494,24 +12494,14 @@ function observeChatMessages() {
                     node.classList.contains('poll-notify') ||
                     node.classList.contains('server-whisper')) return;
 
-                // Get the username text so we can strip it
-                var usernameText = (usernameEl.textContent || '').replace(/[\s:]+$/, '').trim();
-
-                // Get full text content of the message node
-                var fullText = node.textContent || '';
-
-                // Strip timestamp prefix like [12:30:45] or [12:30]
-                fullText = fullText.replace(/^\s*\[?\d{1,2}:\d{2}(:\d{2})?\]?\s*/, '');
-
-                // Strip username prefix (username followed by colon)
-                if (usernameText) {
-                    // Escape special regex chars in username
-                    var escapedName = usernameText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-                    fullText = fullText.replace(new RegExp('^\\s*' + escapedName + '\\s*:?\\s*'), '');
+                // Clone the node and remove non-message elements to get pure message text
+                // This handles styled usernames (both .username and .styled-username in DOM)
+                var clone = node.cloneNode(true);
+                var removeSelectors = clone.querySelectorAll('.timestamp, .username, .styled-username');
+                for (var ri = 0; ri < removeSelectors.length; ri++) {
+                    removeSelectors[ri].parentNode.removeChild(removeSelectors[ri]);
                 }
-
-                // Run through stripToPlainText to remove BBCode, HTML, zero-width chars, sync markers
-                var cleanMsg = stripToPlainText(fullText);
+                var cleanMsg = stripToPlainText(clone.textContent || '');
 
                 // Extra safety: skip anything that looks like a system message
                 if (/\b(joined|left|disconnected|kicked|banned|aliases:|connected)\b/i.test(cleanMsg)) return;
