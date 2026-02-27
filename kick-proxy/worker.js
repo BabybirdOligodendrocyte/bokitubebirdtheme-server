@@ -103,7 +103,7 @@ async function handleManifest(channel, origin, corsHeaders) {
         ],
     };
 
-    if (info.thumbnail) {
+    if (info.thumbnail && typeof info.thumbnail === 'string') {
         manifest.thumbnail = info.thumbnail;
     }
 
