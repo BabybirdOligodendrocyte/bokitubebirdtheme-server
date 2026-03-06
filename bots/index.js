@@ -4,28 +4,34 @@ const https = require('https');
 const http = require('http');
 const { io } = require('socket.io-client');
 const { SocksProxyAgent } = require('socks-proxy-agent');
+const fs = require('fs');
+const path = require('path');
 
 // ============================================================
-//  Configuration
+//  Load Configuration
 // ============================================================
 
-const CHANNEL = process.env.CYTUBE_CHANNEL || 'AltarOfVictory';
-const BOT_COUNT = parseInt(process.env.BOT_COUNT, 10) || 10;
+const CONFIG_PATH = path.join(__dirname, 'config.json');
+let config;
+try {
+  const raw = fs.readFileSync(CONFIG_PATH, 'utf8');
+  // Strip comment keys (keys starting with "//")
+  config = JSON.parse(raw);
+} catch (err) {
+  console.error('Failed to load config.json:', err.message);
+  console.error('Make sure config.json exists in the bots/ directory.');
+  process.exit(1);
+}
 
-// Proxy support - route bots through one or more SOCKS proxies (e.g. VPN).
-// Comma-separated list of proxy URLs with bot counts.
-// Example: PROXIES=socks5://127.0.0.1:1080,socks5://127.0.0.1:1081
-//          PROXY_BOT_COUNTS=10,10
-// This routes bots 1-10 through :1080, bots 11-20 through :1081, rest go direct.
-// Leave empty for all direct connections.
-// EDIT THESE with your VPN's SOCKS proxy addresses and ports:
-const PROXIES = (process.env.PROXIES || '').split(',').map(s => s.trim()).filter(Boolean);
-const PROXY_BOT_COUNTS = (process.env.PROXY_BOT_COUNTS || '').split(',').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n));
-
-// CyTube rate-limits connections: 5 burst, then ~1 per 10s.
-// We stagger beyond the burst window to stay safe.
-const BURST_SIZE = 4;              // first batch (stay under 5)
-const STAGGER_MS = 11000;          // delay between bots after burst (>10s)
+const CHANNEL = process.env.CYTUBE_CHANNEL || config.channel || 'AltarOfVictory';
+const TOTAL_BOTS = parseInt(process.env.BOT_COUNT, 10) || config.totalBots || 30;
+const AUTO_RECONNECT = config.autoReconnect !== false;
+const RECONNECT_DELAY = (config.reconnectDelaySec || 15) * 1000;
+const MAX_RECONNECTS = config.maxReconnects || 0; // 0 = infinite
+const BURST_SIZE = config.burstSize || 4;
+const STAGGER_MS = config.staggerMs || 11000;
+const LOG_LEVEL = process.env.LOG_LEVEL || config.logLevel || 'minimal';
+const GROUPS = config.groups || [];
 
 // ============================================================
 //  Helpers
@@ -34,12 +40,12 @@ const STAGGER_MS = 11000;          // delay between bots after burst (>10s)
 function fetchJSON(url) {
   return new Promise((resolve, reject) => {
     const mod = url.startsWith('https') ? https : http;
-    const req = mod.get(url, { headers: { 'User-Agent': 'CytubeBot/1.0' } }, (res) => {
+    const req = mod.get(url, { headers: { 'User-Agent': 'CytubeBot/2.0' } }, (res) => {
       if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
         return fetchJSON(res.headers.location).then(resolve, reject);
       }
       if (res.statusCode !== 200) {
-        return reject(new Error(`HTTP ${res.statusCode} from ${url}`));
+        return reject(new Error('HTTP ' + res.statusCode + ' from ' + url));
       }
       let data = '';
       res.on('data', (chunk) => { data += chunk; });
@@ -62,35 +68,42 @@ function ts() {
 }
 
 // ============================================================
-//  Bot class
+//  Bot class - with auto-reconnect
 // ============================================================
 
 class CytubeBot {
-  constructor(id, serverUrl, channel, proxyUrl) {
+  constructor(id, serverUrl, channel, proxyUrl, groupLabel) {
     this.id = id;
-    this.label = `Bot-${String(id).padStart(2, '0')}`;
+    this.label = (groupLabel || 'Direct') + '-' + String(id).padStart(2, '0');
     this.serverUrl = serverUrl;
     this.channel = channel;
     this.proxyUrl = proxyUrl || null;
+    this.groupLabel = groupLabel || 'Direct';
     this.socket = null;
     this.connected = false;
     this.guestName = null;
+    this.reconnectCount = 0;
+    this.intentionalDisconnect = false;
   }
 
   log(msg) {
-    console.log(`[${ts()}] [${this.label}] ${msg}`);
+    if (LOG_LEVEL === 'silent') return;
+    console.log('[' + ts() + '] [' + this.label + '] ' + msg);
+  }
+
+  logVerbose(msg) {
+    if (LOG_LEVEL !== 'verbose') return;
+    console.log('[' + ts() + '] [' + this.label + '] ' + msg);
   }
 
   connect() {
     return new Promise((resolve) => {
-      var via = this.proxyUrl ? ` via proxy ${this.proxyUrl}` : ' (direct)';
-      this.log(`Connecting to ${this.serverUrl}${via} ...`);
+      var via = this.proxyUrl ? ' via ' + this.groupLabel : ' (direct)';
+      this.log('Connecting' + via + ' ...');
 
       var opts = {
         secure: true,
-        reconnection: true,
-        reconnectionDelay: 5000,
-        reconnectionAttempts: 10,
+        reconnection: false,  // We handle reconnection ourselves
         transports: ['websocket'],
       };
 
@@ -103,152 +116,246 @@ class CytubeBot {
 
       this.socket.on('connect', () => {
         this.connected = true;
-        this.log('Socket connected');
-
-        // Join the channel
+        this.reconnectCount = 0;
+        this.log('Connected');
         this.socket.emit('joinChannel', { name: this.channel });
-        this.log(`Joined channel: ${this.channel}`);
-
         resolve();
       });
 
-      // Server confirms channel join by sending initial state
       this.socket.on('channelOpts', () => {
-        this.log('Received channel options (join confirmed)');
+        this.logVerbose('Channel join confirmed');
       });
 
       this.socket.on('usercount', (count) => {
-        this.log(`User count: ${count}`);
+        this.logVerbose('User count: ' + count);
       });
 
       this.socket.on('login', (data) => {
         if (data.success) {
           this.guestName = data.name;
-          this.log(`Guest login OK: ${data.name}`);
-        } else {
-          this.log(`Guest login failed: ${data.error}`);
+          this.log('Guest: ' + data.name);
         }
       });
 
       this.socket.on('chatMsg', (data) => {
-        this.log(`Chat [${data.username}]: ${data.msg.slice(0, 80)}`);
+        this.logVerbose('Chat [' + data.username + ']: ' + data.msg.slice(0, 60));
       });
 
       this.socket.on('kick', (data) => {
-        this.log(`KICKED: ${data.reason}`);
+        this.log('KICKED: ' + (data.reason || 'no reason'));
+        this.scheduleReconnect();
       });
 
       this.socket.on('errorMsg', (data) => {
-        this.log(`Error from server: ${data.msg}`);
+        this.logVerbose('Server error: ' + data.msg);
       });
 
       this.socket.on('disconnect', (reason) => {
         this.connected = false;
-        this.log(`Disconnected: ${reason}`);
+        this.log('Disconnected: ' + reason);
+        if (!this.intentionalDisconnect) {
+          this.scheduleReconnect();
+        }
       });
 
       this.socket.on('connect_error', (err) => {
-        this.log(`Connection error: ${err.message}`);
+        this.log('Connection error: ' + err.message);
+        if (!this.connected) {
+          resolve(); // Don't block launcher
+          this.scheduleReconnect();
+        }
       });
 
-      // Resolve after a timeout even if connect hasn't fired
-      // (so the launcher can keep going)
+      // Don't block launcher forever
       setTimeout(() => {
         if (!this.connected) {
-          this.log('Connect timed out, moving on');
+          this.log('Connect timed out');
           resolve();
         }
       }, 15000);
     });
   }
 
+  scheduleReconnect() {
+    if (!AUTO_RECONNECT || this.intentionalDisconnect) return;
+    if (MAX_RECONNECTS > 0 && this.reconnectCount >= MAX_RECONNECTS) {
+      this.log('Max reconnects (' + MAX_RECONNECTS + ') reached, giving up');
+      return;
+    }
+
+    this.reconnectCount++;
+    var delay = RECONNECT_DELAY + Math.random() * 5000; // jitter
+    this.log('Reconnecting in ' + Math.round(delay / 1000) + 's (attempt ' + this.reconnectCount + ')...');
+
+    setTimeout(() => {
+      if (this.intentionalDisconnect) return;
+      if (this.socket) {
+        this.socket.removeAllListeners();
+        this.socket.disconnect();
+      }
+      this.connect();
+    }, delay);
+  }
+
   disconnect() {
+    this.intentionalDisconnect = true;
     if (this.socket) {
+      this.socket.removeAllListeners();
       this.socket.disconnect();
-      this.log('Disconnected (manual)');
     }
   }
 }
 
 // ============================================================
-//  Launcher
+//  Health Monitor - periodic status line
 // ============================================================
 
-async function main() {
-  console.log(`\n=== CyTube Multi-Bot Launcher ===`);
-  console.log(`Channel : ${CHANNEL}`);
-  console.log(`Bots    : ${BOT_COUNT}`);
-  if (PROXIES.length > 0) {
-    var totalProxied = 0;
-    PROXIES.forEach(function(p, idx) {
-      var count = PROXY_BOT_COUNTS[idx] || 0;
-      totalProxied += count;
-      console.log(`Proxy ${idx + 1} : ${p}  (${count} bots)`);
+function startHealthMonitor(bots) {
+  setInterval(() => {
+    var alive = 0;
+    var dead = 0;
+    var reconnecting = 0;
+
+    bots.forEach(function(b) {
+      if (b.connected) alive++;
+      else if (b.reconnectCount > 0 && !b.intentionalDisconnect) reconnecting++;
+      else dead++;
     });
-    console.log(`Direct  : ${Math.max(0, BOT_COUNT - totalProxied)} bots`);
-  } else {
-    console.log(`Proxy   : none (all direct)`);
-  }
-  console.log(`Burst   : ${BURST_SIZE}, then 1 every ${STAGGER_MS / 1000}s\n`);
 
-  // Step 1 - Fetch socket server URL
-  console.log(`[${ts()}] Fetching socket config for channel "${CHANNEL}" ...`);
+    var bar = '';
+    bots.forEach(function(b) {
+      bar += b.connected ? '\x1b[32m.\x1b[0m' : '\x1b[31mx\x1b[0m';
+    });
 
-  let serverUrl;
-  try {
-    const config = await fetchJSON(`https://cytu.be/socketconfig/${CHANNEL}.json`);
-    const server = config.servers.find((s) => s.secure) || config.servers[0];
-    serverUrl = server.url;
-    console.log(`[${ts()}] Socket server: ${serverUrl}\n`);
-  } catch (err) {
-    console.error(`Failed to fetch socket config: ${err.message}`);
-    console.error('Make sure the channel name is correct. Usage:');
-    console.error('  CYTUBE_CHANNEL=yourchannel node index.js');
-    process.exit(1);
-  }
+    console.log('[' + ts() + '] Status: ' + alive + ' alive, ' + reconnecting + ' reconnecting, ' + dead + ' dead  [' + bar + ']');
+  }, 30000);
+}
 
-  // Step 2 - Launch bots with staggered connections
-  const bots = [];
+// ============================================================
+//  Launch a group of bots (staggered within group)
+// ============================================================
 
-  for (let i = 1; i <= BOT_COUNT; i++) {
-    // Assign proxy: walk through proxy ranges, rest go direct
-    var useProxy = null;
-    var offset = 0;
-    for (var p = 0; p < PROXIES.length; p++) {
-      var count = PROXY_BOT_COUNTS[p] || 0;
-      if (i > offset && i <= offset + count) {
-        useProxy = PROXIES[p];
-        break;
-      }
-      offset += count;
-    }
-    const bot = new CytubeBot(i, serverUrl, CHANNEL, useProxy);
+async function launchGroup(groupLabel, proxyUrl, count, serverUrl, startId) {
+  var bots = [];
+  console.log('[' + ts() + '] [' + groupLabel + '] Launching ' + count + ' bots' + (proxyUrl ? ' via ' + proxyUrl : ' (direct)'));
+
+  for (var i = 0; i < count; i++) {
+    var bot = new CytubeBot(startId + i, serverUrl, CHANNEL, proxyUrl, groupLabel);
     bots.push(bot);
-
     await bot.connect();
 
-    // Stagger: first BURST_SIZE connect quickly, then slow down
-    if (i < BURST_SIZE) {
-      await sleep(500); // small gap within burst
-    } else if (i < BOT_COUNT) {
-      console.log(`[${ts()}] Waiting ${STAGGER_MS / 1000}s before next bot (rate limit)...\n`);
+    // Rate-limit stagger within this group's IP
+    if (i < BURST_SIZE - 1) {
+      await sleep(500);
+    } else if (i < count - 1) {
       await sleep(STAGGER_MS);
     }
   }
 
-  const connectedCount = bots.filter((b) => b.connected).length;
-  console.log(`\n[${ts()}] === All bots launched: ${connectedCount}/${BOT_COUNT} connected ===`);
-  console.log(`[${ts()}] Press Ctrl+C to disconnect all bots and exit.\n`);
+  return bots;
+}
+
+// ============================================================
+//  Main - parallel group launch
+// ============================================================
+
+async function main() {
+  console.log('');
+  console.log('=== CyTube Multi-Bot Launcher v2 ===');
+  console.log('Channel  : ' + CHANNEL);
+  console.log('Total    : ' + TOTAL_BOTS + ' bots');
+  console.log('Groups   : ' + (GROUPS.length || 1));
+  console.log('Reconnect: ' + (AUTO_RECONNECT ? 'ON (every ' + (RECONNECT_DELAY / 1000) + 's)' : 'OFF'));
+  console.log('Log level: ' + LOG_LEVEL);
+  console.log('');
+
+  // Step 1 - Fetch socket server URL
+  console.log('[' + ts() + '] Fetching socket config for "' + CHANNEL + '" ...');
+
+  var serverUrl;
+  try {
+    var socketConfig = await fetchJSON('https://cytu.be/socketconfig/' + CHANNEL + '.json');
+    var server = socketConfig.servers.find(function(s) { return s.secure; }) || socketConfig.servers[0];
+    serverUrl = server.url;
+    console.log('[' + ts() + '] Socket server: ' + serverUrl);
+    console.log('');
+  } catch (err) {
+    console.error('Failed to fetch socket config: ' + err.message);
+    console.error('Make sure the channel name is correct in config.json');
+    process.exit(1);
+  }
+
+  // Step 2 - Build group assignments
+  var allBots = [];
+  var groupPromises = [];
+  var botId = 1;
+
+  if (GROUPS.length > 0) {
+    // Use configured groups - launch ALL groups in parallel
+    var totalFromGroups = 0;
+
+    GROUPS.forEach(function(g) {
+      var count = g.count || 0;
+      if (count <= 0) return;
+      totalFromGroups += count;
+
+      var label = g.label || (g.proxy ? 'Proxy' : 'Direct');
+      var proxy = g.proxy || null;
+      var startId = botId;
+      botId += count;
+
+      groupPromises.push(
+        launchGroup(label, proxy, count, serverUrl, startId)
+      );
+    });
+
+    // Any remaining bots go direct
+    var remaining = TOTAL_BOTS - totalFromGroups;
+    if (remaining > 0) {
+      var startId = botId;
+      groupPromises.push(
+        launchGroup('Direct-Extra', null, remaining, serverUrl, startId)
+      );
+    }
+  } else {
+    // No groups configured - all direct
+    groupPromises.push(
+      launchGroup('Direct', null, TOTAL_BOTS, serverUrl, 1)
+    );
+  }
+
+  // Launch all groups in PARALLEL - each group staggers internally
+  // but different groups (different IPs) don't need to wait for each other
+  var groupResults = await Promise.all(groupPromises);
+  groupResults.forEach(function(groupBots) {
+    allBots = allBots.concat(groupBots);
+  });
+
+  var connectedCount = allBots.filter(function(b) { return b.connected; }).length;
+  console.log('');
+  console.log('[' + ts() + '] === All groups launched: ' + connectedCount + '/' + allBots.length + ' connected ===');
+  console.log('[' + ts() + '] Bots will auto-reconnect if disconnected.');
+  console.log('[' + ts() + '] Press Ctrl+C to stop all bots.');
+  console.log('');
+
+  // Start health monitor
+  startHealthMonitor(allBots);
 
   // Graceful shutdown
   process.on('SIGINT', () => {
-    console.log(`\n[${ts()}] Shutting down all bots...`);
-    bots.forEach((b) => b.disconnect());
+    console.log('');
+    console.log('[' + ts() + '] Shutting down all ' + allBots.length + ' bots...');
+    allBots.forEach(function(b) { b.disconnect(); });
+    setTimeout(() => process.exit(0), 1000);
+  });
+
+  process.on('SIGTERM', () => {
+    allBots.forEach(function(b) { b.disconnect(); });
     setTimeout(() => process.exit(0), 1000);
   });
 }
 
-main().catch((err) => {
+main().catch(function(err) {
   console.error('Fatal error:', err);
   process.exit(1);
 });

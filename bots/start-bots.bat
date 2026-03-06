@@ -1,7 +1,7 @@
 @echo off
-title CyTube Multi-Bot Launcher
+title CyTube 30-Bot Launcher v2
 echo ========================================
-echo   CyTube Multi-Bot Launcher
+echo   CyTube 30-Bot Launcher v2
 echo ========================================
 echo.
 
@@ -16,12 +16,15 @@ if %errorlevel% neq 0 (
     exit /b 1
 )
 
-echo Installing dependencies...
-call npm install
-echo.
+if not exist "node_modules" (
+    echo First run - installing dependencies...
+    call npm install
+    echo.
+)
 
-echo Starting bots...
-echo Press Ctrl+C to stop all bots.
+echo Launching bots from config.json...
+echo   Edit config.json to change bot count, proxies, channel.
+echo   Press Ctrl+C to stop all bots.
 echo.
 
 node index.js

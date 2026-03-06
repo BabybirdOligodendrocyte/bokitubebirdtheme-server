@@ -1,6 +1,6 @@
 #!/bin/bash
 echo "========================================"
-echo "  CyTube Multi-Bot Launcher"
+echo "  CyTube 30-Bot Launcher v2"
 echo "========================================"
 echo
 
@@ -13,13 +13,14 @@ if ! command -v node &> /dev/null; then
 fi
 
 if [ ! -d "node_modules" ]; then
-    echo "Installing dependencies..."
+    echo "First run - installing dependencies..."
     npm install
     echo
 fi
 
-echo "Starting 20 bots..."
-echo "Press Ctrl+C to stop all bots."
+echo "Launching bots from config.json..."
+echo "  Edit config.json to change bot count, proxies, channel."
+echo "  Press Ctrl+C to stop all bots."
 echo
 
 node index.js
