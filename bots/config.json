@@ -1,0 +1,26 @@
+{
+  "channel": "AltarOfVictory",
+  "totalBots": 30,
+
+  "// PROXY GROUPS": "Each group connects through a different IP, so they each get their own rate-limit burst.",
+  "// HOW TO USE": "Add your SOCKS5 proxy addresses below. Each group launches its bots in parallel with other groups.",
+  "// NO PROXIES?": "Set totalBots to how many you want and leave groups empty - they'll all go direct (slow: ~11s each after first 4).",
+
+  "groups": [
+    { "proxy": "", "count": 10, "label": "Direct" },
+    { "proxy": "socks5://127.0.0.1:1080", "count": 10, "label": "Proxy-1" },
+    { "proxy": "socks5://127.0.0.1:1081", "count": 10, "label": "Proxy-2" }
+  ],
+
+  "// RECONNECT": "Bots auto-reconnect when kicked or disconnected. Set to false to disable.",
+  "autoReconnect": true,
+  "reconnectDelaySec": 15,
+  "maxReconnects": 0,
+
+  "// RATE LIMIT": "CyTube allows ~5 connections burst per IP, then 1 every ~10s.",
+  "burstSize": 4,
+  "staggerMs": 11000,
+
+  "// LOGGING": "Set to 'minimal' to reduce noise, 'verbose' for full chat logs, 'silent' for errors only.",
+  "logLevel": "minimal"
+}
