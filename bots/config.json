@@ -6,10 +6,12 @@
   "// HOW TO USE": "Add your SOCKS5 proxy addresses below. Each group launches its bots in parallel with other groups.",
   "// NO PROXIES?": "Set totalBots to how many you want and leave groups empty - they'll all go direct (slow: ~11s each after first 4).",
 
+  "// SETUP": "Use start-everything.bat (Windows) or start-everything.sh (Mac/Linux). It opens the SSH tunnels AND launches bots.",
+
   "groups": [
-    { "proxy": "", "count": 10, "label": "Direct" },
-    { "proxy": "socks5://127.0.0.1:1080", "count": 10, "label": "Proxy-1" },
-    { "proxy": "socks5://127.0.0.1:1081", "count": 10, "label": "Proxy-2" }
+    { "proxy": "", "count": 10, "label": "Direct (your IP)" },
+    { "proxy": "socks5://127.0.0.1:1080", "count": 10, "label": "Oracle-VPS-1" },
+    { "proxy": "socks5://127.0.0.1:1081", "count": 10, "label": "Oracle-VPS-2" }
   ],
 
   "// RECONNECT": "Bots auto-reconnect when kicked or disconnected. Set to false to disable.",
