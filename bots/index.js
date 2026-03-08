@@ -2,6 +2,8 @@
 
 const https = require('https');
 const http = require('http');
+const net = require('net');
+const { execSync, spawn } = require('child_process');
 const { io } = require('socket.io-client');
 const { SocksProxyAgent } = require('socks-proxy-agent');
 const fs = require('fs');
@@ -232,6 +234,153 @@ function startHealthMonitor(bots) {
 }
 
 // ============================================================
+//  Tunnel Health Monitor - detects zombie SSH tunnels
+// ============================================================
+
+const TUNNEL_CHECK_INTERVAL = config.tunnelCheckIntervalSec
+  ? config.tunnelCheckIntervalSec * 1000
+  : 60000; // default: check every 60 seconds
+
+const TUNNEL_CHECK_TIMEOUT = 5000; // 5s timeout for SOCKS handshake
+
+/**
+ * Tests if a SOCKS5 proxy is actually forwarding traffic.
+ * Sends a SOCKS5 handshake and expects a response — if the tunnel is
+ * zombied, the handshake will hang or be refused even though the port is open.
+ */
+function testSocksProxy(host, port) {
+  return new Promise(function(resolve) {
+    var sock = new net.Socket();
+    var resolved = false;
+
+    function done(ok) {
+      if (resolved) return;
+      resolved = true;
+      sock.destroy();
+      resolve(ok);
+    }
+
+    sock.setTimeout(TUNNEL_CHECK_TIMEOUT);
+    sock.on('timeout', function() { done(false); });
+    sock.on('error', function() { done(false); });
+
+    sock.connect(port, host, function() {
+      // Send SOCKS5 greeting: version 5, 1 auth method, no-auth
+      sock.write(Buffer.from([0x05, 0x01, 0x00]));
+    });
+
+    sock.on('data', function(data) {
+      // Valid SOCKS5 response: version 5, method accepted
+      if (data.length >= 2 && data[0] === 0x05) {
+        done(true);
+      } else {
+        done(false);
+      }
+    });
+
+    // Failsafe timeout
+    setTimeout(function() { done(false); }, TUNNEL_CHECK_TIMEOUT + 1000);
+  });
+}
+
+/**
+ * Restarts an SSH tunnel by killing the old process and spawning a new one.
+ * Only works when tunnelRestart is configured in config.json.
+ */
+function restartTunnel(tunnelConfig) {
+  var label = tunnelConfig.label;
+  var port = tunnelConfig.port;
+  console.log('[' + ts() + '] [TunnelMon] \x1b[33mRestarting tunnel for ' + label + ' (port ' + port + ')\x1b[0m');
+
+  // Kill anything listening on this port
+  try {
+    if (process.platform === 'win32') {
+      // Find PID listening on the port and kill it
+      var out = execSync('netstat -aon | findstr ":' + port + ' " | findstr "LISTENING"', { encoding: 'utf8', timeout: 5000 });
+      var lines = out.trim().split('\n');
+      lines.forEach(function(line) {
+        var parts = line.trim().split(/\s+/);
+        var pid = parts[parts.length - 1];
+        if (pid && pid !== '0') {
+          try { execSync('taskkill /PID ' + pid + ' /F', { timeout: 5000 }); } catch (e) { /* ignore */ }
+        }
+      });
+    } else {
+      execSync('lsof -ti:' + port + ' 2>/dev/null | xargs kill -9 2>/dev/null', { timeout: 5000 });
+    }
+  } catch (e) {
+    // May fail if no process was listening — that's fine
+  }
+
+  // Wait a moment for port to free up
+  setTimeout(function() {
+    var sshArgs = [
+      '-i', tunnelConfig.sshKey,
+      '-N',
+      '-D', '127.0.0.1:' + port,
+      '-o', 'StrictHostKeyChecking=no',
+      '-o', 'ServerAliveInterval=15',
+      '-o', 'ServerAliveCountMax=2',
+      '-o', 'TCPKeepAlive=yes',
+      '-o', 'ExitOnForwardFailure=yes',
+      tunnelConfig.sshUser + '@' + tunnelConfig.vpsIp
+    ];
+
+    var child = spawn('ssh', sshArgs, {
+      detached: true,
+      stdio: 'ignore'
+    });
+    child.unref();
+
+    console.log('[' + ts() + '] [TunnelMon] SSH tunnel respawned for ' + label + ' (pid ' + child.pid + ')');
+  }, 2000);
+}
+
+/**
+ * Starts periodic health checks on all proxy tunnels.
+ * If a tunnel fails the SOCKS handshake test, it's considered zombie.
+ */
+function startTunnelMonitor(groups, tunnelRestartConfigs) {
+  var failCounts = {};
+
+  setInterval(async function() {
+    for (var i = 0; i < groups.length; i++) {
+      var g = groups[i];
+      if (!g.proxy) continue; // Skip direct groups
+
+      // Parse host:port from socks5://host:port
+      var match = g.proxy.match(/socks5:\/\/([^:]+):(\d+)/);
+      if (!match) continue;
+
+      var host = match[1];
+      var port = parseInt(match[2], 10);
+      var label = g.label || 'Proxy-' + port;
+      var key = host + ':' + port;
+
+      var alive = await testSocksProxy(host, port);
+
+      if (alive) {
+        if (failCounts[key] > 0) {
+          console.log('[' + ts() + '] [TunnelMon] \x1b[32m' + label + ' tunnel recovered\x1b[0m');
+        }
+        failCounts[key] = 0;
+      } else {
+        failCounts[key] = (failCounts[key] || 0) + 1;
+        console.log('[' + ts() + '] [TunnelMon] \x1b[31m' + label + ' tunnel DEAD (fail #' + failCounts[key] + ')\x1b[0m');
+
+        // After 2 consecutive failures, attempt restart if configured
+        if (failCounts[key] >= 2 && tunnelRestartConfigs[port]) {
+          restartTunnel(tunnelRestartConfigs[port]);
+          failCounts[key] = 0; // Reset counter, give it time to come up
+        }
+      }
+    }
+  }, TUNNEL_CHECK_INTERVAL);
+
+  console.log('[' + ts() + '] [TunnelMon] Monitoring tunnels every ' + (TUNNEL_CHECK_INTERVAL / 1000) + 's');
+}
+
+// ============================================================
 //  Launch a group of bots (staggered within group)
 // ============================================================
 
@@ -340,6 +489,16 @@ async function main() {
 
   // Start health monitor
   startHealthMonitor(allBots);
+
+  // Start tunnel health monitor
+  // Build restart configs from tunnelRestart in config.json (if present)
+  var tunnelRestartConfigs = {};
+  if (config.tunnelRestart) {
+    config.tunnelRestart.forEach(function(t) {
+      tunnelRestartConfigs[t.port] = t;
+    });
+  }
+  startTunnelMonitor(GROUPS, tunnelRestartConfigs);
 
   // Graceful shutdown
   process.on('SIGINT', () => {
