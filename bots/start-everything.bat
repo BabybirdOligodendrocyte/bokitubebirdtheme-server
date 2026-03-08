@@ -88,10 +88,10 @@ for /f "tokens=5" %%a in ('netstat -aon ^| findstr ":%PORT2% " ^| findstr "LISTE
 
 echo.
 echo [Step 1/3] Opening SSH tunnel to VPS #1 (%VPS1_IP% on port %PORT1%)...
-start /b ssh -i "%SSH_KEY%" -N -D 127.0.0.1:%PORT1% -o StrictHostKeyChecking=no -o ServerAliveInterval=60 -o ServerAliveCountMax=3 %SSH_USER%@%VPS1_IP%
+start /b ssh -i "%SSH_KEY%" -N -D 127.0.0.1:%PORT1% -o StrictHostKeyChecking=no -o ServerAliveInterval=15 -o ServerAliveCountMax=2 -o TCPKeepAlive=yes -o ExitOnForwardFailure=yes %SSH_USER%@%VPS1_IP%
 
 echo [Step 2/3] Opening SSH tunnel to VPS #2 (%VPS2_IP% on port %PORT2%)...
-start /b ssh -i "%SSH_KEY%" -N -D 127.0.0.1:%PORT2% -o StrictHostKeyChecking=no -o ServerAliveInterval=60 -o ServerAliveCountMax=3 %SSH_USER%@%VPS2_IP%
+start /b ssh -i "%SSH_KEY%" -N -D 127.0.0.1:%PORT2% -o StrictHostKeyChecking=no -o ServerAliveInterval=15 -o ServerAliveCountMax=2 -o TCPKeepAlive=yes -o ExitOnForwardFailure=yes %SSH_USER%@%VPS2_IP%
 
 :: Give tunnels a moment to establish
 echo.

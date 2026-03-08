@@ -23,6 +23,16 @@
   "burstSize": 4,
   "staggerMs": 11000,
 
+  "// TUNNEL HEALTH": "Checks if SOCKS tunnels are alive. If dead for 2 checks in a row, restarts SSH.",
+  "tunnelCheckIntervalSec": 60,
+
+  "// TUNNEL RESTART": "Fill in your VPS details here so the bot can auto-restart dead tunnels.",
+  "// TUNNEL RESTART NOTE": "Remove tunnelRestart array entirely to disable auto-restart (monitor-only mode).",
+  "tunnelRestart": [
+    { "port": 1080, "vpsIp": "PASTE_YOUR_FIRST_VPS_IP_HERE", "sshKey": "PASTE_YOUR_SSH_KEY_PATH_HERE", "sshUser": "opc", "label": "Oracle-VPS-1" },
+    { "port": 1081, "vpsIp": "PASTE_YOUR_SECOND_VPS_IP_HERE", "sshKey": "PASTE_YOUR_SSH_KEY_PATH_HERE", "sshUser": "opc", "label": "Oracle-VPS-2" }
+  ],
+
   "// LOGGING": "Set to 'minimal' to reduce noise, 'verbose' for full chat logs, 'silent' for errors only.",
   "logLevel": "minimal"
 }
