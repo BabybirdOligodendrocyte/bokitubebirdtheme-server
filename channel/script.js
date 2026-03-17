@@ -7939,15 +7939,15 @@ function displaySubtitle(text, onComplete) {
         return;
     }
 
-    // Remove any existing subtitle
-    var existing = overlay.querySelector('.subtitle-msg');
+    // Remove any existing DVD subtitle (not SRT subtitles)
+    var existing = overlay.querySelector('.subtitle-msg.dvd-subtitle-msg');
     if (existing) {
         existing.remove();
     }
 
     // Create subtitle element
     var el = document.createElement('div');
-    el.className = 'subtitle-msg';
+    el.className = 'subtitle-msg dvd-subtitle-msg';
     el.textContent = text;
     overlay.appendChild(el);
 
@@ -8196,6 +8196,7 @@ var srtPollTimer = null;         // Polling interval ID
 var currentSrtCueIndex = -1;     // Index of currently displayed cue
 var srtEnabled = true;           // Global toggle for SRT display
 var srtChunkBuffer = {};         // For reassembling chunked Pusher broadcasts
+var srtHideFadeTimer = null;     // Track pending hide-fade timer to prevent race condition
 
 // ===== SRT PARSER =====
 
@@ -8302,37 +8303,12 @@ function stopSrtSync() {
     hideSrtSubtitle();
 }
 
-function pollSrtTime() {
-    if (!activeSrtMediaKey || !srtSubtitles[activeSrtMediaKey]) {
-        stopSrtSync();
-        return;
-    }
-
-    // Get current playback time from Cytube's PLAYER
-    if (typeof PLAYER === 'undefined' || !PLAYER) return;
-
-    var currentTime = null;
-
-    // Cytube PLAYER.getTime() uses callback in some versions, returns directly in others
-    if (typeof PLAYER.getTime === 'function') {
-        try {
-            var result = PLAYER.getTime(function(t) {
-                currentTime = t;
-            });
-            // Some implementations return the value directly
-            if (typeof result === 'number') {
-                currentTime = result;
-            }
-        } catch (e) {
-            return;
-        }
-    } else if (PLAYER.currentTime !== undefined) {
-        currentTime = PLAYER.currentTime;
-    }
-
+// Core logic for matching and displaying the correct cue at a given time
+function updateSrtCueForTime(currentTime) {
     if (currentTime === null || typeof currentTime !== 'number') return;
 
     var cues = srtSubtitles[activeSrtMediaKey];
+    if (!cues) return;
     var foundIndex = -1;
 
     // Binary search for active cue
@@ -8359,14 +8335,50 @@ function pollSrtTime() {
     }
 }
 
+function pollSrtTime() {
+    if (!activeSrtMediaKey || !srtSubtitles[activeSrtMediaKey]) {
+        stopSrtSync();
+        return;
+    }
+
+    // Get current playback time from Cytube's PLAYER
+    if (typeof PLAYER === 'undefined' || !PLAYER) return;
+
+    // Cytube PLAYER.getTime() uses callback in some versions, returns directly in others
+    if (typeof PLAYER.getTime === 'function') {
+        try {
+            var result = PLAYER.getTime(function(t) {
+                // Async callback path — process the time when it arrives
+                if (typeof t === 'number') {
+                    updateSrtCueForTime(t);
+                }
+            });
+            // Some implementations return the value directly (sync path)
+            if (typeof result === 'number') {
+                updateSrtCueForTime(result);
+            }
+        } catch (e) {
+            return;
+        }
+    } else if (PLAYER.currentTime !== undefined) {
+        updateSrtCueForTime(PLAYER.currentTime);
+    }
+}
+
 function displaySrtSubtitle(text) {
     var overlay = createSubtitleOverlay();
     if (!overlay) return;
 
+    // Cancel any pending hide-fade timer to prevent it from removing this element
+    if (srtHideFadeTimer) {
+        clearTimeout(srtHideFadeTimer);
+        srtHideFadeTimer = null;
+    }
+
     var el = overlay.querySelector('.srt-subtitle-msg');
     if (!el) {
         el = document.createElement('div');
-        el.className = 'subtitle-msg srt-subtitle-msg visible';
+        el.className = 'srt-subtitle-msg visible';
         overlay.appendChild(el);
     }
 
@@ -8381,11 +8393,18 @@ function hideSrtSubtitle() {
     var overlay = document.getElementById('subtitle-overlay');
     if (!overlay) return;
 
+    // Cancel any existing fade timer
+    if (srtHideFadeTimer) {
+        clearTimeout(srtHideFadeTimer);
+        srtHideFadeTimer = null;
+    }
+
     var el = overlay.querySelector('.srt-subtitle-msg');
     if (el) {
         el.classList.remove('visible');
         el.classList.add('fading');
-        setTimeout(function() {
+        srtHideFadeTimer = setTimeout(function() {
+            srtHideFadeTimer = null;
             if (el.parentNode) el.remove();
         }, 300);
     }
@@ -8423,9 +8442,14 @@ function getCurrentMediaKey() {
 }
 
 function onMediaChange() {
-    stopSrtSync();
-
     var mediaKey = getCurrentMediaKey();
+
+    // Skip if the media key hasn't actually changed (spurious event from seek/quality change)
+    if (mediaKey && mediaKey === activeSrtMediaKey && srtPollTimer) {
+        return;
+    }
+
+    stopSrtSync();
     activeSrtMediaKey = mediaKey;
 
     // Update the video button state
@@ -9140,9 +9164,36 @@ function initSrtSync() {
         .srt-status-error { background: rgba(200,100,100,0.15); color: #f88; }
         .srt-status-info { background: rgba(100,100,200,0.15); color: #88f; }
 
-        /* SRT subtitle message - inherits from .subtitle-msg but stays persistent */
+        /* SRT subtitle message - independent from DVD .subtitle-msg to avoid collision */
         .srt-subtitle-msg {
-            transition: opacity 200ms ease-in-out !important;
+            font-family: 'Arial', 'Helvetica Neue', Helvetica, sans-serif;
+            font-weight: bold;
+            font-size: clamp(18px, 4.5vh, 42px);
+            color: #ffffff;
+            text-align: center;
+            max-width: 80%;
+            line-height: 1.4;
+            padding: 0.2em 0.5em;
+            text-shadow:
+                -2px -2px 0 #000,
+                2px -2px 0 #000,
+                -2px 2px 0 #000,
+                2px 2px 0 #000,
+                -2px 0 0 #000,
+                2px 0 0 #000,
+                0 -2px 0 #000,
+                0 2px 0 #000,
+                0 0 8px rgba(0, 0, 0, 0.8);
+            opacity: 0;
+            transition: opacity 200ms ease-in-out;
+        }
+
+        .srt-subtitle-msg.visible {
+            opacity: 1;
+        }
+
+        .srt-subtitle-msg.fading {
+            opacity: 0;
         }
 
         /* Mobile adjustments */
