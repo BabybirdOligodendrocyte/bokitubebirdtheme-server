@@ -5937,6 +5937,43 @@ var playlistNamesLoaded = false;
             background: #555;
         }
         
+        /* Server-side sync checkbox */
+        #rename-server-sync {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 12px;
+            padding: 10px;
+            background: #252530;
+            border-radius: 6px;
+            cursor: pointer;
+        }
+        #rename-server-sync:hover {
+            background: #2a2a38;
+        }
+        #rename-server-sync input[type="checkbox"] {
+            width: 16px;
+            height: 16px;
+            margin: 0;
+            cursor: pointer;
+            accent-color: #4a7;
+        }
+        #rename-server-sync label {
+            display: inline !important;
+            color: #ccc !important;
+            font-size: 13px !important;
+            text-transform: none !important;
+            letter-spacing: 0 !important;
+            margin: 0 !important;
+            cursor: pointer;
+        }
+        #rename-server-sync .rename-sync-hint {
+            display: block;
+            color: #888;
+            font-size: 11px;
+            margin-top: 2px;
+        }
+
         /* Status message */
         #rename-status {
             margin-top: 10px;
@@ -6259,6 +6296,7 @@ function addAllRenameButtons() {
 // Current item being renamed
 var currentRenameItem = null;
 var currentRenameKey = null;
+var currentRenameEntry = null; // DOM element reference for server-side sync
 
 // Create rename popup
 function createRenamePopup() {
@@ -6282,6 +6320,12 @@ function createRenamePopup() {
             '<div id="rename-original-title"></div>' +
             '<label>Custom Name</label>' +
             '<input type="text" id="rename-input" placeholder="Enter custom name..." maxlength="200">' +
+            '<div id="rename-server-sync">' +
+                '<input type="checkbox" id="rename-sync-checkbox">' +
+                '<label for="rename-sync-checkbox">Update for all viewers' +
+                    '<span class="rename-sync-hint">Changes the title on the server so everyone sees it (raw files only)</span>' +
+                '</label>' +
+            '</div>' +
             '<div id="rename-popup-actions">' +
                 '<button id="rename-save-btn" onclick="saveRename()">💾 Save</button>' +
                 '<button id="rename-reset-btn" onclick="resetRename()">↺ Reset</button>' +
@@ -6359,24 +6403,50 @@ function openRenamePopup(entryElement) {
         uid: uid,
         url: mediaUrl
     };
-    
+    currentRenameEntry = entryElement;
+
     // Store original title
     if (titleEl && !titleEl.getAttribute('data-original-title')) {
         titleEl.setAttribute('data-original-title', title);
     }
-    
+
     var originalTitle = titleEl ? (titleEl.getAttribute('data-original-title') || title) : 'Unknown';
     var currentCustom = getCustomName(currentRenameKey) || '';
-    
+
     document.getElementById('rename-original-title').textContent = originalTitle;
     document.getElementById('rename-input').value = currentCustom;
     document.getElementById('rename-status').className = '';
     document.getElementById('rename-status').style.display = 'none';
-    
+
+    // Detect if this is a raw file (fi type) - server-side rename only works for raw files
+    var isRawFile = false;
+    try {
+        var $entry = $(entryElement);
+        var mediaData = $entry.data('media');
+        if (mediaData && mediaData.type === 'fi') {
+            isRawFile = true;
+        }
+    } catch (e) {
+        console.log('Could not detect media type:', e);
+    }
+
+    // Show/hide and configure server sync checkbox
+    var syncContainer = document.getElementById('rename-server-sync');
+    var syncCheckbox = document.getElementById('rename-sync-checkbox');
+    if (syncContainer && syncCheckbox) {
+        if (isRawFile) {
+            syncContainer.style.display = 'flex';
+            syncCheckbox.checked = true; // Default to checked for raw files
+        } else {
+            syncContainer.style.display = 'none';
+            syncCheckbox.checked = false;
+        }
+    }
+
     document.getElementById('rename-popup-overlay').classList.add('visible');
     document.getElementById('rename-input').focus();
     document.getElementById('rename-input').select();
-    console.log('Popup opened');
+    console.log('Popup opened, isRawFile:', isRawFile);
 }
 
 // Close rename popup
@@ -6387,35 +6457,125 @@ function closeRenamePopup() {
     }
     currentRenameItem = null;
     currentRenameKey = null;
+    currentRenameEntry = null;
+}
+
+// Server-side rename: delete item and re-queue with new title at same position
+function serverSideRename(entryElement, newTitle) {
+    if (!entryElement || !newTitle) return;
+
+    try {
+        var $entry = $(entryElement);
+        var uid = $entry.data('uid') || getEntryUid(entryElement);
+        var mediaData = $entry.data('media');
+        var isTemp = $entry.data('temp');
+
+        if (!uid || !mediaData) {
+            console.log('[Rename] Missing uid or media data for server rename');
+            return;
+        }
+
+        // Only works for raw files (fi) and custom embeds (cu)
+        if (mediaData.type !== 'fi' && mediaData.type !== 'cu') {
+            console.log('[Rename] Server rename only supported for raw files (fi) and custom embeds (cu), got:', mediaData.type);
+            return;
+        }
+
+        // Find the previous item to know where to re-insert
+        var $prev = $entry.prev('.queue_entry');
+        var afterUid = $prev.length ? ($prev.data('uid') || getEntryUid($prev[0])) : 'prepend';
+
+        console.log('[Rename] Server-side rename:', {
+            uid: uid,
+            type: mediaData.type,
+            id: mediaData.id,
+            newTitle: newTitle,
+            afterUid: afterUid,
+            isTemp: isTemp
+        });
+
+        // Step 1: Delete the current item
+        socket.emit('delete', uid);
+
+        // Step 2: Re-queue with the new title at the same position
+        // Small delay to let the delete process
+        setTimeout(function() {
+            var queueData = {
+                id: mediaData.id,
+                type: mediaData.type,
+                pos: afterUid === 'prepend' ? 'next' : 'end',
+                title: newTitle,
+                temp: !!isTemp
+            };
+
+            // If inserting after a specific item, use 'next' relative to that item
+            // CyTube's 'next' means after the current playing item
+            // For precise positioning, we jump to the item before and queue next
+            if (afterUid !== 'prepend') {
+                // Queue at end, then move to correct position
+                queueData.pos = 'end';
+            }
+
+            socket.emit('queue', queueData);
+            console.log('[Rename] Re-queued with title:', newTitle);
+
+            // If we need to move it to the right position (not at end)
+            if (afterUid !== 'prepend') {
+                // Wait for the queue event to process, then move the new item
+                setTimeout(function() {
+                    // Find the newly added item (last in queue since we added at end)
+                    var $lastEntry = $('#queue .queue_entry').last();
+                    var newUid = $lastEntry.data('uid');
+                    if (newUid) {
+                        socket.emit('moveMedia', {
+                            from: newUid,
+                            after: afterUid
+                        });
+                        console.log('[Rename] Moved new item after:', afterUid);
+                    }
+                }, 500);
+            }
+        }, 300);
+    } catch (err) {
+        console.error('[Rename] Server-side rename error:', err);
+    }
 }
 
 // Save the rename
 function saveRename() {
     if (!currentRenameKey) return;
-    
+
     var input = document.getElementById('rename-input');
     var status = document.getElementById('rename-status');
     var saveBtn = document.getElementById('rename-save-btn');
     var newName = input.value.trim();
-    
+    var syncCheckbox = document.getElementById('rename-sync-checkbox');
+    var doServerSync = syncCheckbox && syncCheckbox.checked && newName;
+
     // Show loading
     status.textContent = 'Saving...';
     status.className = 'loading';
     saveBtn.disabled = true;
-    
+
     // Update local cache
     setCustomName(currentRenameKey, newName);
-    
+
+    // Server-side rename if checkbox is checked
+    if (doServerSync && currentRenameEntry) {
+        serverSideRename(currentRenameEntry, newName);
+    }
+
     // Save to JSONBin
     savePlaylistNames()
         .then(function() {
-            status.textContent = '✓ Saved successfully!';
+            var msg = doServerSync ? '✓ Saved + updated for all viewers!' : '✓ Saved successfully!';
+            status.textContent = msg;
             status.className = 'success';
             saveBtn.disabled = false;
-            
+
             // Apply the change to the UI
             applyAllCustomNames();
-            
+
             // Close popup after short delay
             setTimeout(function() {
                 closeRenamePopup();
