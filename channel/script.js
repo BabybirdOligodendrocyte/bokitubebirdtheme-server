@@ -8108,7 +8108,12 @@ function displaySubtitle(text, onComplete) {
     // Create subtitle element
     var el = document.createElement('div');
     el.className = 'subtitle-msg dvd-subtitle-msg';
-    el.textContent = text;
+    var formattedText = formatSubtitleText(text);
+    if (!formattedText) {
+        if (onComplete) onComplete();
+        return;
+    }
+    el.innerHTML = formattedText;
     overlay.appendChild(el);
 
     // Calculate display duration
@@ -8364,8 +8369,9 @@ function parseSRT(srtText) {
     if (!srtText || typeof srtText !== 'string') return [];
 
     var cues = [];
-    // Normalize line endings
-    var text = srtText.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+    // Strip BOM and normalize line endings
+    var text = srtText.replace(/^\uFEFF/, '');
+    text = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
     // Split into blocks by double newlines
     var blocks = text.split(/\n\n+/);
 
@@ -8525,6 +8531,214 @@ function pollSrtTime() {
     }
 }
 
+// ===== SUBTITLE FORMATTING ENGINE =====
+// Processes SRT/ASS/VTT/MicroDVD formatting tags found in subtitle text.
+// Renders: <i>, <b>, <u>, <s>, <font color>, <br>, {\i1}, {\b1}, {\u1}, {\s1},
+//          {\c&H...&}, \N, \n, \h, HTML entities, ruby text, MicroDVD {y:i} etc.
+// Strips:  All other ASS overrides (positioning, karaoke, clipping, drawing, etc.),
+//          VTT artifacts, zero-width chars, BOM, fully transparent lines.
+
+function formatSubtitleText(text) {
+    if (!text) return '';
+
+    // --- Phase 0: Strip BOM and zero-width characters ---
+    text = text.replace(/^\uFEFF/, '');
+    text = text.replace(/[\u200B\u200C\u200D\u200F\uFEFF]/g, '');
+
+    // --- Phase 1: Detect and remove entire-line artifacts ---
+    // Strip lines that are ASS drawing mode (not real text)
+    if (/\{[^}]*\\p[1-9]/.test(text)) return '';
+    // Strip fully transparent lines (spacer/timing hacks)
+    if (/\{[^}]*\\alpha\s*&\s*H\s*FF\s*&[^}]*\}/.test(text) ||
+        /\{[^}]*\\1a\s*&\s*H\s*FF\s*&[^}]*\}/.test(text)) return '';
+
+    // --- Phase 2: Process ASS override blocks {\...} ---
+    // Extract renderable ASS tags before stripping override blocks
+
+    // Track formatting state from ASS overrides
+    var assItalic = false, assBold = false, assUnderline = false, assStrike = false;
+    var assColor = null; // Will hold CSS rgb color converted from BGR
+
+    // Process each override block, extract renderable info, then remove the block
+    text = text.replace(/\{([^}]*)\}/g, function(match, inner) {
+        // Check if this is an ASS override block (contains backslash codes)
+        // Also handle double-backslash variants from bad conversions: {\\an8}
+        var normalized = inner.replace(/\\\\/g, '\\');
+
+        if (normalized.indexOf('\\') === -1) {
+            // No backslash — could be MicroDVD tag or SSA comment
+            // MicroDVD: {y:i}, {y:b}, {y:u}, {y:s}, {f:Font}, {s:20}, {c:$BBGGRR}, {P:x,y}
+            var mdMatch;
+            if ((mdMatch = inner.match(/^y:([bius])$/i))) {
+                var flag = mdMatch[1].toLowerCase();
+                if (flag === 'i') assItalic = true;
+                if (flag === 'b') assBold = true;
+                if (flag === 'u') assUnderline = true;
+                if (flag === 's') assStrike = true;
+            }
+            // Strip all other MicroDVD tags and SSA comments
+            return '';
+        }
+
+        // Parse renderable ASS override codes from the block
+        // Italic
+        if (/\\i1/.test(normalized)) assItalic = true;
+        if (/\\i0/.test(normalized)) assItalic = false;
+        // Bold ({\b1} or {\b700}+)
+        var boldMatch = normalized.match(/\\b(\d+)/);
+        if (boldMatch) {
+            var bVal = parseInt(boldMatch[1], 10);
+            assBold = (bVal === 1 || bVal >= 700);
+            if (bVal === 0) assBold = false;
+        }
+        // Underline
+        if (/\\u1/.test(normalized)) assUnderline = true;
+        if (/\\u0/.test(normalized)) assUnderline = false;
+        // Strikeout
+        if (/\\s1/.test(normalized)) assStrike = true;
+        if (/\\s0/.test(normalized)) assStrike = false;
+        // Primary color {\c&HBBGGRR&} or {\1c&HBBGGRR&}
+        var colorMatch = normalized.match(/\\1?c\s*&\s*H\s*([0-9A-Fa-f]{2})([0-9A-Fa-f]{2})([0-9A-Fa-f]{2})\s*&?/);
+        if (colorMatch) {
+            // BGR to RGB conversion
+            var r = parseInt(colorMatch[3], 16);
+            var g = parseInt(colorMatch[2], 16);
+            var b = parseInt(colorMatch[1], 16);
+            assColor = 'rgb(' + r + ',' + g + ',' + b + ')';
+        }
+        // Reset {\r} clears all overrides
+        if (/\\r/.test(normalized)) {
+            assItalic = false; assBold = false; assUnderline = false; assStrike = false;
+            assColor = null;
+        }
+
+        // Remove the entire override block from output
+        return '';
+    });
+
+    // --- Phase 3: Convert ASS line breaks and hard spaces ---
+    // \N = hard line break, \n = soft line break, \h = non-breaking space
+    // Must be done BEFORE HTML escaping since these are literal backslash sequences
+    text = text.replace(/\\N/g, '\n');
+    text = text.replace(/\\n/g, '\n');
+    text = text.replace(/\\h/g, '\u00A0');
+
+    // --- Phase 4: Escape HTML for safety ---
+    // But first, extract and preserve valid HTML formatting tags we want to render
+    var preservedTags = [];
+    var tagPlaceholder = '\x00TAG';
+
+    // Extract tags we want to keep: <i>, </i>, <b>, </b>, <u>, </u>, <s>, </s>,
+    // <font color="...">, </font>, <br>, <br/>, <br />,
+    // <ruby>, </ruby>, <rt>, </rt>
+    text = text.replace(/<(\/?\s*(?:i|b|u|s|ruby|rt)\s*\/?\s*)>/gi, function(match) {
+        preservedTags.push(match);
+        return tagPlaceholder + (preservedTags.length - 1) + '\x00';
+    });
+    text = text.replace(/<font\s+color\s*=\s*"([^"]*?)"\s*>/gi, function(match) {
+        preservedTags.push(match);
+        return tagPlaceholder + (preservedTags.length - 1) + '\x00';
+    });
+    text = text.replace(/<font\s+color\s*=\s*'([^']*?)'\s*>/gi, function(match) {
+        preservedTags.push(match);
+        return tagPlaceholder + (preservedTags.length - 1) + '\x00';
+    });
+    text = text.replace(/<\/\s*font\s*>/gi, function(match) {
+        preservedTags.push(match);
+        return tagPlaceholder + (preservedTags.length - 1) + '\x00';
+    });
+    text = text.replace(/<br\s*\/?>/gi, function() {
+        preservedTags.push('<br>');
+        return tagPlaceholder + (preservedTags.length - 1) + '\x00';
+    });
+
+    // Strip VTT voice tags but keep inner text: <v Speaker Name>text</v>
+    text = text.replace(/<v\s+[^>]*>/gi, '');
+    text = text.replace(/<\/v>/gi, '');
+    // Strip VTT lang tags but keep inner text
+    text = text.replace(/<lang\s+[^>]*>/gi, '');
+    text = text.replace(/<\/lang>/gi, '');
+    // Strip VTT class tags but keep inner text: <c.yellow>text</c>
+    text = text.replace(/<c\.[a-zA-Z0-9._-]+>/gi, '');
+    text = text.replace(/<\/c>/gi, '');
+    // Strip VTT inline timestamps: <00:00:02.500>
+    text = text.replace(/<\d{2}:\d{2}[:.]\d{2,3}>/g, '');
+    text = text.replace(/<\d{2}:\d{2}:\d{2}[:.]\d{2,3}>/g, '');
+    // Strip any remaining unrecognized HTML tags (e.g. <span>, <div>, etc.)
+    text = text.replace(/<[^>]+>/g, '');
+
+    // Now escape HTML entities on the remaining text
+    text = text.replace(/&/g, '&amp;');
+    text = text.replace(/</g, '&lt;');
+    text = text.replace(/>/g, '&gt;');
+
+    // --- Phase 5: Decode HTML entities that were in the original subtitle text ---
+    text = text.replace(/&amp;nbsp;/g, '\u00A0');
+    text = text.replace(/&amp;amp;/g, '&amp;');
+    text = text.replace(/&amp;lt;/g, '&lt;');
+    text = text.replace(/&amp;gt;/g, '&gt;');
+    text = text.replace(/&amp;quot;/g, '&quot;');
+    text = text.replace(/&amp;#(\d+);/g, function(m, code) {
+        var n = parseInt(code, 10);
+        if (n > 0 && n < 65536) return String.fromCharCode(n);
+        return m;
+    });
+    text = text.replace(/&amp;#x([0-9A-Fa-f]+);/g, function(m, hex) {
+        var n = parseInt(hex, 16);
+        if (n > 0 && n < 65536) return String.fromCharCode(n);
+        return m;
+    });
+
+    // --- Phase 6: Restore preserved HTML tags ---
+    text = text.replace(/\x00TAG(\d+)\x00/g, function(m, idx) {
+        return preservedTags[parseInt(idx, 10)] || '';
+    });
+
+    // --- Phase 7: Convert newlines to <br> ---
+    text = text.replace(/\n/g, '<br>');
+
+    // --- Phase 8: Wrap with ASS formatting state ---
+    // Build opening/closing tags from accumulated ASS override state
+    var openTags = '';
+    var closeTags = '';
+    if (assColor) {
+        openTags += '<span style="color:' + assColor + '">';
+        closeTags = '</span>' + closeTags;
+    }
+    if (assBold) {
+        openTags += '<b>';
+        closeTags = '</b>' + closeTags;
+    }
+    if (assItalic) {
+        openTags += '<i>';
+        closeTags = '</i>' + closeTags;
+    }
+    if (assUnderline) {
+        openTags += '<u>';
+        closeTags = '</u>' + closeTags;
+    }
+    if (assStrike) {
+        openTags += '<s>';
+        closeTags = '</s>' + closeTags;
+    }
+
+    if (openTags) {
+        text = openTags + text + closeTags;
+    }
+
+    // --- Phase 9: Sanitize — only allow safe tags ---
+    // Final pass: strip anything that's not our allowed tags
+    // Allowed: <i>, </i>, <b>, </b>, <u>, </u>, <s>, </s>, <br>, <br/>,
+    //          <span style="color:...">, </span>, <font color="...">, </font>,
+    //          <ruby>, </ruby>, <rt>, </rt>
+    text = text.replace(/<(?!\/?(?:i|b|u|s|br|ruby|rt)\s*\/?\s*>)(?!span\s+style="color:rgb\(\d+,\d+,\d+\)">)(?!\/span>)(?!font\s+color\s*=\s*"[^"]*">)(?!font\s+color\s*=\s*'[^']*'>)(?!\/\s*font\s*>)([^>]*>)/gi, function(match) {
+        // Escape any tag that didn't match our allowlist
+        return '&lt;' + match.slice(1, -1) + '&gt;';
+    });
+
+    return text.trim();
+}
+
 function displaySrtSubtitle(text) {
     var overlay = createSubtitleOverlay();
     if (!overlay) return;
@@ -8542,9 +8756,14 @@ function displaySrtSubtitle(text) {
         overlay.appendChild(el);
     }
 
-    // Convert newlines to <br> for multi-line subtitles, escape HTML first
-    var safeText = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-    el.innerHTML = safeText.replace(/\n/g, '<br>');
+    // Format subtitle text: render formatting tags, strip noise
+    var formattedText = formatSubtitleText(text);
+    if (!formattedText) {
+        // Empty after stripping (drawing line, invisible, etc.) — hide
+        hideSrtSubtitle();
+        return;
+    }
+    el.innerHTML = formattedText;
     el.classList.add('visible');
     el.classList.remove('fading');
 }
