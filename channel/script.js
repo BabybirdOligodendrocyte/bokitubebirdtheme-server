@@ -10753,10 +10753,16 @@ function connectWebSocket() {
 
             case 'draw-stroke':
                 handleReceivedStroke(msg);
+                showDrawingActiveLabel(msg.username);
                 break;
 
             case 'draw-clear':
                 handleReceivedClear(msg);
+                removeDrawingActiveLabel(msg.username);
+                break;
+
+            case 'draw-toggle':
+                handleDrawingToggle(msg);
                 break;
 
             case 'srt-subtitle':
@@ -17547,6 +17553,10 @@ var drawingState = {
     brushColor: '#ffffff'       // Current color
 };
 
+// Moderator drawing controls
+var drawingDisabledByMod = false;       // Whether a mod has disabled drawing for the room
+var drawingActiveUsers = {};            // Track who is currently drawing { username: timestamp }
+
 // Drawing settings (saved to localStorage)
 var DRAWING_SETTINGS_KEY = 'drawingToolSettings';
 var drawingSettings = {
@@ -17790,6 +17800,85 @@ function injectDrawingCSS() {
             pointer-events: auto;
             cursor: crosshair;
         }
+        /* Mod controls section */
+        .drawing-mod-section {
+            background: #1a1a2e;
+            border: 1px solid #444;
+            border-radius: 6px;
+            padding: 12px;
+            margin-bottom: 16px;
+        }
+        .drawing-mod-section h4 {
+            color: #ff9800;
+            font-size: 12px;
+            margin: 0 0 8px 0;
+            text-transform: uppercase;
+        }
+        .drawing-mod-toggle {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .drawing-mod-toggle label {
+            color: #ccc;
+            font-size: 13px;
+            cursor: pointer;
+        }
+        .drawing-toggle-switch {
+            position: relative;
+            width: 44px;
+            height: 24px;
+            cursor: pointer;
+        }
+        .drawing-toggle-switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+        .drawing-toggle-slider {
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: #555;
+            border-radius: 24px;
+            transition: background 0.3s;
+        }
+        .drawing-toggle-slider:before {
+            content: '';
+            position: absolute;
+            width: 18px;
+            height: 18px;
+            left: 3px;
+            bottom: 3px;
+            background: #fff;
+            border-radius: 50%;
+            transition: transform 0.3s;
+        }
+        .drawing-toggle-switch input:checked + .drawing-toggle-slider {
+            background: #4caf50;
+        }
+        .drawing-toggle-switch input:checked + .drawing-toggle-slider:before {
+            transform: translateX(20px);
+        }
+        /* Drawing disabled state */
+        #draw-btn.drawing-disabled {
+            opacity: 0.4;
+            position: relative;
+        }
+        /* Currently drawing label */
+        #drawing-active-label {
+            position: absolute;
+            bottom: 8px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.7);
+            color: #fff;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            z-index: 1002;
+            pointer-events: none;
+            white-space: nowrap;
+        }
     `;
     document.head.appendChild(css);
 }
@@ -17811,12 +17900,40 @@ function createDrawingSettingsPopup() {
         return '<button class="drawing-color-btn' + isActive + '" data-color="' + color + '" style="background:' + color + '"></button>';
     }).join('');
 
+    // Build mod controls section (only visible to rank 2+)
+    var modSection = '';
+    if (typeof CLIENT !== 'undefined' && CLIENT.rank >= 2) {
+        var isEnabled = !drawingDisabledByMod;
+        modSection =
+            '<div class="drawing-mod-section">' +
+                '<h4>Mod Controls</h4>' +
+                '<div class="drawing-mod-toggle">' +
+                    '<label for="drawing-enabled-toggle">Drawing for room</label>' +
+                    '<label class="drawing-toggle-switch">' +
+                        '<input type="checkbox" id="drawing-enabled-toggle"' + (isEnabled ? ' checked' : '') + '>' +
+                        '<span class="drawing-toggle-slider"></span>' +
+                    '</label>' +
+                '</div>' +
+            '</div>';
+    }
+
+    // Show disabled notice for non-mods when drawing is off
+    var disabledNotice = '';
+    if (drawingDisabledByMod && (typeof CLIENT === 'undefined' || CLIENT.rank < 2)) {
+        disabledNotice =
+            '<div class="drawing-instructions" style="border-color:#ff5252;margin-bottom:12px">' +
+                '<p style="color:#ff5252">Drawing has been disabled by a moderator.</p>' +
+            '</div>';
+    }
+
     popup.innerHTML =
         '<div class="popup-header" id="drawing-popup-header">' +
             '<span>🖌️ Drawing Settings</span>' +
             '<button class="popup-close" onclick="closeDrawingSettingsPopup()">×</button>' +
         '</div>' +
         '<div class="popup-content">' +
+            modSection +
+            disabledNotice +
             '<div class="drawing-section">' +
                 '<h4>Brush Size</h4>' +
                 '<div class="drawing-brush-sizes">' +
@@ -17860,6 +17977,18 @@ function createDrawingSettingsPopup() {
     popup.querySelectorAll('.drawing-color-btn').forEach(function(btn) {
         btn.onclick = function() { selectDrawingColor(btn.dataset.color); };
     });
+
+    // Mod toggle listener
+    var modToggle = document.getElementById('drawing-enabled-toggle');
+    if (modToggle) {
+        modToggle.onchange = function() {
+            var enabled = modToggle.checked;
+            drawingDisabledByMod = !enabled;
+            broadcastDrawingToggle(!enabled);
+            updateDrawButtonState();
+            console.log('[Drawing] Mod toggled drawing:', enabled ? 'ENABLED' : 'DISABLED');
+        };
+    }
 
     updateDrawingPreview();
 }
@@ -18101,6 +18230,9 @@ function clearDrawingSession() {
     drawingState.isDrawing = false;
     drawingState.currentStroke = [];
 
+    // Remove self from active drawers label
+    removeDrawingActiveLabel(getMyUsername());
+
     console.log('[Drawing] Session cleared:', drawingState.sessionId);
 }
 
@@ -18227,9 +18359,15 @@ function onDrawingKeyDown(e) {
         // Prevent default Alt behavior (menu focus in some browsers)
         e.preventDefault();
 
+        // Block drawing if disabled by mod (mods can still draw)
+        if (!isDrawingAllowed()) return;
+
         if (!drawingState.keysHeld) {
             drawingState.keysHeld = true;
             showDrawingOverlay();
+
+            // Show self as active drawer
+            showDrawingActiveLabel(getMyUsername());
 
             // Cancel any pending clear timer (user can continue drawing)
             cancelClearTimer();
@@ -18343,6 +18481,89 @@ function handleReceivedClear(data) {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
     }
     console.log('[Drawing] Received clear from', data.username);
+}
+
+// ========== MODERATOR DRAWING CONTROLS ==========
+
+// Broadcast drawing enabled/disabled state to all users
+function broadcastDrawingToggle(disabled) {
+    if (!syncEnabled) return;
+    wsSend('draw-toggle', {
+        username: getMyUsername(),
+        disabled: disabled
+    });
+}
+
+// Handle received drawing toggle from a moderator
+function handleDrawingToggle(data) {
+    drawingDisabledByMod = data.disabled;
+    updateDrawButtonState();
+
+    // If drawing was just disabled and we have an active session, clear it
+    if (drawingDisabledByMod && drawingState.sessionActive) {
+        var isMod = (typeof CLIENT !== 'undefined' && CLIENT.rank >= 2);
+        if (!isMod) {
+            clearDrawingSession();
+        }
+    }
+
+    console.log('[Drawing] Mod', data.username, data.disabled ? 'DISABLED' : 'ENABLED', 'drawing');
+}
+
+// Update the draw button appearance based on disabled state
+function updateDrawButtonState() {
+    var btn = document.getElementById('draw-btn');
+    if (!btn) return;
+
+    if (drawingDisabledByMod) {
+        btn.classList.add('drawing-disabled');
+        btn.title = 'Drawing disabled by moderator';
+    } else {
+        btn.classList.remove('drawing-disabled');
+        btn.title = 'Draw on Video';
+    }
+}
+
+// Check if drawing is allowed for the current user
+function isDrawingAllowed() {
+    if (!drawingDisabledByMod) return true;
+    // Mods can still draw when disabled
+    if (typeof CLIENT !== 'undefined' && CLIENT.rank >= 2) return true;
+    return false;
+}
+
+// Show "Currently drawing: username" label on video
+function showDrawingActiveLabel(username) {
+    drawingActiveUsers[username] = Date.now();
+    updateDrawingActiveLabel();
+}
+
+// Remove a user from active drawing display
+function removeDrawingActiveLabel(username) {
+    delete drawingActiveUsers[username];
+    updateDrawingActiveLabel();
+}
+
+// Update the label element to show all active drawers
+function updateDrawingActiveLabel() {
+    var videoContainer = document.getElementById('videowrap');
+    if (!videoContainer) return;
+
+    var label = document.getElementById('drawing-active-label');
+    var names = Object.keys(drawingActiveUsers);
+
+    if (names.length === 0) {
+        if (label) label.remove();
+        return;
+    }
+
+    if (!label) {
+        label = document.createElement('div');
+        label.id = 'drawing-active-label';
+        videoContainer.appendChild(label);
+    }
+
+    label.textContent = 'Drawing: ' + names.join(', ');
 }
 
 // Check if drawing sync is ready (listeners are centralized in connectWebSocket)
