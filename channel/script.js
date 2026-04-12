@@ -18835,6 +18835,460 @@ $(document).ready(function() {
     setTimeout(initDrawingSystem, 2000);
 });
 
+/* ========== YOUTUBE CHAT OVERLAY ========== */
+/* Displays YouTube live chat / chat replay as NicoNico-style scrolling messages.
+   Uses a Cloudflare Worker proxy to fetch chat via YouTube's innertube API.
+   Toggle via the overflow menu (... button).
+   Configure: var YOUTUBE_CHAT_WORKER = 'https://your-worker.workers.dev'; in External JS */
+
+(function initYouTubeChatOverlay() {
+    // --- Configuration ---
+    var YTC_POLL_INTERVAL_FALLBACK = 5000;  // Fallback if YouTube doesn't specify
+    var YTC_REPLAY_POLL_INTERVAL = 1000;    // Poll replay chat every 1s for smooth sync
+    var YTC_REPLAY_WINDOW_MS = 3000;        // Show messages within this window of current time
+    var YTC_MAX_BATCH = 30;                 // Max messages to show per poll (prevent flood)
+    var YTC_STORAGE_KEY = 'ytChatOverlayEnabled';
+
+    // --- State ---
+    var ytcEnabled = false;
+    var ytcCurrentVideoId = null;
+    var ytcIsLive = false;
+    var ytcContinuation = null;
+    var ytcPollTimer = null;
+    var ytcReplayTimer = null;
+    var ytcSeenIds = {};           // Dedup: timestampUsec -> true
+    var ytcSeenCount = 0;
+    var ytcLastReplayOffsetMs = 0;
+    var ytcOverflowItemEl = null;  // Reference to overflow menu item for state updates
+    var ytcCheckInProgress = false;
+    var ytcHasChat = false;        // Whether current video has chat available
+
+    // Load saved preference
+    try {
+        ytcEnabled = localStorage.getItem(YTC_STORAGE_KEY) === 'true';
+    } catch (e) {}
+
+    // --- Worker URL ---
+    function getWorkerUrl() {
+        return (typeof YOUTUBE_CHAT_WORKER !== 'undefined' && YOUTUBE_CHAT_WORKER) || null;
+    }
+
+    // --- Utility: Extract YouTube video ID from current Cytube media ---
+    function getYouTubeVideoId() {
+        var activeEntry = document.querySelector('.queue_entry.queue_active');
+        if (!activeEntry) return null;
+        var link = activeEntry.querySelector('a.qe_title') || activeEntry.querySelector('a[href]');
+        if (!link) return null;
+        var href = link.getAttribute('href') || '';
+        var m = href.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([^&\s]+)/);
+        return m ? m[1] : null;
+    }
+
+    // --- Feed message into NND overlay ---
+    function feedToNND(author, text, extraClass) {
+        if (!window.nnd || !window.nnd._fn || !window.nnd._fn.addScrollingMessage) return;
+        // Format: "Author: message" or just message if no author
+        var display = author ? (author + ': ' + text) : text;
+        window.nnd._fn.addScrollingMessage(display, extraClass || 'yt-chat-msg');
+    }
+
+    // --- Dedup check ---
+    function isDuplicate(msg) {
+        var key = msg.timestampUsec || (msg.author + ':' + msg.text);
+        if (ytcSeenIds[key]) return true;
+        ytcSeenIds[key] = true;
+        ytcSeenCount++;
+        // Evict old entries to prevent memory leak
+        if (ytcSeenCount > 2000) {
+            ytcSeenIds = {};
+            ytcSeenCount = 0;
+        }
+        return false;
+    }
+
+    // --- Stop polling ---
+    function stopPolling() {
+        if (ytcPollTimer) { clearTimeout(ytcPollTimer); ytcPollTimer = null; }
+        if (ytcReplayTimer) { clearInterval(ytcReplayTimer); ytcReplayTimer = null; }
+        ytcContinuation = null;
+        ytcSeenIds = {};
+        ytcSeenCount = 0;
+        ytcLastReplayOffsetMs = 0;
+        ytcHasChat = false;
+        console.log('[YTChat] Polling stopped');
+    }
+
+    // --- Check if current video has chat ---
+    function checkAndStart() {
+        stopPolling();
+
+        var workerUrl = getWorkerUrl();
+        if (!workerUrl) {
+            console.log('[YTChat] No YOUTUBE_CHAT_WORKER configured');
+            updateOverflowLabel();
+            return;
+        }
+
+        var videoId = getYouTubeVideoId();
+        if (!videoId) {
+            console.log('[YTChat] Current video is not YouTube');
+            ytcCurrentVideoId = null;
+            updateOverflowLabel();
+            return;
+        }
+
+        // Avoid redundant checks for same video
+        if (videoId === ytcCurrentVideoId && ytcPollTimer) return;
+        ytcCurrentVideoId = videoId;
+        ytcCheckInProgress = true;
+        updateOverflowLabel();
+
+        fetch(workerUrl + '/chat/check?videoId=' + encodeURIComponent(videoId))
+            .then(function(resp) { return resp.json(); })
+            .then(function(data) {
+                ytcCheckInProgress = false;
+                if (!data.hasChat) {
+                    console.log('[YTChat] Video ' + videoId + ' has no chat');
+                    ytcHasChat = false;
+                    updateOverflowLabel();
+                    return;
+                }
+
+                ytcHasChat = true;
+                ytcIsLive = data.isLive;
+                console.log('[YTChat] Video ' + videoId + ' has ' + (data.isLive ? 'LIVE' : 'REPLAY') + ' chat');
+
+                if (data.isLive && data.liveContinuation) {
+                    ytcContinuation = data.liveContinuation;
+                    pollLiveChat();
+                } else if (data.replayContinuation) {
+                    ytcContinuation = data.replayContinuation;
+                    startReplaySync();
+                }
+
+                updateOverflowLabel();
+            })
+            .catch(function(err) {
+                ytcCheckInProgress = false;
+                console.error('[YTChat] Check failed:', err);
+                updateOverflowLabel();
+            });
+    }
+
+    // --- Live chat polling ---
+    function pollLiveChat() {
+        if (!ytcEnabled || !ytcContinuation) return;
+
+        var workerUrl = getWorkerUrl();
+        if (!workerUrl) return;
+
+        var url = workerUrl + '/chat/live?continuation=' + encodeURIComponent(ytcContinuation);
+
+        fetch(url)
+            .then(function(resp) { return resp.json(); })
+            .then(function(data) {
+                if (data.error) {
+                    console.warn('[YTChat] Live poll error:', data.error);
+                    // Retry after fallback interval
+                    ytcPollTimer = setTimeout(pollLiveChat, YTC_POLL_INTERVAL_FALLBACK);
+                    return;
+                }
+
+                // Process messages
+                var msgs = data.messages || [];
+                var shown = 0;
+                for (var i = 0; i < msgs.length && shown < YTC_MAX_BATCH; i++) {
+                    if (!isDuplicate(msgs[i])) {
+                        var cls = msgs[i].superchat ? 'yt-chat-msg yt-superchat' : 'yt-chat-msg';
+                        feedToNND(msgs[i].author, msgs[i].text, cls);
+                        shown++;
+                    }
+                }
+
+                if (shown > 0) {
+                    console.log('[YTChat] Displayed ' + shown + ' live messages');
+                }
+
+                // Schedule next poll
+                ytcContinuation = data.continuation;
+                var interval = data.pollingIntervalMs || YTC_POLL_INTERVAL_FALLBACK;
+                if (ytcContinuation && ytcEnabled) {
+                    ytcPollTimer = setTimeout(pollLiveChat, interval);
+                }
+            })
+            .catch(function(err) {
+                console.error('[YTChat] Live poll fetch error:', err);
+                ytcPollTimer = setTimeout(pollLiveChat, YTC_POLL_INTERVAL_FALLBACK * 2);
+            });
+    }
+
+    // --- Replay chat sync ---
+    var replayMessages = [];     // Buffer of fetched replay messages
+    var replayFetchingNext = false;
+
+    function startReplaySync() {
+        if (!ytcEnabled || !ytcContinuation) return;
+
+        // Fetch first batch of replay messages
+        fetchReplayBatch();
+
+        // Poll video time and display matching messages
+        ytcReplayTimer = setInterval(function() {
+            var currentTimeMs = getVideoTimeMs();
+            if (currentTimeMs < 0) return;
+
+            // Display messages whose videoOffsetMs is near current time
+            var shown = 0;
+            while (replayMessages.length > 0 && shown < YTC_MAX_BATCH) {
+                var msg = replayMessages[0];
+                var offset = msg.videoOffsetMs || 0;
+
+                // If message is in the past (within window), show it
+                if (offset <= currentTimeMs) {
+                    replayMessages.shift();
+                    if (!isDuplicate(msg)) {
+                        feedToNND(msg.author, msg.text, 'yt-chat-msg');
+                        shown++;
+                    }
+                } else {
+                    break; // Messages are ordered by time
+                }
+            }
+
+            // Prefetch next batch when buffer is running low
+            if (replayMessages.length < 20 && !replayFetchingNext && ytcContinuation) {
+                fetchReplayBatch();
+            }
+
+            ytcLastReplayOffsetMs = currentTimeMs;
+        }, YTC_REPLAY_POLL_INTERVAL);
+    }
+
+    function fetchReplayBatch() {
+        if (replayFetchingNext || !ytcContinuation) return;
+
+        var workerUrl = getWorkerUrl();
+        if (!workerUrl) return;
+
+        replayFetchingNext = true;
+        var currentTimeMs = Math.max(0, getVideoTimeMs());
+
+        var url = workerUrl + '/chat/replay?continuation=' + encodeURIComponent(ytcContinuation) +
+                  '&offsetMs=' + currentTimeMs;
+
+        fetch(url)
+            .then(function(resp) { return resp.json(); })
+            .then(function(data) {
+                replayFetchingNext = false;
+                if (data.error) {
+                    console.warn('[YTChat] Replay fetch error:', data.error);
+                    return;
+                }
+
+                // Append new messages to buffer
+                var msgs = data.messages || [];
+                for (var i = 0; i < msgs.length; i++) {
+                    replayMessages.push(msgs[i]);
+                }
+
+                ytcContinuation = data.continuation;
+
+                if (msgs.length > 0) {
+                    console.log('[YTChat] Buffered ' + msgs.length + ' replay messages (total: ' + replayMessages.length + ')');
+                }
+            })
+            .catch(function(err) {
+                replayFetchingNext = false;
+                console.error('[YTChat] Replay fetch error:', err);
+            });
+    }
+
+    // Get current video playback time in milliseconds
+    function getVideoTimeMs() {
+        if (typeof PLAYER === 'undefined' || !PLAYER) return -1;
+        try {
+            if (typeof PLAYER.getTime === 'function') {
+                var result = PLAYER.getTime();
+                if (typeof result === 'number') return Math.floor(result * 1000);
+            }
+            if (PLAYER.currentTime !== undefined) {
+                return Math.floor(PLAYER.currentTime * 1000);
+            }
+        } catch (e) {}
+        return -1;
+    }
+
+    // --- Toggle on/off ---
+    function toggleYTChat() {
+        ytcEnabled = !ytcEnabled;
+        try { localStorage.setItem(YTC_STORAGE_KEY, ytcEnabled ? 'true' : 'false'); } catch (e) {}
+
+        if (ytcEnabled) {
+            console.log('[YTChat] Enabled');
+            checkAndStart();
+        } else {
+            console.log('[YTChat] Disabled');
+            stopPolling();
+        }
+        updateOverflowLabel();
+    }
+
+    // --- Update the overflow menu item appearance ---
+    function updateOverflowLabel() {
+        if (!ytcOverflowItemEl) return;
+        var labelEl = ytcOverflowItemEl.querySelector('.overflow-label');
+        if (!labelEl) return;
+
+        var workerUrl = getWorkerUrl();
+
+        if (!workerUrl) {
+            labelEl.textContent = 'YT Chat (not configured)';
+            ytcOverflowItemEl.style.opacity = '0.4';
+            ytcOverflowItemEl.style.pointerEvents = 'none';
+            return;
+        }
+
+        ytcOverflowItemEl.style.opacity = '';
+        ytcOverflowItemEl.style.pointerEvents = '';
+
+        if (!ytcEnabled) {
+            labelEl.textContent = 'YT Chat';
+            ytcOverflowItemEl.classList.remove('ytc-active');
+            return;
+        }
+
+        if (ytcCheckInProgress) {
+            labelEl.textContent = 'YT Chat (checking...)';
+            ytcOverflowItemEl.classList.remove('ytc-active');
+            return;
+        }
+
+        if (!ytcHasChat) {
+            var videoId = getYouTubeVideoId();
+            if (!videoId) {
+                labelEl.textContent = 'YT Chat (not YouTube)';
+            } else {
+                labelEl.textContent = 'YT Chat (no chat)';
+            }
+            ytcOverflowItemEl.classList.add('ytc-active');
+            return;
+        }
+
+        labelEl.textContent = 'YT Chat ' + (ytcIsLive ? '(LIVE)' : '(Replay)');
+        ytcOverflowItemEl.classList.add('ytc-active');
+    }
+
+    // --- Add button to overflow menu ---
+    function addOverflowButton() {
+        var ytIcon = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#FFF" viewBox="0 0 24 24">' +
+            '<path d="M21.582 6.186a2.506 2.506 0 0 0-1.768-1.768C18.254 4 12 4 12 4s-6.254 0-7.814.418A2.506 2.506 0 0 0 2.418 6.186C2 7.746 2 12 2 12s0 4.254.418 5.814a2.506 2.506 0 0 0 1.768 1.768C5.746 20 12 20 12 20s6.254 0 7.814-.418a2.506 2.506 0 0 0 1.768-1.768C22 16.254 22 12 22 12s0-4.254-.418-5.814z"/>' +
+            '<path d="M10 15.464V8.536L16 12z" fill="#000"/>' +
+            '</svg>';
+
+        var added = addToOverflowMenu('yt-chat-btn', ytIcon, 'YT Chat', function() {
+            toggleYTChat();
+        });
+
+        if (added) {
+            ytcOverflowItemEl = document.getElementById('overflow-yt-chat-btn');
+            updateOverflowLabel();
+            console.log('[YTChat] Button added to overflow menu');
+            return true;
+        }
+        return false;
+    }
+
+    // --- Listen for media changes ---
+    function listenForMediaChanges() {
+        if (typeof socket !== 'undefined') {
+            socket.on('changeMedia', function() {
+                setTimeout(function() {
+                    if (ytcEnabled) checkAndStart();
+                    else updateOverflowLabel();
+                }, 500);
+            });
+        }
+    }
+
+    // --- Inject CSS for YT chat messages in NND overlay ---
+    function injectStyles() {
+        var style = document.createElement('style');
+        style.id = 'yt-chat-overlay-styles';
+        style.textContent = [
+            '/* YouTube Chat messages in NND overlay */',
+            '.yt-chat-msg {',
+            '    color: #AECBFA !important;',
+            '    font-size: 0.9em !important;',
+            '    opacity: 0.85 !important;',
+            '    text-shadow: 1px 1px 2px rgba(0,0,0,0.9), -1px -1px 2px rgba(0,0,0,0.9) !important;',
+            '}',
+            '.yt-superchat {',
+            '    color: #FFD700 !important;',
+            '    font-weight: bold !important;',
+            '    font-size: 1.1em !important;',
+            '    opacity: 1 !important;',
+            '    text-shadow: 0 0 8px rgba(255,215,0,0.6), 1px 1px 2px rgba(0,0,0,0.9) !important;',
+            '}',
+            '/* Active state for overflow menu item */',
+            '#overflow-yt-chat-btn.ytc-active {',
+            '    color: #AECBFA !important;',
+            '}',
+            '#overflow-yt-chat-btn.ytc-active .overflow-icon svg {',
+            '    fill: #FF0000 !important;',
+            '}'
+        ].join('\n');
+        document.head.appendChild(style);
+    }
+
+    // --- Initialize ---
+    function init() {
+        injectStyles();
+        listenForMediaChanges();
+
+        // Try adding overflow button (may need retry if overflow menu not built yet)
+        if (!addOverflowButton()) {
+            var retryCount = 0;
+            var retryInterval = setInterval(function() {
+                retryCount++;
+                if (addOverflowButton() || retryCount > 20) {
+                    clearInterval(retryInterval);
+                }
+            }, 500);
+        }
+
+        // If enabled on load, check current video
+        if (ytcEnabled) {
+            setTimeout(checkAndStart, 3000);
+        }
+
+        console.log('[YTChat] Overlay system initialized (enabled: ' + ytcEnabled + ')');
+    }
+
+    // Start when DOM is ready
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', function() { setTimeout(init, 2000); });
+    } else {
+        setTimeout(init, 2000);
+    }
+
+    // Expose API for debugging
+    window.YTChatOverlay = {
+        toggle: toggleYTChat,
+        isEnabled: function() { return ytcEnabled; },
+        getStatus: function() {
+            return {
+                enabled: ytcEnabled,
+                videoId: ytcCurrentVideoId,
+                isLive: ytcIsLive,
+                hasChat: ytcHasChat,
+                hasContinuation: !!ytcContinuation,
+                replayBufferSize: replayMessages.length,
+                workerConfigured: !!getWorkerUrl()
+            };
+        }
+    };
+})();
+
 /* ========== CONNECTION MESSAGE FILTER ========== */
 // Only show connect/disconnect messages if the disconnect lasted > 15 seconds
 // Suppresses brief reconnect flicker from quick network hiccups
