@@ -559,6 +559,45 @@ div.embed-responsive * { max-height: calc(100vh - 50px); }
     body.mobile-chat-open #mobile-chat-toggle .mobile-chat-icon-open { display: none; }
     body:not(.mobile-chat-open) #mobile-chat-toggle .mobile-chat-icon-close { display: none; }
 
+    /* === Auto-hide: fade toggle + input bar after inactivity === */
+    #mobile-chat-toggle, #mobile-quick-input {
+        transition: opacity 0.5s ease, transform 0.2s ease;
+    }
+    body.mobile-ui-idle:not(.mobile-chat-open) #mobile-chat-toggle,
+    body.mobile-ui-idle:not(.mobile-chat-open) #mobile-quick-input {
+        opacity: 0;
+        pointer-events: none;
+    }
+
+    /* === Persistent indicator (tiny dot, visible only when UI is idle) === */
+    #mobile-ui-indicator {
+        position: fixed;
+        top: 14px;
+        right: 14px;
+        width: 14px;
+        height: 14px;
+        border-radius: 50%;
+        background: rgba(255, 255, 255, 0.4);
+        border: 1px solid rgba(255, 255, 255, 0.5);
+        box-shadow: 0 0 8px rgba(0, 0, 0, 0.6);
+        z-index: 10000;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.4s ease;
+        cursor: pointer;
+        -webkit-tap-highlight-color: transparent;
+    }
+    /* Expand the tappable area without enlarging the visible dot */
+    #mobile-ui-indicator::after {
+        content: '';
+        position: absolute;
+        top: -16px; right: -16px; bottom: -16px; left: -16px;
+    }
+    body.mobile-ui-idle:not(.mobile-chat-open) #mobile-ui-indicator {
+        opacity: 0.7;
+        pointer-events: auto;
+    }
+
     /* === Recent messages overlay (Twitch-style) === */
     #mobile-chat-overlay {
         position: fixed;
@@ -673,7 +712,8 @@ div.embed-responsive * { max-height: calc(100vh - 50px); }
 @media only screen and (min-width: 769px) {
     #mobile-chat-toggle,
     #mobile-chat-overlay,
-    #mobile-quick-input { display: none !important; }
+    #mobile-quick-input,
+    #mobile-ui-indicator { display: none !important; }
 }
 
 .modal-body::before {

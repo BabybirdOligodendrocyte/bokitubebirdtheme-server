@@ -149,19 +149,41 @@ mediaQuery.addEventListener('change', chatPosition);
 (function() {
     var mobileMQ = window.matchMedia("(max-width: 768px)");
     var initialized = false;
-    var overlayEl, toggleBtn, quickInputForm, quickInput, badgeEl;
+    var overlayEl, toggleBtn, quickInputForm, quickInput, badgeEl, indicatorEl;
     var msgObserver = null;
     var unreadCount = 0;
+    var idleTimer = null;
     var OVERLAY_MAX = 3;          // max messages visible in overlay
     var OVERLAY_FADE_MS = 6000;   // ms before overlay messages fade out
+    var IDLE_MS = 3000;           // ms of no interaction before UI fades out
 
     function isMobileChatOpen() {
         return document.body.classList.contains('mobile-chat-open');
     }
 
+    function showMobileUI() {
+        document.body.classList.remove('mobile-ui-idle');
+        scheduleHide();
+    }
+    function hideMobileUI() {
+        if (isMobileChatOpen()) return;
+        if (quickInput && document.activeElement === quickInput) return;
+        document.body.classList.add('mobile-ui-idle');
+    }
+    function scheduleHide() {
+        if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; }
+        if (isMobileChatOpen()) return;
+        idleTimer = setTimeout(hideMobileUI, IDLE_MS);
+    }
+    function cancelHide() {
+        if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; }
+        document.body.classList.remove('mobile-ui-idle');
+    }
+
     function setChatOpen(open) {
         if (open) {
             document.body.classList.add('mobile-chat-open');
+            cancelHide(); // keep UI visible while drawer is open
             unreadCount = 0;
             updateBadge();
             // Scroll messagebuffer to bottom when opening
@@ -175,6 +197,7 @@ mediaQuery.addEventListener('change', chatPosition);
             document.body.classList.remove('mobile-chat-open');
             var cl = document.getElementById('chatline');
             if (cl) cl.blur();
+            scheduleHide(); // restart idle timer when drawer closes
         }
     }
 
@@ -262,6 +285,17 @@ mediaQuery.addEventListener('change', chatPosition);
             setChatOpen(!isMobileChatOpen());
         });
 
+        // Persistent indicator (tiny dot, visible only when UI is idle)
+        indicatorEl = document.createElement('div');
+        indicatorEl.id = 'mobile-ui-indicator';
+        indicatorEl.setAttribute('aria-label', 'Show chat controls');
+        document.body.appendChild(indicatorEl);
+        indicatorEl.addEventListener('click', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            showMobileUI();
+        });
+
         // Recent messages overlay
         overlayEl = document.createElement('div');
         overlayEl.id = 'mobile-chat-overlay';
@@ -296,9 +330,33 @@ mediaQuery.addEventListener('change', chatPosition);
                 chatline.value = '';
             }
             quickInput.value = '';
+            scheduleHide();
         });
 
+        // Keep UI visible while typing; restart timer when input loses focus
+        quickInput.addEventListener('focus', cancelHide);
+        quickInput.addEventListener('blur', scheduleHide);
+
         attachMessageObserver();
+
+        // First user tap requests fullscreen (hides URL bar on Android;
+        // silently no-ops on iOS where document fullscreen isn't permitted)
+        var fsHandler = function() {
+            document.removeEventListener('click', fsHandler, true);
+            document.removeEventListener('touchend', fsHandler, true);
+            var el = document.documentElement;
+            var req = el.requestFullscreen || el.webkitRequestFullscreen || el.mozRequestFullScreen || el.msRequestFullscreen;
+            if (!req) return;
+            try {
+                var p = req.call(el);
+                if (p && typeof p.catch === 'function') p.catch(function() {});
+            } catch (e) {}
+        };
+        document.addEventListener('click', fsHandler, true);
+        document.addEventListener('touchend', fsHandler, true);
+
+        // Start the idle timer so UI fades out if user doesn't interact
+        scheduleHide();
 
         // Tell Cytube's player to recompute its dimensions now that the
         // viewport-filling mobile CSS is active (otherwise YouTube renders
@@ -317,10 +375,13 @@ mediaQuery.addEventListener('change', chatPosition);
     function teardownMobileUI() {
         if (!initialized) return;
         document.body.classList.remove('mobile-chat-open');
+        document.body.classList.remove('mobile-ui-idle');
+        if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; }
         if (toggleBtn && toggleBtn.parentNode) toggleBtn.parentNode.removeChild(toggleBtn);
         if (overlayEl && overlayEl.parentNode) overlayEl.parentNode.removeChild(overlayEl);
         if (quickInputForm && quickInputForm.parentNode) quickInputForm.parentNode.removeChild(quickInputForm);
-        toggleBtn = overlayEl = quickInputForm = quickInput = badgeEl = null;
+        if (indicatorEl && indicatorEl.parentNode) indicatorEl.parentNode.removeChild(indicatorEl);
+        toggleBtn = overlayEl = quickInputForm = quickInput = badgeEl = indicatorEl = null;
         detachMessageObserver();
         unreadCount = 0;
         initialized = false;
