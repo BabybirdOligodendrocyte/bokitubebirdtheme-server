@@ -145,6 +145,187 @@ var mediaQuery = window.matchMedia("(max-width: 768px)");
 chatPosition(mediaQuery);
 mediaQuery.addEventListener('change', chatPosition);
 
+/* ========== MOBILE FULLSCREEN VIDEO + CHAT DRAWER ========== */
+(function() {
+    var mobileMQ = window.matchMedia("(max-width: 768px)");
+    var initialized = false;
+    var overlayEl, toggleBtn, quickInputForm, quickInput, badgeEl;
+    var msgObserver = null;
+    var unreadCount = 0;
+    var OVERLAY_MAX = 3;          // max messages visible in overlay
+    var OVERLAY_FADE_MS = 6000;   // ms before overlay messages fade out
+
+    function isMobileChatOpen() {
+        return document.body.classList.contains('mobile-chat-open');
+    }
+
+    function setChatOpen(open) {
+        if (open) {
+            document.body.classList.add('mobile-chat-open');
+            unreadCount = 0;
+            updateBadge();
+            // Scroll messagebuffer to bottom when opening
+            setTimeout(function() {
+                var mb = document.getElementById('messagebuffer');
+                if (mb) mb.scrollTop = mb.scrollHeight;
+                var cl = document.getElementById('chatline');
+                if (cl) cl.focus();
+            }, 320);
+        } else {
+            document.body.classList.remove('mobile-chat-open');
+            var cl = document.getElementById('chatline');
+            if (cl) cl.blur();
+        }
+    }
+
+    function updateBadge() {
+        if (!toggleBtn || !badgeEl) return;
+        if (unreadCount > 0 && !isMobileChatOpen()) {
+            toggleBtn.classList.add('has-unread');
+            badgeEl.textContent = unreadCount > 99 ? '99+' : String(unreadCount);
+        } else {
+            toggleBtn.classList.remove('has-unread');
+        }
+    }
+
+    function pushOverlayMessage(srcEl) {
+        if (!overlayEl) return;
+        if (isMobileChatOpen()) return; // overlay hidden while drawer open
+
+        // Skip system/server messages with hidden sync markers
+        var rawText = srcEl.textContent || '';
+        if (rawText.indexOf('​‌') !== -1) return;
+        if (rawText.indexOf('BSET:') !== -1 || rawText.indexOf('BACT:') !== -1) return;
+        if (rawText.indexOf('SCREENSPAM:') !== -1) return;
+
+        var bubble = document.createElement('div');
+        bubble.className = 'mobile-overlay-msg';
+        // Clone the inner content so usernames and styled text are preserved
+        bubble.innerHTML = srcEl.innerHTML;
+        overlayEl.appendChild(bubble);
+
+        // Trim to OVERLAY_MAX visible messages
+        while (overlayEl.children.length > OVERLAY_MAX) {
+            overlayEl.removeChild(overlayEl.firstChild);
+        }
+
+        // Auto-fade
+        setTimeout(function() {
+            if (!bubble.parentNode) return;
+            bubble.classList.add('fading');
+            setTimeout(function() {
+                if (bubble.parentNode) bubble.parentNode.removeChild(bubble);
+            }, 500);
+        }, OVERLAY_FADE_MS);
+
+        if (!isMobileChatOpen()) {
+            unreadCount++;
+            updateBadge();
+        }
+    }
+
+    function attachMessageObserver() {
+        var mb = document.getElementById('messagebuffer');
+        if (!mb || msgObserver) return;
+        msgObserver = new MutationObserver(function(mutations) {
+            mutations.forEach(function(m) {
+                m.addedNodes.forEach(function(n) {
+                    if (n.nodeType === 1) pushOverlayMessage(n);
+                });
+            });
+        });
+        msgObserver.observe(mb, { childList: true });
+    }
+
+    function detachMessageObserver() {
+        if (msgObserver) { msgObserver.disconnect(); msgObserver = null; }
+    }
+
+    function createMobileUI() {
+        if (initialized) return;
+        initialized = true;
+
+        // Toggle button
+        toggleBtn = document.createElement('button');
+        toggleBtn.id = 'mobile-chat-toggle';
+        toggleBtn.setAttribute('aria-label', 'Toggle chat');
+        toggleBtn.innerHTML =
+            '<span class="mobile-chat-icon-open">💬</span>' +
+            '<span class="mobile-chat-icon-close">✕</span>' +
+            '<span class="mobile-chat-badge">0</span>';
+        document.body.appendChild(toggleBtn);
+        badgeEl = toggleBtn.querySelector('.mobile-chat-badge');
+
+        toggleBtn.addEventListener('click', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            setChatOpen(!isMobileChatOpen());
+        });
+
+        // Recent messages overlay
+        overlayEl = document.createElement('div');
+        overlayEl.id = 'mobile-chat-overlay';
+        document.body.appendChild(overlayEl);
+
+        // Compact input bar
+        quickInputForm = document.createElement('form');
+        quickInputForm.id = 'mobile-quick-input';
+        quickInputForm.innerHTML =
+            '<input type="text" autocomplete="off" autocorrect="off" autocapitalize="sentences" placeholder="Send a message">' +
+            '<button type="submit" aria-label="Send">➤</button>';
+        document.body.appendChild(quickInputForm);
+        quickInput = quickInputForm.querySelector('input');
+
+        quickInputForm.addEventListener('submit', function(e) {
+            e.preventDefault();
+            var text = (quickInput.value || '').trim();
+            if (!text) return;
+            var chatline = document.getElementById('chatline');
+            if (!chatline) return;
+            chatline.value = text;
+            // Trigger the existing send pipeline by dispatching Enter keydown
+            var ev = new KeyboardEvent('keydown', {
+                key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true
+            });
+            chatline.dispatchEvent(ev);
+            // Fallback: if value wasn't cleared by the handler, submit the form
+            if (chatline.value === text) {
+                var f = document.getElementById('formline') || (chatline.form);
+                if (f && typeof f.requestSubmit === 'function') f.requestSubmit();
+                else if (f) f.submit();
+                chatline.value = '';
+            }
+            quickInput.value = '';
+        });
+
+        attachMessageObserver();
+    }
+
+    function teardownMobileUI() {
+        if (!initialized) return;
+        document.body.classList.remove('mobile-chat-open');
+        if (toggleBtn && toggleBtn.parentNode) toggleBtn.parentNode.removeChild(toggleBtn);
+        if (overlayEl && overlayEl.parentNode) overlayEl.parentNode.removeChild(overlayEl);
+        if (quickInputForm && quickInputForm.parentNode) quickInputForm.parentNode.removeChild(quickInputForm);
+        toggleBtn = overlayEl = quickInputForm = quickInput = badgeEl = null;
+        detachMessageObserver();
+        unreadCount = 0;
+        initialized = false;
+    }
+
+    function syncToViewport() {
+        if (mobileMQ.matches) createMobileUI();
+        else teardownMobileUI();
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', syncToViewport);
+    } else {
+        syncToViewport();
+    }
+    mobileMQ.addEventListener('change', syncToViewport);
+})();
+
 /* Add jump to current item button */
 var jumpBtn = document.createElement("button");
 jumpBtn.innerHTML = "Scroll to current";
