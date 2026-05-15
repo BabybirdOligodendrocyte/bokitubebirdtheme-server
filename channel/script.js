@@ -299,6 +299,19 @@ mediaQuery.addEventListener('change', chatPosition);
         });
 
         attachMessageObserver();
+
+        // Tell Cytube's player to recompute its dimensions now that the
+        // viewport-filling mobile CSS is active (otherwise YouTube renders
+        // black until the user opens fullscreen).
+        setTimeout(function() {
+            try { window.dispatchEvent(new Event('resize')); } catch (e) {}
+            if (window.PLAYER && typeof window.PLAYER.setSize === 'function') {
+                try { window.PLAYER.setSize(); } catch (e) {}
+            }
+        }, 100);
+        setTimeout(function() {
+            try { window.dispatchEvent(new Event('resize')); } catch (e) {}
+        }, 600);
     }
 
     function teardownMobileUI() {
